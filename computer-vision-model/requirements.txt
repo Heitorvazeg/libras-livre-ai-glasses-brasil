@@ -1,0 +1,8 @@
+# Trilha de IA — Libras Livre
+# Versões alinhadas ao guia (§2.1 usa tensorflow-lite 2.14 no Android).
+mediapipe==0.10.14
+opencv-python>=4.9
+numpy>=1.26
+tensorflow>=2.14,<2.16
+pyyaml>=6.0
+scikit-learn>=1.4   # split treino/validação e métricas

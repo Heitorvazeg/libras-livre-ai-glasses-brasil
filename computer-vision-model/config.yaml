@@ -1,0 +1,33 @@
+# Configuração central da trilha de IA.
+# Um único lugar para vocabulário, caminhos e hiperparâmetros (ver guia Parte 1).
+
+# Vocabulário de palavras/sinais isolados. A ordem define o índice de classe
+# que o .tflite devolve e que o app mapeia de volta para texto.
+# PoC: comece com 1-2 itens (§1.1).
+vocabulario:
+  - dor
+  - cabeca
+
+paths:
+  raw_videos: data/raw
+  landmarks: data/landmarks
+  models: models
+  tflite_out: models/sinal_classifier.tflite
+
+landmarks:
+  max_num_hands: 1        # PoC usa 1 mão -> 21 pontos x (x,y,z) = 63 valores
+  num_pontos_por_mao: 21
+  dims: 3                 # x, y, z
+
+# Fase A (raso) ou Fase B (temporal). Ver §1.3.
+fase: A
+
+treino:
+  epochs: 30
+  batch_size: 16
+  learning_rate: 0.001
+  val_split: 0.2
+  seed: 42
+
+export:
+  quantizar: false        # ligar a partir da Fase B (§1.4)

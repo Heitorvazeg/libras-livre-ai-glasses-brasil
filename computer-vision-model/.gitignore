@@ -1,0 +1,16 @@
+# Dados brutos e derivados — pesados, não versionar
+data/raw/*
+data/landmarks/*
+!data/**/.gitkeep
+
+# Artefatos treinados
+models/*.keras
+models/*.tflite
+!models/.gitkeep
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.ipynb_checkpoints/
