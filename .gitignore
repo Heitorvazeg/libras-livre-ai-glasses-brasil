@@ -1,9 +1,17 @@
-# Ambientes virtuais Python locais
-.venv/
-.venv*/
-**/.venv/
-**/.venv*/
+# Dados brutos e derivados — pesados, não versionar
+data/raw/*
+data/landmarks/*
+!data/**/.gitkeep
 
-# Cache Python
+# Artefatos treinados
+models/*.keras
+models/*.tflite
+!models/.gitkeep
+
+# Python
 __pycache__/
 *.py[cod]
+.venv/
+.venv311/
+venv/
+.ipynb_checkpoints/
