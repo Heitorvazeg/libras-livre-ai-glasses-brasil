@@ -1,0 +1,15 @@
+# Dados da PoC — pesados e/ou sensíveis (vídeos de participantes), não versionar.
+data/raw/*
+data/landmarks/*
+!data/**/.gitkeep
+
+# Resultados gerados
+results/*
+!results/.gitkeep
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.ipynb_checkpoints/

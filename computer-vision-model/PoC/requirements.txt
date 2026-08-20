@@ -1,0 +1,12 @@
+# PoC signer-independent — dependências mínimas.
+# Sem TensorFlow: o baseline é DTW (1-NN), não uma rede treinada.
+mediapipe==0.10.14
+opencv-python>=4.9
+numpy>=1.26
+fastdtw>=0.3.4          # DTW multidimensional (baseline do §5.3)
+scipy>=1.11             # métrica euclidiana usada pelo DTW
+scikit-learn>=1.4       # matriz de confusão / métricas (§5.4)
+matplotlib>=3.8         # plot da matriz de confusão
+
+# Opcional (§5.5 — classificador treinado). Descomente só se for testar:
+# tensorflow>=2.14,<2.16

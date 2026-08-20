@@ -1,0 +1,58 @@
+# Configuração da PoC signer-independent.
+# Um único lugar para vocabulário, participantes, caminhos e parâmetros.
+
+# Vocabulário fechado da PoC: 10-15 sinais isolados.
+# DEFINIR a lista final com apoio de consultor de Libras ANTES de gravar (§2).
+# Incluir de propósito sinais com configuracoes de mao/movimentos variados.
+vocabulario:
+  - ola
+  - ajuda
+  - marcar-consulta
+  - sim
+  - nao
+  - dor
+  - obrigado
+  - por-favor
+  - esperar
+  - documento
+  # - ... (complete até 10-15 com o consultor de Libras)
+
+# Participantes esperados (mín. 5, ideal 8). Usado só para conferência/relatório;
+# a fonte de verdade é o campo "pessoa" no nome de cada clipe.
+participantes_esperados: 6
+repeticoes_por_sinal: 5
+
+paths:
+  raw_videos: data/raw
+  landmarks: data/landmarks
+  results: results
+
+# Subconjunto de pose extraído do Holistic (índices MediaPipe Pose).
+# Contexto de tronco/cabeça sem inflar dimensionalidade (§5.2).
+pose_indices:
+  nariz: 0
+  ombro_esq: 11
+  ombro_dir: 12
+  cotovelo_esq: 13
+  cotovelo_dir: 14
+  pulso_esq: 15
+  pulso_dir: 16
+
+# Referência de normalização (§5.2): ponto medio entre os ombros, escala = dist. ombros.
+normalizacao:
+  ref_a: 11   # ombro esquerdo
+  ref_b: 12   # ombro direito
+
+holistic:
+  model_complexity: 1
+  min_detection_confidence: 0.5
+  min_tracking_confidence: 0.5
+
+# Opcional — classificador treinado (§5.5). Só depois do DTW medido.
+nn:
+  habilitado: false
+  unidades: 64
+  camadas: 2
+  epochs: 40
+  batch_size: 16
+  seed: 42

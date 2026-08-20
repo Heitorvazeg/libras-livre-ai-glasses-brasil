@@ -6,6 +6,32 @@
 
 ---
 
+## 🧪 Comece pela PoC — [`PoC/`](./PoC)
+
+**Antes de treinar o `.tflite`, uma PoC decide se vale a pena.** A pergunta que
+ela responde, com o mínimo de esforço e critério de decisão definido de antemão:
+
+> MediaPipe Holistic + um classificador simples reconhecem um vocabulário fechado
+> de Libras **generalizando entre pessoas diferentes** (signer-independent), na
+> distância e ângulo de um atendimento de balcão?
+
+Isso é **requisito de produto**, não detalhe de avaliação: os óculos são
+institucionais e atendem uma pessoa nova a cada sessão — o modelo nunca vê quem
+está à frente da câmera (ver [`docs/libras-livre-arquitetura.md`](../docs/libras-livre-arquitetura.md), §4.3).
+
+| | **PoC** (`PoC/`) | **Pipeline principal** (este diretório) |
+|---|---|---|
+| Objetivo | validar a hipótese signer-independent | produzir o `.tflite` de produção |
+| Landmarks | MediaPipe **Holistic** (mãos + pose do tronco) | MediaPipe **Hands** (21 pontos) |
+| Modelo | baseline **DTW** (1-NN), sem treino | classificador raso → temporal |
+| Avaliação | **leave-one-signer-out** (obrigatório) | split treino/val |
+| Saída | acurácia + decisão ir/não-ir | `sinal_classifier.tflite` |
+
+➡️ **O pipeline abaixo só vale o investimento depois que a PoC der sinal verde
+(≥ 80%).** Detalhes e passo a passo em [`PoC/README.md`](./PoC/README.md).
+
+---
+
 ## 1. Contexto — o que este projeto resolve
 
 **Libras Livre** é um sistema de acessibilidade para óculos inteligentes (Ray-Ban

@@ -68,10 +68,31 @@ Uma divisão importante de responsabilidade:
 
 ---
 
+## O passo zero: a PoC
+
+Antes de treinar o modelo de produção, uma **PoC** responde a pergunta que decide
+se a abordagem se sustenta:
+
+> MediaPipe Holistic + um classificador simples reconhecem um vocabulário fechado
+> de Libras **generalizando entre pessoas diferentes**, na distância de um
+> atendimento de balcão?
+
+Isso é um **requisito de produto**: os óculos são institucionais e atendem alguém
+novo a cada atendimento — o modelo nunca viu quem está à frente da câmera. A PoC
+mede exatamente isso (avaliação *leave-one-signer-out*) com um baseline DTW, sem
+treinar rede nenhuma, e aplica um **critério de ir/não-ir** definido antes de rodar.
+
+➡️ [`computer-vision-model/PoC/`](./computer-vision-model/PoC) — o pipeline
+completo de treino só vale o investimento depois que a PoC der **sinal verde**.
+
+---
+
 ## Por onde começar
 
-- Entender **como o modelo é treinado** → [`computer-vision-model/README.md`](./computer-vision-model/README.md)
+- **A PoC** (passo zero, decide o resto) → [`computer-vision-model/PoC/README.md`](./computer-vision-model/PoC/README.md)
+- Entender **como o modelo de produção é treinado** → [`computer-vision-model/README.md`](./computer-vision-model/README.md)
 - Entender **como o app funciona** → [`mobile-app-companion/README.md`](./mobile-app-companion/README.md)
+- **Decisões de arquitetura e o plano da PoC** → [`docs/`](./docs)
 
 Cada pasta tem seu próprio README com os detalhes técnicos, os conceitos e o passo
 a passo de execução.
@@ -82,5 +103,8 @@ a passo de execução.
 
 - ✅ App base (conexão com os óculos, câmera, gravação) — herdado do sample da Meta.
 - ✅ Estrutura da trilha de IA montada (extração de landmarks + modelo raso + export).
+- 🎯 **Foco atual: a PoC signer-independent** (`computer-vision-model/PoC/`) —
+  scaffold pronto (Holistic + DTW + leave-one-signer-out), aguardando a coleta com
+  5–8 participantes para rodar e aplicar o critério de decisão.
 - 🚧 A integração (landmarks no app → classificador → fronteiras entre sinais → voz)
-  é o trabalho em andamento.
+  fica para depois da PoC dar sinal verde.
