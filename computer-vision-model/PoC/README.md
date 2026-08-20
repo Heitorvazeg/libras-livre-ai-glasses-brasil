@@ -13,7 +13,7 @@ Todo o resto desta pasta existe para responder isso com o **mínimo de esforço*
 com um **critério de decisão definido antes de começar** (ver §6).
 
 > ⚠️ **Relação com o resto de `computer-vision-model/`:** o pipeline principal
-> (`../src`, `../scripts`, `config.yaml`) monta o classificador de produção com
+> (`../src`, `../scripts`, `../config.yaml`) monta o classificador de produção com
 > MediaPipe **Hands** e export `.tflite`. Esta PoC é **anterior** a isso: ela
 > valida a hipótese com MediaPipe **Holistic** (mãos + pose do tronco) e um
 > baseline **DTW**, sem treino de rede neural. Só faz sentido investir no pipeline
@@ -32,6 +32,10 @@ API · retrain contínuo · tela para a pessoa surda · núcleo offline · conse
 institucional formal · contextualização sinal→frase · hardware final dos óculos
 (qualquer câmera de celular na posição certa serve).
 
+**Também fora desta entrega:** o classificador treinado opcional do §5.5 do plano
+(GRU/MLP). `src/nn_classifier.py` segue como stub documentado — só faz sentido
+depois que o baseline DTW estiver medido com dados reais.
+
 ---
 
 ## 2. Vocabulário
@@ -46,7 +50,9 @@ institucional formal · contextualização sinal→frase · hardware final dos �
 - **Definir a lista final com apoio de um profissional de Libras / pessoa surda
   consultora antes de gravar** — vocabulário errado invalida o resultado.
 
-A lista fica em `config.yaml` (`vocabulario`).
+A lista fica em `config.yaml` (`vocabulario`) e é a fonte de verdade: `record.py`
+recusa gravar um sinal que não esteja nela, e `evaluate.py` avisa se algum sinal
+do vocabulário ficou sem clipes.
 
 ---
 
@@ -63,11 +69,17 @@ A lista fica em `config.yaml` (`vocabulario`).
 Uma pessoa repetindo o sinal muitas vezes **não substitui** ter várias pessoas —
 mede consistência de um sinalizante, não generalização entre pessoas.
 
-**Consentimento:** cada participante assina/confirma um consentimento simples de
-participação em pesquisa (o vídeo é só para desenvolver o protótipo; informar se é
-descartado após extração dos landmarks ou retido, e por quanto tempo). Se possível,
-**descartar os vídeos brutos logo após extrair os landmarks**, mantendo só os
-pontos.
+Dois documentos operacionais acompanham esta fase:
+
+- [`docs/consentimento.md`](docs/consentimento.md) — termo simples de participação
+  em pesquisa (§4.4): para que serve o vídeo, se ele é descartado após a extração
+  dos landmarks e por quanto tempo os pontos ficam retidos.
+- [`docs/checklist-setup.md`](docs/checklist-setup.md) — checklist de setup físico
+  e de sessão (§4.3, §9): altura/distância da câmera, enquadramento, registro do
+  setup, conferência ao encerrar.
+
+Se possível, **descarte os vídeos brutos logo após extrair os landmarks**
+(`python src/extract.py --descartar-video`), mantendo só os pontos.
 
 ---
 
@@ -75,19 +87,26 @@ pontos.
 
 ```
 PoC/
-├── config.yaml            vocabulário, participantes, caminhos, parâmetros
-├── requirements.txt       mediapipe, opencv, numpy, fastdtw, scikit-learn, matplotlib
+├── config.yaml            vocabulário, metas de coleta, caminhos, parâmetros
+├── requirements.txt       mediapipe, opencv, numpy, dtaidistance/fastdtw, sklearn, matplotlib
 ├── data/
 │   ├── raw/               vídeos brutos (descartáveis após extração)
 │   └── landmarks/         landmarks extraídos, 1 .npy por clipe
+├── docs/
+│   ├── consentimento.md   §4.4 — termo de participação
+│   └── checklist-setup.md §4.3/§9 — setup físico e rotina de sessão
 ├── src/
+│   ├── config.py          leitura do config.yaml (usado por todos os scripts)
 │   ├── record.py          §5.1 — captura de clipes (marcação início/fim)
 │   ├── extract.py         §5.2 — extração via MediaPipe Holistic + normalização
 │   ├── dtw_classifier.py  §5.3 — baseline 1-NN por DTW
-│   ├── nn_classifier.py   §5.5 — opcional: GRU/MLP leve
-│   └── evaluate.py        §5.4 — protocolo leave-one-signer-out + matriz de confusão
+│   ├── evaluate.py        §5.4 — leave-one-signer-out + matriz de confusão
+│   ├── selftest.py        validação do pipeline sem câmera (dados sintéticos)
+│   └── nn_classifier.py   §5.5 — opcional, FORA do escopo desta entrega
 └── results/
-    └── confusion_matrix.png
+    ├── confusion_matrix.png
+    ├── relatorio.md
+    └── predicoes.csv
 ```
 
 **Convenção de nome de clipe** (o nome já carrega os metadados — evita planilha
@@ -104,39 +123,71 @@ pessoa03_sinal-ajuda_rep02.mp4     →  pessoa=03, sinal=ajuda, repetição=02
 ## 5. Pipeline técnico, passo a passo
 
 ### 5.1 Gravação — `record.py`
-Abre a câmera (`cv2.VideoCapture`). Cada clipe é gravado sob demanda: uma tecla
-começa, outra encerra. Salva como `data/raw/pessoaNN_sinal-XXX_repNN.mp4`.
+Abre a câmera (`cv2.VideoCapture`). Cada clipe é gravado sob demanda: **ESPAÇO**
+começa e encerra, **D** descarta o último clipe (sinal saiu errado), **Q** sai. A
+numeração de repetição avança sozinha a partir dos arquivos já existentes, e a
+tela mostra pessoa/sinal/repetição e o tempo do clipe em andamento.
 
 ### 5.2 Extração de landmarks — `extract.py`
 Roda `mediapipe.solutions.holistic.Holistic` frame a frame. De cada frame extrai
 **21 pontos de cada mão** + um **subconjunto de pose** (nariz, ombros, cotovelos,
-pulsos) — contexto de tronco sem inflar a dimensionalidade.
+pulsos, definido em `config.yaml`) — contexto de tronco sem inflar a
+dimensionalidade. São 49 pontos × 3 coordenadas = 147 valores por frame.
 
 > **A normalização é o passo que mais afeta o resultado e o mais fácil de
-> esquecer.** Subtrai-se um ponto de referência estável (o **ponto médio entre os
-> ombros**) de todos os pontos do frame, e divide-se pela **distância entre os
-> ombros**. Isso torna os landmarks invariantes à distância da pessoa até a câmera
-> e à sua posição no quadro — sem isso, o modelo aprende a distinguir "quem está
-> mais perto da câmera" em vez de "qual sinal".
+> esquecer.** As coordenadas do MediaPipe vêm normalizadas por largura/altura, o
+> que distorce x contra y em vídeo 16:9 — então primeiro convertemos para pixels
+> (`x·W`, `y·H`, `z·W`). Depois subtraímos o **ponto médio entre os ombros** de
+> todos os pontos e dividimos pela **distância entre os ombros**. Isso torna os
+> landmarks invariantes à distância da pessoa até a câmera, à posição dela no
+> quadro **e à resolução da gravação** — sem isso, o modelo aprende a distinguir
+> "quem está mais perto da câmera" em vez de "qual sinal".
 
-Empacota a sequência do clipe num array `num_frames × num_pontos × 3` e salva
-`.npy` com o mesmo nome-base do vídeo.
+Detalhes que mudam o número final:
+
+- **Frame sem pose confiável** (ombro ausente ou com visibilidade abaixo de
+  `normalizacao.min_visibilidade`) é descartado: sem referência estável não há
+  normalização possível. `extract.py` avisa quando passa de 30% de descarte num
+  clipe — é sintoma de enquadramento errado, não de limitação do modelo.
+- **Mão não detectada** vira zeros **depois** da normalização. Como a origem é o
+  ponto médio dos ombros, o zero é um marcador de ausência estável, que não muda
+  conforme a pessoa anda pelo quadro.
+- **Coordenada z:** o z das mãos é relativo ao punho e o de pose é relativo ao
+  quadril — não estão no mesmo referencial. Fica ligada por padrão (é o que o
+  plano pede), mas `normalizacao.usar_z: false` é o primeiro botão a testar se o
+  resultado cair na zona amarela.
+
+Saída: `data/landmarks/<nome-base>.npy`, `float32 (num_frames, 49, 3)`.
 
 ### 5.3 Baseline DTW — `dtw_classifier.py`
-Usa biblioteca pronta de DTW (`fastdtw`) — a lógica do algoritmo não é o gargalo,
-a qualidade dos landmarks é. Achata cada frame num vetor único e classifica um
-clipe novo pela **menor distância DTW** até **todos** os clipes de referência
-(1-NN).
+Biblioteca pronta de DTW (a lógica do algoritmo não é o gargalo, a qualidade dos
+landmarks é). Cada frame vira um vetor de 147 valores e o clipe é classificado
+pela **menor distância DTW** até **todos** os clipes de referência (1-NN).
+
+Backend padrão: **dtaidistance** (DTW multivariado em C, multi-thread) — é o que
+torna a avaliação viável, já que 360 clipes geram ~65 mil pares. **fastdtw** fica
+como fallback puro-Python, correto porém ordens de grandeza mais lento. O
+relatório registra qual backend foi usado, porque os valores absolutos de
+distância não são comparáveis entre eles.
 
 ### 5.4 Avaliação leave-one-signer-out — `evaluate.py`
 Para cada pessoa `p`: referência = todos os clipes **exceto** os de `p`; teste =
 clipes de `p`. Classifica cada clipe de teste, registra acerto/erro. Ao final,
 **acurácia média entre as rodadas** + **matriz de confusão agregada**.
 
+A matriz de distâncias entre todos os pares é calculada **uma vez** e reaproveitada
+por todas as rodadas (e fica em cache em `results/`, invalidado automaticamente se
+os dados ou os parâmetros de DTW mudarem — `--recalcular` força de novo).
+
+Antes de rodar, `evaluate.py` confere a coleta e avisa sobre o que muda a leitura
+do resultado: participantes abaixo do mínimo, sinais sem clipes, sinais gravados
+por uma única pessoa (erro garantido na rodada dela), combinações abaixo do alvo
+de repetições.
+
 ### 5.5 Opcional — `nn_classifier.py`
-Só depois do DTW medido: GRU pequeno (2 camadas, poucas dezenas de unidades) sobre
-os mesmos landmarks normalizados, avaliado com o **mesmo** protocolo do §5.4. Só
-vale adotar se superar o DTW de forma consistente.
+GRU pequeno sobre os mesmos landmarks. **Fora do escopo desta entrega**; só
+depois do DTW medido com dados reais, e só vale adotar se superar o baseline de
+forma consistente no **mesmo** protocolo.
 
 ---
 
@@ -144,9 +195,11 @@ vale adotar se superar o DTW de forma consistente.
 
 - **Leave-one-signer-out é obrigatório** — é o cenário real de produto (o sistema
   encontra alguém que nunca viu).
-- **Métricas:** acurácia top-1 média (principal) + matriz de confusão agregada.
+- **Métricas:** acurácia top-1 média entre rodadas (principal) + matriz de
+  confusão agregada. O relatório também traz a acurácia por sinal e os pares mais
+  confundidos.
 
-**Critério definido _antes_ de rodar o experimento:**
+**Critério definido _antes_ de rodar o experimento** (limiares em `config.yaml`):
 
 | Acurácia signer-independent | Decisão |
 |---|---|
@@ -159,32 +212,60 @@ vale adotar se superar o DTW de forma consistente.
 ## 7. Como rodar
 
 ```bash
-python -m venv .venv && source .venv/bin/activate
+python3 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
+
+# 0) valida o pipeline inteiro sem câmera e sem participantes (~30 s)
+python src/selftest.py
 
 # 1) grave clipes (uma pessoa/sinal por vez, veja a convenção de nome em §4)
 python src/record.py --pessoa 03 --sinal ajuda
 
 # 2) extraia landmarks de tudo em data/raw -> data/landmarks
-python src/extract.py
+python src/extract.py                    # --descartar-video apaga o .mp4 após extrair
 
-# 3) rode a avaliação leave-one-signer-out (usa o baseline DTW)
-python src/evaluate.py            # gera results/confusion_matrix.png + acurácia
+# 3) confira o dataset carregado (clipes, pessoas, sinais, duração)
+python src/dtw_classifier.py
+
+# 4) rode a avaliação leave-one-signer-out (baseline DTW)
+python src/evaluate.py
 ```
 
-> **Estado atual:** os scripts em `src/` são **implementações de referência** do
-> protocolo acima, ainda **não validadas contra dados reais** (a coleta é o
-> gargalo, não o código — ver §9 do plano). Trate-os como scaffold: leia, ajuste
-> ao seu setup e valide com os primeiros clipes antes de confiar nos números.
+O passo 4 grava em `results/`:
+
+| Arquivo | Conteúdo |
+|---|---|
+| `relatorio.md` | acurácia média + veredito, acurácia por pessoa e por sinal, pares confundidos, ressalvas da coleta |
+| `confusion_matrix.png` | matriz de confusão agregada |
+| `predicoes.csv` | uma linha por clipe de teste (previsto, distância, clipe vizinho) para qualquer análise extra |
+
+Ordem de grandeza no cenário do plano (≈360 clipes, ~65 mil pares): a matriz de
+distâncias leva poucos segundos com dtaidistance em uma máquina comum.
+
+### Estado de validação do código
+
+`src/selftest.py` exercita o pipeline inteiro com dados sintéticos e cobre:
+invariância da normalização (deslocamento, escala, resolução), marcação de mão
+ausente, descarte de frame sem pose, convenção de nome, DTW 1-NN, o
+leave-one-signer-out completo com geração dos artefatos, um **controle negativo**
+(dataset de ruído puro precisa reprovar no critério §6.3) e a leitura de vídeo com
+o Holistic rodando de ponta a ponta. Todos passam nesta máquina.
+
+**O que só dado real valida:** a qualidade da detecção de landmarks em pessoas
+sinalizando de verdade, no setup de balcão — e, claro, a acurácia que responde à
+pergunta da PoC. O código está pronto para receber os clipes; a coleta é o
+gargalo (§9 do plano), não ele.
 
 ---
 
 ## 8. Entregáveis
 
-- Acurácia signer-independent média + matriz de confusão.
-- Decisão de ir/não-ir para o MVP (critério §6).
+- Acurácia signer-independent média + matriz de confusão → `results/relatorio.md`
+  e `results/confusion_matrix.png`.
+- Decisão de ir/não-ir para o MVP (critério §6), impressa e registrada no relatório.
 - **Dataset de landmarks próprio** (reutilizável no MVP e no pipeline de produto).
-- Lista de sinais problemáticos identificados, se houver.
+- Lista de sinais problemáticos identificados, na seção "Sinais problemáticos" do
+  relatório.
 
 ---
 

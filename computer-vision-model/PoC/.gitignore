@@ -3,9 +3,12 @@ data/raw/*
 data/landmarks/*
 !data/**/.gitkeep
 
-# Resultados gerados
+# Resultados gerados: o relatório e a matriz de confusão SÃO entregáveis (§10) e
+# podem ser versionados; cache de distâncias e predições clipe a clipe, não.
 results/*
 !results/.gitkeep
+!results/relatorio.md
+!results/confusion_matrix.png
 
 # Python
 __pycache__/

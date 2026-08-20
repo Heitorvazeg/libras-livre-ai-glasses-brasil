@@ -1,8 +1,9 @@
 # Configuração da PoC signer-independent.
 # Um único lugar para vocabulário, participantes, caminhos e parâmetros.
+# Todos os scripts em src/ leem daqui (src/config.py) — não duplique constantes no código.
 
-# Vocabulário fechado da PoC: 10-15 sinais isolados.
-# DEFINIR a lista final com apoio de consultor de Libras ANTES de gravar (§2).
+# Vocabulário fechado da PoC: 10-15 sinais isolados (§3 do plano).
+# DEFINIR a lista final com apoio de consultor de Libras ANTES de gravar.
 # Incluir de propósito sinais com configuracoes de mao/movimentos variados.
 vocabulario:
   - ola
@@ -17,8 +18,8 @@ vocabulario:
   - documento
   # - ... (complete até 10-15 com o consultor de Libras)
 
-# Participantes esperados (mín. 5, ideal 8). Usado só para conferência/relatório;
-# a fonte de verdade é o campo "pessoa" no nome de cada clipe.
+# Metas de coleta (§4). Usadas para conferir cobertura do dataset no relatório;
+# a fonte de verdade é sempre o nome do arquivo de cada clipe.
 participantes_esperados: 6
 repeticoes_por_sinal: 5
 
@@ -27,8 +28,8 @@ paths:
   landmarks: data/landmarks
   results: results
 
-# Subconjunto de pose extraído do Holistic (índices MediaPipe Pose).
-# Contexto de tronco/cabeça sem inflar dimensionalidade (§5.2).
+# Subconjunto de pose extraído do Holistic (índices MediaPipe Pose), na ordem em
+# que entram no vetor do frame. Contexto de tronco/cabeça sem inflar dimensionalidade (§5.2).
 pose_indices:
   nariz: 0
   ombro_esq: 11
@@ -38,21 +39,31 @@ pose_indices:
   pulso_esq: 15
   pulso_dir: 16
 
-# Referência de normalização (§5.2): ponto medio entre os ombros, escala = dist. ombros.
+# Normalização (§5.2): origem = ponto médio entre os ombros, escala = distância entre eles.
 normalizacao:
-  ref_a: 11   # ombro esquerdo
-  ref_b: 12   # ombro direito
+  ref_a: 11              # ombro esquerdo
+  ref_b: 12              # ombro direito
+  usar_z: true           # inclui a coordenada z dos landmarks no vetor do frame
+  min_visibilidade: 0.5  # descarta o frame se um dos ombros estiver abaixo disso
 
 holistic:
   model_complexity: 1
   min_detection_confidence: 0.5
   min_tracking_confidence: 0.5
 
-# Opcional — classificador treinado (§5.5). Só depois do DTW medido.
-nn:
-  habilitado: false
-  unidades: 64
-  camadas: 2
-  epochs: 40
-  batch_size: 16
-  seed: 42
+gravacao:
+  fps_fallback: 30       # usado quando a câmera não reporta FPS confiável
+  duracao_minima_s: 0.5  # avisa se o clipe sair curto demais para conter o sinal
+
+dtw:
+  backend: auto          # auto | dtaidistance | fastdtw
+  janela: null           # banda de Sakoe-Chiba (nº de frames); null = DTW sem restrição
+  normalizar_por_comprimento: false  # divide a distância pelo nº de frames alinhados
+  paralelo: true         # usa múltiplos núcleos no backend dtaidistance
+
+# Critério de decisão do §6.3, definido ANTES de rodar o experimento.
+avaliacao:
+  limiar_verde: 0.80
+  limiar_atencao: 0.60
+
+# §5.5 (GRU/MLP treinado) está FORA do escopo desta PoC — ver src/nn_classifier.py.

@@ -12,5 +12,6 @@ models/*.tflite
 __pycache__/
 *.py[cod]
 .venv/
+.venv311/
 venv/
 .ipynb_checkpoints/
