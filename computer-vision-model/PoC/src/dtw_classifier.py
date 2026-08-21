@@ -94,9 +94,15 @@ def carregar_dataset(lm_dir: Path | None = None, cfg: Config | None = None) -> l
     return clips
 
 
+_BACKENDS_VALIDOS = {"auto", "dtaidistance", "fastdtw"}
+
+
 def escolher_backend(cfg: Config) -> str:
     """Resolve dtw.backend='auto' para o melhor backend disponível."""
     pedido = (cfg.dtw.get("backend") or "auto").lower()
+    if pedido not in _BACKENDS_VALIDOS:
+        raise SystemExit(
+            f"dtw.backend={pedido!r} inválido no config.yaml — use um de {sorted(_BACKENDS_VALIDOS)}")
     if pedido == "dtaidistance" and not _TEM_DTAI:
         raise SystemExit(f"backend dtaidistance indisponível ({_DTAI_ERRO}) — "
                          "instale-o ou use dtw.backend: fastdtw no config.yaml")
@@ -128,18 +134,33 @@ def dtw_dist(a: np.ndarray, b: np.ndarray, cfg: Config, backend: str | None = No
              max_dist: float | None = None) -> float:
     """Distância DTW entre duas sequências (frames × features).
 
-    `max_dist` é um corte de poda: se a distância já passou desse valor, o
-    backend pode abortar e devolver inf. Como só interessa o vizinho MAIS
-    próximo, podar com a melhor distância encontrada até agora não muda o
-    resultado do 1-NN.
+    `max_dist` é um corte de poda EXATO (branch-and-bound dentro do próprio
+    DTW): se nenhum alinhamento consegue ficar abaixo desse valor, o backend
+    aborta e devolve inf. Como só interessa o vizinho MAIS próximo, podar com a
+    melhor distância encontrada até agora não muda o resultado do 1-NN.
+
+    NUNCA usar `use_pruning=True` do dtaidistance: ele calcula esse corte
+    sozinho via um limite superior euclidiano que assume sequências do MESMO
+    comprimento. Como aqui os clipes quase sempre têm número de frames
+    diferente (pessoas sinalizam em velocidades diferentes), esse cálculo
+    automático quebra e devolve inf mesmo para pares praticamente idênticos —
+    reproduzido: TODO par com comprimentos distintos testado deu inf, mesmo com
+    uma diferença de poucos frames. A poda só é segura quando o valor de
+    `max_dist` vem explicitamente DESTA função (o `if d < melhor` do 1-NN).
     """
     backend = backend or escolher_backend(cfg)
     janela = cfg.dtw.get("janela")
+    fator = _fator_comprimento(a, b, cfg)
     if backend == "dtaidistance":
-        d = dtw_ndim.distance_fast(a, b, window=janela, max_dist=max_dist, use_pruning=True)
+        # max_dist chega em escala já normalizada (dividida pelo fator do par
+        # anterior); o backend compara contra a distância BRUTA, então convertemos
+        # para a escala bruta do PAR ATUAL antes de usar como corte.
+        max_dist_bruto = max_dist * fator if max_dist is not None else None
+        d = dtw_ndim.distance_fast(a, b, window=janela, max_dist=max_dist_bruto,
+                                   use_pruning=False)
     else:
         d, _ = fastdtw(a, b, radius=janela if janela else 1, dist=euclidean)
-    return float(d) / _fator_comprimento(a, b, cfg)
+    return float(d) / fator
 
 
 def matriz_distancias(clips: list[Clip], cfg: Config, verboso: bool = True) -> np.ndarray:
@@ -180,11 +201,18 @@ def matriz_distancias(clips: list[Clip], cfg: Config, verboso: bool = True) -> n
 
 
 def assinatura_dataset(clips: list[Clip], cfg: Config) -> str:
-    """Hash do dataset + parâmetros de DTW, para invalidar cache de forma segura."""
+    """Hash do dataset + parâmetros de DTW, para invalidar cache de forma segura.
+
+    Hashea o conteúdo INTEIRO de cada clipe, não uma amostra — um subconjunto de
+    frames (ex.: só 8 por clipe) deixa a maior parte do array fora do hash, e
+    reprocessar um clipe com correção de bug ou normalização diferente pode
+    manter um cache obsoleto sem que nada avise. O dataset da PoC é pequeno o
+    bastante (dezenas de MB) para o SHA1 do conteúdo completo ser instantâneo.
+    """
     h = hashlib.sha1()
     for c in clips:
         h.update(f"{c.nome}:{c.seq.shape}".encode())
-        h.update(np.ascontiguousarray(c.seq[:: max(1, len(c.seq) // 8)]).tobytes())
+        h.update(np.ascontiguousarray(c.seq).tobytes())
     h.update(repr(sorted(cfg.dtw.items())).encode())
     h.update(escolher_backend(cfg).encode())
     return h.hexdigest()[:16]

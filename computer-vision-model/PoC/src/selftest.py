@@ -32,7 +32,7 @@ import numpy as np
 
 import evaluate
 from config import load_config
-from dtw_classifier import (DTWClassifier, carregar_dataset, dtw_dist,
+from dtw_classifier import (Clip, DTWClassifier, carregar_dataset, dtw_dist,
                             escolher_backend, matriz_distancias, parse_nome)
 from extract import extrair_video, frame_normalizado
 
@@ -198,6 +198,36 @@ def teste_1nn_e_matriz():
         assert np.allclose(np.diag(m), 0), "diagonal deveria ser zero"
 
 
+def teste_1nn_comprimentos_diferentes():
+    """1-NN precisa achar o vizinho certo mesmo quando ele tem outro nº de frames.
+
+    Regressão de um bug real: `use_pruning=True` do dtaidistance calcula seu
+    próprio corte via limite euclidiano, que só funciona para sequências do
+    MESMO comprimento — para comprimentos diferentes ele devolvia inf mesmo
+    para pares praticamente idênticos, fazendo o 1-NN preferir um vizinho ERRADO
+    só por coincidência de tamanho. Este teste é construído para não passar por
+    acidente: o vizinho certo tem um nº de frames diferente do alvo, e o
+    primeiro item da lista de referência é um vizinho errado — se a poda voltar
+    a quebrar, isto falha (ao contrário de um dataset genérico, onde o vazamento
+    pode passar despercebido por coincidência de ordenação).
+    """
+    rng = np.random.default_rng(21)
+    alvo = np.ascontiguousarray(rng.random((40, CFG.num_pontos * CFG.dims)) + 1000, dtype=np.double)
+
+    errado_mesmo_len = Clip("02", "ERRADO", "01",
+                            np.ascontiguousarray(rng.random(alvo.shape) + 2000, dtype=np.double))
+    certo_outro_len = Clip("03", "CERTO", "01",
+                           np.ascontiguousarray(alvo[:37] + 0.001, dtype=np.double))  # 37 != 40
+
+    for referencia in ([errado_mesmo_len, certo_outro_len], [certo_outro_len, errado_mesmo_len]):
+        clf = DTWClassifier(referencia, cfg=CFG)
+        r = clf.prever(alvo)
+        assert np.isfinite(r.distancia), "vizinho de comprimento diferente virou inf (poda incorreta)"
+        assert r.sinal == "CERTO", (
+            f"1-NN escolheu {r.sinal!r} em vez do vizinho certo de comprimento diferente "
+            "— regressão do bug de poda do dtaidistance")
+
+
 def teste_loso_completo():
     """Roda evaluate de ponta a ponta e confere métrica e artefatos do §10."""
     tmp = Path(tempfile.mkdtemp())
@@ -294,6 +324,7 @@ TESTES = [
     ("convenção de nome dos clipes", teste_convencao_de_nome),
     ("DTW básico (§5.3)", teste_dtw_basico),
     ("1-NN e matriz de distâncias", teste_1nn_e_matriz),
+    ("1-NN com comprimentos diferentes (regressão)", teste_1nn_comprimentos_diferentes),
     ("leave-one-signer-out completo (§5.4)", teste_loso_completo),
     ("controle negativo (ruído reprova)", teste_controle_negativo),
     ("LOSO exige ≥2 sinalizantes", teste_loso_exige_dois_sinalizantes),

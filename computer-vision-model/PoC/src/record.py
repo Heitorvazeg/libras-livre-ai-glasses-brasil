@@ -66,63 +66,68 @@ def gravar(pessoa: str, sinal: str, camera: int, cfg) -> None:
           "(docs/consentimento.md).")
     print("[record] ESPAÇO = iniciar/parar | D = descartar último | Q = sair")
 
-    while True:
-        ok, frame = cap.read()
-        if not ok:
-            print("[record] a câmera parou de entregar frames.")
-            break
+    try:
+        while True:
+            ok, frame = cap.read()
+            if not ok:
+                print("[record] a câmera parou de entregar frames.")
+                break
 
-        if gravando and writer is not None:
-            writer.write(frame)
+            if gravando and writer is not None:
+                writer.write(frame)
 
-        vis = frame.copy()
-        if gravando:
-            estado, cor = f"REC rep{rep:02d}  {time.perf_counter() - t0:4.1f}s", (0, 0, 255)
-        else:
-            estado, cor = f"pronto (rep{rep:02d} de {alvo})", (0, 200, 0)
-        cv2.putText(vis, f"{pessoa} / {sinal}   {estado}", (12, 30),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.7, cor, 2)
-        cv2.putText(vis, "ESPACO grava/para   D descarta   Q sai", (12, h - 16),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, (220, 220, 220), 1)
-        cv2.imshow("record — PoC Libras", vis)
-
-        tecla = cv2.waitKey(1) & 0xFF
-        if tecla == TECLA_GRAVAR:
-            if not gravando:
-                destino = raw_dir / f"pessoa{pessoa}_sinal-{sinal}_rep{rep:02d}.mp4"
-                writer = cv2.VideoWriter(str(destino), fourcc, fps, (w, h))
-                if not writer.isOpened():
-                    raise SystemExit(f"não consegui abrir o arquivo de saída {destino}")
-                gravando, t0 = True, time.perf_counter()
-                print(f"[record] gravando -> {destino.name}")
+            vis = frame.copy()
+            if gravando:
+                estado, cor = f"REC rep{rep:02d}  {time.perf_counter() - t0:4.1f}s", (0, 0, 255)
             else:
-                duracao = time.perf_counter() - t0
-                gravando = False
-                if writer is not None:
-                    writer.release()
-                    writer = None
-                if duracao < dur_min:
-                    print(f"[record] ⚠ clipe de {duracao:.1f}s (< {dur_min}s) — "
-                          "provavelmente curto demais; use D para descartar e refazer.")
-                print(f"[record] salvo rep{rep:02d} ({duracao:.1f}s)")
-                ultimo_salvo, rep = destino, rep + 1
-                if rep > alvo:
-                    print(f"[record] alvo de {alvo} repetições atingido para {sinal}.")
-        elif tecla == TECLA_DESCARTAR and not gravando:
-            if ultimo_salvo is not None and ultimo_salvo.exists():
-                ultimo_salvo.unlink()
-                print(f"[record] descartado {ultimo_salvo.name}")
-                rep, ultimo_salvo = rep - 1, None
-            else:
-                print("[record] nada para descartar.")
-        elif tecla == TECLA_SAIR:
-            break
+                estado, cor = f"pronto (rep{rep:02d} de {alvo})", (0, 200, 0)
+            cv2.putText(vis, f"{pessoa} / {sinal}   {estado}", (12, 30),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.7, cor, 2)
+            cv2.putText(vis, "ESPACO grava/para   D descarta   Q sai", (12, h - 16),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.5, (220, 220, 220), 1)
+            cv2.imshow("record — PoC Libras", vis)
 
-    if writer is not None:
-        writer.release()
-        print("[record] ⚠ saída durante uma gravação — o último clipe pode estar incompleto.")
-    cap.release()
-    cv2.destroyAllWindows()
+            tecla = cv2.waitKey(1) & 0xFF
+            if tecla == TECLA_GRAVAR:
+                if not gravando:
+                    destino = raw_dir / f"pessoa{pessoa}_sinal-{sinal}_rep{rep:02d}.mp4"
+                    writer = cv2.VideoWriter(str(destino), fourcc, fps, (w, h))
+                    if not writer.isOpened():
+                        raise SystemExit(f"não consegui abrir o arquivo de saída {destino}")
+                    gravando, t0 = True, time.perf_counter()
+                    print(f"[record] gravando -> {destino.name}")
+                else:
+                    duracao = time.perf_counter() - t0
+                    gravando = False
+                    if writer is not None:
+                        writer.release()
+                        writer = None
+                    if duracao < dur_min:
+                        print(f"[record] ⚠ clipe de {duracao:.1f}s (< {dur_min}s) — "
+                              "provavelmente curto demais; use D para descartar e refazer.")
+                    print(f"[record] salvo rep{rep:02d} ({duracao:.1f}s)")
+                    ultimo_salvo, rep = destino, rep + 1
+                    if rep > alvo:
+                        print(f"[record] alvo de {alvo} repetições atingido para {sinal}.")
+            elif tecla == TECLA_DESCARTAR and not gravando:
+                if ultimo_salvo is not None and ultimo_salvo.exists():
+                    ultimo_salvo.unlink()
+                    print(f"[record] descartado {ultimo_salvo.name}")
+                    rep, ultimo_salvo = rep - 1, None
+                else:
+                    print("[record] nada para descartar.")
+            elif tecla == TECLA_SAIR:
+                break
+    finally:
+        # garante liberar câmera/arquivo mesmo em Ctrl+C ou erro no meio da gravação —
+        # sem isso a câmera fica presa para o próximo processo e o .mp4 pode ficar
+        # sem o rodapé do container (moov atom), tornando-o ilegível.
+        if writer is not None:
+            writer.release()
+            print("[record] ⚠ interrompido durante uma gravação — o último clipe pode estar incompleto.")
+        cap.release()
+        cv2.destroyAllWindows()
+
     total = len(list(raw_dir.glob(f"pessoa{pessoa}_sinal-{sinal}_rep*.mp4")))
     print(f"[record] fim: {total} clipe(s) de {pessoa}/{sinal} em {raw_dir}")
 
