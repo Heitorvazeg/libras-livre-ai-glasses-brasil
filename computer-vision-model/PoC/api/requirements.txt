@@ -1,0 +1,5 @@
+# Dependências extras da API de validação (além das da PoC em ../requirements.txt).
+# A lógica de classificação (mediapipe/numpy/dtaidistance) vem de lá; aqui é só o HTTP.
+fastapi>=0.111,<1
+uvicorn[standard]>=0.30,<1
+httpx>=0.27          # usado por test_api.py (TestClient) para exercitar o endpoint

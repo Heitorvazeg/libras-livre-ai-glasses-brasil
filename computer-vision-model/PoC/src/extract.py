@@ -45,16 +45,15 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
-import cv2
 import numpy as np
 
 from config import load_config
 
-try:
-    import mediapipe as mp
-except ImportError as e:  # pragma: no cover
-    raise SystemExit("mediapipe não instalado — rode: pip install -r requirements.txt") from e
-
+# cv2 e mediapipe são importados SOB DEMANDA (dentro das funções que os usam), não
+# no topo: assim `from extract import frame_normalizado` — que é numpy puro — funciona
+# sem a stack pesada de visão instalada. É o que permite a API de validação
+# (api/server.py) reusar a normalização sem depender de mediapipe/opencv, já que a
+# extração de landmarks acontece no app, não no servidor.
 N_HAND = 21
 
 
@@ -103,6 +102,7 @@ def frame_normalizado(results, w: int, h: int, cfg) -> np.ndarray | None:
 
 def extrair_video(caminho: Path, holistic, cfg) -> tuple[np.ndarray, int]:
     """Devolve (sequência normalizada, nº de frames descartados) de um vídeo."""
+    import cv2  # import sob demanda: só a extração de vídeo precisa de opencv
     cap = cv2.VideoCapture(str(caminho))
     if not cap.isOpened():
         raise RuntimeError(f"não consegui abrir o vídeo {caminho}")
@@ -149,6 +149,11 @@ def main() -> None:
             raise SystemExit(f"--particao: use o formato i/N, ex.: 1/4 (veio {args.particao!r})")
         if not 1 <= fatia <= n_fatias:
             raise SystemExit(f"--particao: i precisa estar entre 1 e N (veio {args.particao})")
+
+    try:
+        import mediapipe as mp
+    except ImportError as e:
+        raise SystemExit("mediapipe não instalado — rode: pip install -r requirements.txt") from e
 
     cfg = load_config()
     raw_dir, lm_dir = cfg.path("raw_videos"), cfg.path("landmarks")
