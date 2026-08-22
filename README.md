@@ -85,6 +85,23 @@ treinar rede nenhuma, e aplica um **critério de ir/não-ir** definido antes de 
 ➡️ [`computer-vision-model/PoC/`](./computer-vision-model/PoC) — o pipeline
 completo de treino só vale o investimento depois que a PoC der **sinal verde**.
 
+### E os vídeos, de onde vêm?
+
+De duas bases públicas de Libras — **MINDS-Libras** e **V-LIBRASIL** —, integradas
+em [`computer-vision-model/datasets/`](./computer-vision-model/datasets). O
+vocabulário do projeto (10 sinais) foi escolhido por um critério só: **os sinais
+que existem nas duas bases**, e que por isso chegam com **11 pessoas diferentes
+cada** — o insumo exato de que a PoC precisa.
+
+```
+acontecer   amarelo   banheiro   barulho   espelho
+filho       maca      medo       ruim      sapo
+```
+
+Um script baixa só os clipes escolhidos (430 de ~5 mil, sem baixar os 58 GB dos
+dois pacotes) e os renomeia para a convenção do pipeline. Os vídeos não entram no
+git: o que fica versionado é a receita para reproduzi-los.
+
 ---
 
 ## Por onde começar
@@ -103,8 +120,13 @@ a passo de execução.
 
 - ✅ App base (conexão com os óculos, câmera, gravação) — herdado do sample da Meta.
 - ✅ Estrutura da trilha de IA montada (extração de landmarks + modelo raso + export).
-- 🎯 **Foco atual: a PoC signer-independent** (`computer-vision-model/PoC/`) —
-  scaffold pronto (Holistic + DTW + leave-one-signer-out), aguardando a coleta com
-  5–8 participantes para rodar e aplicar o critério de decisão.
+- ✅ Dataset integrado: 10 sinais × 11 pessoas vindos das bases públicas
+  (`computer-vision-model/datasets/`), no lugar da espera pela coleta própria.
+- ✅ **PoC executada:** 430 clipes → 70,0% (🟡) no dataset completo, **85,7%** no
+  recorte sem o degrau entre as duas bases e sem os rótulos ainda não validados
+  (`computer-vision-model/PoC/results/relatorio.md`).
+- 🎯 **Foco atual: destravar o amarelo.** Nesta ordem: validar 3 rótulos com
+  consultor de Libras (~10 pontos), e coleta própria no setup de balcão — as
+  bases públicas são estúdio, e mesmo o número bom é teto otimista.
 - 🚧 A integração (landmarks no app → classificador → fronteiras entre sinais → voz)
   fica para depois da PoC dar sinal verde.

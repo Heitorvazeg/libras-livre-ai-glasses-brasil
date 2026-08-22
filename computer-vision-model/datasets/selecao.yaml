@@ -1,0 +1,79 @@
+# Seleção de sinais das bases públicas de Libras usadas pela PoC.
+#
+# Critério (definido em README.md §2): ficaram os sinais que existem NAS DUAS
+# bases — assim cada sinal chega com 8 sinalizadores da MINDS-Libras + 3
+# articuladores da V-LIBRASIL = 11 pessoas diferentes por sinal, que é o que a
+# avaliação leave-one-signer-out consome.
+#
+# Esta lista é a fonte de verdade da ingestão. O vocabulário em
+# ../PoC/config.yaml precisa conter exatamente estes 10 rótulos — ingest.py
+# confere e avisa se divergirem.
+
+destino: ../PoC/data/raw
+
+fontes:
+  minds:
+    kaggle: j0aopsantos/minds-libras
+    # 20 sinais × 8 sinalizadores × 5 repetições = 800 clipes (~48 GB no bundle).
+    # Nome do arquivo: "01AcontecerSinalizador05-3.mp4" -> sinal, pessoa 05, rep 3.
+    prefixo_pessoa: M
+  vlibrasil:
+    kaggle: davimedio01/v-librasil
+    # 1.364 sinais × 3 articuladores × 1 execução = 4.088 clipes (~11 GB).
+    # Nome do arquivo: "videos UFPE (V-LIBRASIL)/data/Ruim_Articulador2.mp4".
+    prefixo_pessoa: V
+
+sinais:
+  # validado: true  -> o mesmo rótulo nas duas bases
+  # validado: false -> rótulos diferentes que aparentam ser o mesmo sinal;
+  #                    precisa de conferência de consultor de Libras (README §3)
+  - sinal: acontecer
+    minds: Acontecer
+    vlibrasil: Acontecer
+    validado: true
+  - sinal: amarelo
+    minds: Amarelo
+    vlibrasil: Amarelo
+    validado: true
+  - sinal: banheiro
+    minds: Banheiro
+    vlibrasil: Banheiro
+    validado: true
+  - sinal: barulho
+    minds: Barulho
+    vlibrasil: Barulho
+    validado: true
+  - sinal: espelho
+    minds: Espelho
+    vlibrasil: Espelho
+    validado: true
+  - sinal: filho
+    minds: Filho
+    vlibrasil: Filho
+    validado: true
+  - sinal: ruim
+    minds: Ruim
+    vlibrasil: Ruim
+    validado: true
+  - sinal: maca            # maçã (a fruta)
+    minds: Maca
+    vlibrasil: "Maçã (rosto)"
+    validado: false
+    nota: >-
+      A V-LIBRASIL registra a variante articulada no rosto; a MINDS não
+      especifica a variante no rótulo. Conferir se são a mesma antes de tratar
+      os clipes das duas bases como a mesma classe.
+  - sinal: medo
+    minds: Medo
+    vlibrasil: Com medo
+    validado: false
+    nota: >-
+      "Medo" (MINDS) e "Com medo" (V-LIBRASIL) são rótulos diferentes para o que
+      parece ser o mesmo sinal. Conferir com consultor de Libras.
+  - sinal: sapo
+    minds: Sapo
+    vlibrasil: Rã (sapo)
+    validado: false
+    nota: >-
+      A V-LIBRASIL usa "Rã (sapo)". Rã e sapo podem ter sinais distintos
+      dependendo da variante regional. Conferir antes de usar as duas juntas.

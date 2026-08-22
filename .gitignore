@@ -3,6 +3,9 @@ data/raw/*
 data/landmarks/*
 !data/**/.gitkeep
 
+# Índice dos .zip remotos do Kaggle (regenerável) — computer-vision-model/datasets/
+.cache/
+
 # Artefatos treinados
 models/*.keras
 models/*.tflite

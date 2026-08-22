@@ -3,10 +3,21 @@
 
 # Vocabulário de palavras/sinais isolados. A ordem define o índice de classe
 # que o .tflite devolve e que o app mapeia de volta para texto.
-# PoC: comece com 1-2 itens (§1.1).
+#
+# Mesma lista da PoC (PoC/config.yaml) e da seleção de vídeos públicos em
+# datasets/selecao.yaml: são os 10 sinais que existem tanto na MINDS-Libras
+# quanto na V-LIBRASIL, ou seja, os que chegam com 11 pessoas diferentes cada.
 vocabulario:
-  - dor
-  - cabeca
+  - acontecer
+  - amarelo
+  - banheiro
+  - barulho
+  - espelho
+  - filho
+  - maca        # maçã (a fruta)
+  - medo
+  - ruim
+  - sapo
 
 paths:
   raw_videos: data/raw
@@ -15,7 +26,13 @@ paths:
   tflite_out: models/sinal_classifier.tflite
 
 landmarks:
-  max_num_hands: 1        # PoC usa 1 mão -> 21 pontos x (x,y,z) = 63 valores
+  # ATENÇÃO: parte dos 10 sinais do vocabulário é articulada com as DUAS mãos
+  # (ex.: barulho, espelho). Este pipeline ainda está em 1 mão porque
+  # src/data/landmark_extraction.py concatena as mãos detectadas num vetor de
+  # tamanho variável — com max_num_hands: 2 os frames saem com 63 ou 126 valores
+  # conforme a detecção. Corrigir lá (posição fixa por mão, zeros na ausente,
+  # como a PoC já faz) ANTES de subir este número.
+  max_num_hands: 1        # 1 mão -> 21 pontos x (x,y,z) = 63 valores
   num_pontos_por_mao: 21
   dims: 3                 # x, y, z
 

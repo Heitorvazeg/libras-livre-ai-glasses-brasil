@@ -30,6 +30,44 @@ está à frente da câmera (ver [`docs/libras-livre-arquitetura.md`](../docs/lib
 ➡️ **O pipeline abaixo só vale o investimento depois que a PoC der sinal verde
 (≥ 80%).** Detalhes e passo a passo em [`PoC/README.md`](./PoC/README.md).
 
+**Estado: a PoC rodou.** 430 clipes, 11 pessoas, 10 sinais →
+**70,0% (🟡 zona de atenção)** no dataset completo e **85,7%** no recorte sem o
+degrau entre as duas bases e sem os rótulos ainda não validados. O que separa um
+número do outro está em [`PoC/README.md`](./PoC/README.md) §6.4 — e decide o
+próximo passo melhor que a média sozinha.
+
+---
+
+## 📼 De onde vêm os vídeos — [`datasets/`](./datasets)
+
+O dataset da PoC **não** foi gravado: ele é um recorte de duas bases públicas de
+Libras — **MINDS-Libras** e **V-LIBRASIL** —, integradas por
+[`datasets/ingest.py`](./datasets/ingest.py). O critério de seleção foi um só:
+ficaram os **10 sinais que existem nas duas bases**, e por isso chegam com
+**11 pessoas diferentes cada** (8 sinalizadores da MINDS + 3 articuladores da
+V-LIBRASIL, 430 clipes). Pessoas por sinal é exatamente o que a avaliação
+leave-one-signer-out consome.
+
+Esse é o vocabulário em `config.yaml` e em `PoC/config.yaml`:
+
+```
+acontecer   amarelo   banheiro   barulho   espelho
+filho       maca      medo       ruim      sapo
+```
+
+Os vídeos não são versionados (24 GB, e a licença da V-LIBRASIL não permite
+redistribuição) — o que fica no git é a receita para reproduzi-los:
+
+```bash
+cd datasets && python ingest.py --listar   # cobertura, sem baixar nada
+cd datasets && python ingest.py --reps 1   # 11 pessoas × 10 sinais, ~5 GB
+```
+
+⚠️ Estas bases foram gravadas em condição controlada (a V-LIBRASIL com *chroma
+key*), que **não** é o balcão do cenário de produto: a acurácia medida sobre elas
+é um teto otimista. As ressalvas todas estão em
+[`datasets/README.md`](./datasets/README.md) §6.
+
 ---
 
 ## 1. Contexto — o que este projeto resolve
@@ -115,8 +153,10 @@ inteiro ponta a ponta, depois liga a B trocando `fase: B` no `config.yaml`.
 modelos pré-treinados em outras línguas de sinais por esqueleto (ex.: **SAM-SLR**).
 A estratégia é reaproveitar o *backbone* temporal e treinar só a cabeça de
 classificação com seus sinais — reduz a quantidade de dados necessária por classe.
-⚠️ *Licenciamento:* WLASL é C-UDA (uso acadêmico, sem comercial); MINDS-Libras e
-V-LIBRASIL exigem autorização. Verifique antes de usar.
+⚠️ *Licenciamento:* WLASL é C-UDA (uso acadêmico, sem comercial); a V-LIBRASIL
+é CC BY-NC-ND 4.0 (uso de pesquisa/educação, sem uso comercial, sem
+redistribuição) e a cópia da MINDS-Libras no Kaggle é declarada MIT. Confira os
+termos na fonte antes de usar — detalhes em [`datasets/README.md`](./datasets/README.md) §1.
 
 ### 2.4 Por que `.tflite` (e quantização)
 
@@ -165,6 +205,13 @@ computer-vision-model/
 ├── config.yaml            ⭐ vocabulário, caminhos e hiperparâmetros num lugar só
 ├── requirements.txt       mediapipe, opencv, tensorflow, pyyaml, scikit-learn
 │
+├── datasets/              ⭐ seleção e ingestão dos vídeos públicos (MINDS + V-LIBRASIL)
+│   ├── selecao.yaml       os 10 sinais e o arquivo correspondente em cada base
+│   ├── ingest.py          baixa os clipes escolhidos e renomeia p/ a convenção da PoC
+│   ├── remote_zip.py      lê um .zip remoto por HTTP Range (sem baixar 47 GB)
+│   ├── selftest.py        validação offline da receita de ingestão
+│   └── manifest.csv       um registro por clipe (origem → destino, bytes, estado)
+│
 ├── data/
 │   ├── raw/               vídeos brutos            (não versionado)
 │   └── landmarks/         .npy extraídos           (não versionado)
@@ -201,7 +248,9 @@ módulo tem vocabulário ou hiperparâmetro hardcoded.
 python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 
-# 1) grave vídeos em data/raw (1 sinal isolado por arquivo — ver data/README.md)
+# 1) traga os vídeos para data/raw — 1 sinal isolado por arquivo (ver data/README.md).
+#    Bases públicas:  cd datasets && python ingest.py --reps 1
+#    Coleta própria:  cd PoC && python src/record.py --pessoa 03 --sinal ajuda
 python scripts/01_extract_landmarks.py   # data/raw      -> data/landmarks
 python scripts/02_train.py               # data/landmarks -> models/*.keras
 python scripts/03_export_tflite.py       # models/*.keras -> models/sinal_classifier.tflite

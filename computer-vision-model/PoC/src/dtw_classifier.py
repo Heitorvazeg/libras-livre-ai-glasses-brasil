@@ -88,6 +88,18 @@ def carregar_dataset(lm_dir: Path | None = None, cfg: Config | None = None) -> l
         arr = np.load(f)  # (num_frames, num_pontos, dims)
         if arr.ndim != 3:
             raise ValueError(f"{f.name}: esperava (frames, pontos, dims), veio {arr.shape}")
+        if arr.shape[1] != cfg.num_pontos:
+            raise ValueError(f"{f.name}: {arr.shape[1]} pontos por frame, config pede "
+                             f"{cfg.num_pontos} — reextraia com o config atual.")
+        # Descartar z é só ignorar a última coordenada: assim `normalizacao.usar_z:
+        # false` (o primeiro botão a testar na zona amarela, §5.2) passa a valer na
+        # hora, sem reextrair horas de vídeo. O caminho contrário não existe — z que
+        # não foi extraído não dá para inventar aqui.
+        if arr.shape[2] > cfg.dims:
+            arr = arr[:, :, : cfg.dims]
+        elif arr.shape[2] < cfg.dims:
+            raise ValueError(f"{f.name}: extraído com {arr.shape[2]} dims, config pede "
+                             f"{cfg.dims} — reextraia com normalizacao.usar_z ligado.")
         seq = arr.reshape(arr.shape[0], -1)
         # dtaidistance exige double contíguo; fastdtw também trabalha em float.
         clips.append(Clip(pessoa, sinal, rep, np.ascontiguousarray(seq, dtype=np.double)))

@@ -2,25 +2,36 @@
 # Um único lugar para vocabulário, participantes, caminhos e parâmetros.
 # Todos os scripts em src/ leem daqui (src/config.py) — não duplique constantes no código.
 
-# Vocabulário fechado da PoC: 10-15 sinais isolados (§3 do plano).
-# DEFINIR a lista final com apoio de consultor de Libras ANTES de gravar.
-# Incluir de propósito sinais com configuracoes de mao/movimentos variados.
+# Vocabulário fechado da PoC: 10 sinais isolados (§3 do plano).
+#
+# Estes 10 sinais NÃO foram escolhidos por relevância de atendimento: são os
+# sinais que existem NAS DUAS bases públicas de Libras integradas ao repositório
+# (MINDS-Libras e V-LIBRASIL), o que dá 11 pessoas diferentes por sinal — que é
+# exatamente o que a avaliação leave-one-signer-out consome. Ver
+# ../datasets/README.md e ../datasets/selecao.yaml (a lista abaixo tem que ser
+# igual à seleção de lá; `ingest.py` confere).
+#
+# O vocabulário de produto (ola, ajuda, dor, marcar-consulta...) volta quando
+# houver coleta própria — a pergunta desta PoC é sobre generalização entre
+# pessoas, e ela pode ser respondida com qualquer vocabulário variado o bastante.
 vocabulario:
-  - ola
-  - ajuda
-  - marcar-consulta
-  - sim
-  - nao
-  - dor
-  - obrigado
-  - por-favor
-  - esperar
-  - documento
-  # - ... (complete até 10-15 com o consultor de Libras)
+  - acontecer
+  - amarelo
+  - banheiro
+  - barulho
+  - espelho
+  - filho
+  - maca        # maçã (a fruta)
+  - medo
+  - ruim
+  - sapo
 
 # Metas de coleta (§4). Usadas para conferir cobertura do dataset no relatório;
 # a fonte de verdade é sempre o nome do arquivo de cada clipe.
-participantes_esperados: 6
+# 8 sinalizadores da MINDS-Libras + 3 articuladores da V-LIBRASIL = 11 pessoas.
+# A V-LIBRASIL traz 1 execução por pessoa; a MINDS, 5 — daí o piso de 5 ficar
+# valendo só para a parte MINDS do dataset.
+participantes_esperados: 11
 repeticoes_por_sinal: 5
 
 paths:
@@ -43,7 +54,13 @@ pose_indices:
 normalizacao:
   ref_a: 11              # ombro esquerdo
   ref_b: 12              # ombro direito
-  usar_z: true           # inclui a coordenada z dos landmarks no vetor do frame
+  # MEDIDO (src/diagnostico.py --varredura, 430 clipes): desligar o z melhora em
+  # ~4-6 pontos em todos os recortes (64,0% -> 68,7% no dataset completo). O z das
+  # mãos é relativo ao punho e o de pose ao quadril — referenciais diferentes
+  # somados no mesmo vetor entram como ruído. Os .npy continuam sendo extraídos
+  # com 3 dims; carregar_dataset descarta a última na leitura, então voltar atrás
+  # é só trocar para true (não precisa reextrair).
+  usar_z: false          # inclui a coordenada z dos landmarks no vetor do frame
   min_visibilidade: 0.5  # descarta o frame se um dos ombros estiver abaixo disso
 
 holistic:
@@ -57,7 +74,13 @@ gravacao:
 
 dtw:
   backend: auto          # auto | dtaidistance | fastdtw
-  janela: null           # banda de Sakoe-Chiba (nº de frames); null = DTW sem restrição
+  # MEDIDO (--varredura): 20 frames foi o melhor entre null/10/20/40 (68,7% ->
+  # 70,0% no dataset completo, 85,7% no recorte MINDS + rótulos validados). A
+  # banda impede que o alinhamento estique um trecho curto sobre um sinal
+  # inteiro, e ainda deixa o cálculo mais rápido.
+  janela: 20             # banda de Sakoe-Chiba (nº de frames); null = DTW sem restrição
+  # MEDIDO (--varredura): ligar isto PIORA em todos os recortes (70,0% -> 64,5%
+  # na melhor configuração). Fica desligado.
   normalizar_por_comprimento: false  # divide a distância pelo nº de frames alinhados
   paralelo: true         # usa múltiplos núcleos no backend dtaidistance
 

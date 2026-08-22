@@ -136,7 +136,19 @@ def main() -> None:
     ap.add_argument("--overwrite", action="store_true", help="reprocessa .npy já existentes")
     ap.add_argument("--descartar-video", action="store_true",
                     help="apaga o vídeo bruto após extrair os landmarks (§4.4)")
+    ap.add_argument("--particao", metavar="i/N",
+                    help="processa só a fatia i de N (1-indexado), para rodar N "
+                         "processos em paralelo — ex.: --particao 1/4")
     args = ap.parse_args()
+
+    fatia, n_fatias = 1, 1
+    if args.particao:
+        try:
+            fatia, n_fatias = (int(x) for x in args.particao.split("/"))
+        except ValueError:
+            raise SystemExit(f"--particao: use o formato i/N, ex.: 1/4 (veio {args.particao!r})")
+        if not 1 <= fatia <= n_fatias:
+            raise SystemExit(f"--particao: i precisa estar entre 1 e N (veio {args.particao})")
 
     cfg = load_config()
     raw_dir, lm_dir = cfg.path("raw_videos"), cfg.path("landmarks")
@@ -144,8 +156,14 @@ def main() -> None:
 
     videos = sorted(raw_dir.glob("*.mp4"))
     if not videos:
-        print(f"[extract] nenhum vídeo em {raw_dir} — grave clipes com record.py primeiro.")
+        print(f"[extract] nenhum vídeo em {raw_dir} — traga clipes com "
+              "../datasets/ingest.py ou grave com record.py primeiro.")
         return
+
+    total_geral = len(videos)
+    if n_fatias > 1:
+        videos = videos[fatia - 1::n_fatias]  # intercalado: cada fatia mistura pessoas e sinais
+        print(f"[extract] fatia {fatia}/{n_fatias}: {len(videos)} de {total_geral} vídeo(s)")
 
     print(f"[extract] {len(videos)} vídeo(s) | {cfg.num_pontos} pontos × {cfg.dims} dims por frame")
     extraidos = 0

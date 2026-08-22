@@ -23,9 +23,11 @@ com um **critério de decisão definido antes de começar** (ver §6).
 
 ## 1. O que está (e o que não está) nesta PoC
 
-**Está:** vocabulário fechado de 10–15 sinais isolados · coleta com 5–8 pessoas
-diferentes · extração de landmarks com Holistic · baseline DTW (1-NN) · avaliação
-**leave-one-signer-out** · matriz de confusão · critério de ir/não-ir.
+**Está:** vocabulário fechado de 10 sinais isolados · 11 pessoas diferentes por
+sinal, vindas de duas bases públicas ([`../datasets/`](../datasets)) · extração de landmarks com Holistic · baseline DTW (1-NN) · avaliação
+**leave-one-signer-out** · matriz de confusão · critério de ir/não-ir · diagnóstico
+de onde vem o erro (`src/diagnostico.py`). **Já rodou:** 70,0% no dataset completo,
+85,7% no recorte limpo (§6.4).
 
 **Não está** (fica para depois, ver [`docs/libras-livre-arquitetura.md`](../../docs/libras-livre-arquitetura.md)): nuvem, deploy,
 API · retrain contínuo · tela para a pessoa surda · núcleo offline · consentimento
@@ -40,23 +42,62 @@ depois que o baseline DTW estiver medido com dados reais.
 
 ## 2. Vocabulário
 
-- **10 a 15 sinais.** Priorizar sinais já planejados para o MVP de atendimento
-  (saudação, pedir ajuda, marcar consulta, sim/não, dor…) — assim a PoC gera dado
-  reaproveitável.
-- Incluir de propósito sinais com **configurações de mão e movimentos variados**
-  entre si — o objetivo é estressar o modelo, não facilitar o resultado.
-- Evitar sinais que dependem de **expressão facial** para ter sentido (fora de
-  escopo).
-- **Definir a lista final com apoio de um profissional de Libras / pessoa surda
-  consultora antes de gravar** — vocabulário errado invalida o resultado.
+**10 sinais**, definidos pela disponibilidade de vídeo público:
+
+```
+acontecer   amarelo   banheiro   barulho   espelho
+filho       maca      medo       ruim      sapo
+```
+
+São exatamente os sinais que existem **nas duas** bases públicas integradas ao
+repositório (MINDS-Libras e V-LIBRASIL) — e, por isso, os que chegam com **11
+pessoas diferentes cada**. Ver [`../datasets/README.md`](../datasets/README.md).
+
+Por que não é o vocabulário de atendimento (`ola`, `ajuda`, `dor`,
+`marcar-consulta`…): esses sinais não existem nas bases públicas com pessoas
+suficientes, e a pergunta desta PoC é sobre **generalização entre pessoas** — ela
+se responde com qualquer vocabulário variado o bastante. Estes 10 têm
+configurações de mão e movimentos bem diferentes entre si, que é o que interessa
+para estressar o classificador. O vocabulário de produto volta quando houver
+coleta própria, e aí valem os critérios originais:
+
+- priorizar sinais do MVP de atendimento, para gerar dado reaproveitável;
+- incluir de propósito configurações de mão e movimentos variados;
+- evitar sinais que dependem de **expressão facial** (fora de escopo);
+- **definir a lista com apoio de profissional de Libras / pessoa surda consultora
+  antes de gravar** — vocabulário errado invalida o resultado.
+
+Três dos dez (`maca`, `medo`, `sapo`) têm **rótulos diferentes entre as duas
+bases** e foram pareados por julgamento — precisam de conferência de consultor
+antes de valerem como uma única classe (`../datasets/README.md` §3). Para rodar
+só com os 7 de rótulo idêntico: `python ingest.py --somente-validados`.
 
 A lista fica em `config.yaml` (`vocabulario`) e é a fonte de verdade: `record.py`
-recusa gravar um sinal que não esteja nela, e `evaluate.py` avisa se algum sinal
-do vocabulário ficou sem clipes.
+recusa gravar um sinal que não esteja nela, `ingest.py` confere se ela bate com a
+seleção de vídeos públicos, e `evaluate.py` avisa se algum sinal do vocabulário
+ficou sem clipes.
 
 ---
 
-## 3. Protocolo de coleta
+## 3. De onde vêm os clipes
+
+**Hoje, das bases públicas.** `../datasets/ingest.py` traz 430 clipes
+(10 sinais × 11 pessoas; 5 repetições por pessoa na parte MINDS, 1 na
+V-LIBRASIL) já nomeados na convenção do §4, sem gravar nada:
+
+```bash
+cd ../datasets && python ingest.py --reps 1   # 11 pessoas em todos os sinais, ~5 GB
+```
+
+Isso responde a pergunta da PoC **em condição favorável**: as duas bases foram
+gravadas de frente, com enquadramento controlado e a V-LIBRASIL com *chroma key*
+— não é o balcão. Leia as ressalvas em [`../datasets/README.md`](../datasets/README.md) §6
+antes de interpretar a acurácia.
+
+### Protocolo da coleta própria
+
+O que confirma o número no cenário real (e continua valendo quando o vocabulário
+de produto voltar):
 
 | Item | Alvo |
 |---|---|
@@ -90,7 +131,8 @@ PoC/
 ├── config.yaml            vocabulário, metas de coleta, caminhos, parâmetros
 ├── requirements.txt       mediapipe, opencv, numpy, dtaidistance/fastdtw, sklearn, matplotlib
 ├── data/
-│   ├── raw/               vídeos brutos (descartáveis após extração)
+│   ├── raw/               vídeos brutos (../datasets/ingest.py ou record.py;
+│   │                      descartáveis após a extração)
 │   └── landmarks/         landmarks extraídos, 1 .npy por clipe
 ├── docs/
 │   ├── consentimento.md   §4.4 — termo de participação
@@ -101,6 +143,7 @@ PoC/
 │   ├── extract.py         §5.2 — extração via MediaPipe Holistic + normalização
 │   ├── dtw_classifier.py  §5.3 — baseline 1-NN por DTW
 │   ├── evaluate.py        §5.4 — leave-one-signer-out + matriz de confusão
+│   ├── diagnostico.py     §6 — de onde vem o erro (por base, por sinal, com/sem z)
 │   ├── selftest.py        validação do pipeline sem câmera (dados sintéticos)
 │   └── nn_classifier.py   §5.5 — opcional, FORA do escopo desta entrega
 └── results/
@@ -113,8 +156,14 @@ PoC/
 separada):
 
 ```
-pessoa03_sinal-ajuda_rep02.mp4     →  pessoa=03, sinal=ajuda, repetição=02
+pessoa03_sinal-ajuda_rep02.mp4       →  pessoa=03, sinal=ajuda, repetição=02
+pessoaM05_sinal-acontecer_rep03.mp4  →  pessoa=M05 (MINDS-Libras, sinalizador 05)
+pessoaV02_sinal-ruim_rep01.mp4       →  pessoa=V02 (V-LIBRASIL, articulador 02)
 ```
+
+O prefixo `M`/`V` nos clipes das bases públicas mantém a origem visível e impede
+que o sinalizador 02 de uma base e o articulador 02 da outra sejam lidos como a
+mesma pessoa — o que faria o leave-one-signer-out testar em quem ele treinou.
 
 `extract.py` gera o `.npy` de mesmo nome-base em `data/landmarks/`.
 
@@ -207,6 +256,36 @@ forma consistente no **mesmo** protocolo.
 | **60–80%** | 🟡 Revisar vocabulário (pares confundidos na matriz), mais repetições, ou testar o classificador treinado antes de decidir |
 | **< 60%** | 🔴 Reconsiderar abordagem (vocabulário, distância de câmera, arquitetura) antes de investir mais |
 
+### 6.4 Resultado medido (430 clipes, 11 pessoas)
+
+**70,0% — 🟡 zona de atenção.** Relatório completo em
+[`results/relatorio.md`](results/relatorio.md).
+
+O número é a média de dois regimes diferentes, e `src/diagnostico.py` separa:
+
+| cenário | pessoas | acurácia |
+|---|---|---|
+| dataset completo | 11 | **70,0%** 🟡 |
+| só a base MINDS-Libras | 8 | 77,8% |
+| só a base V-LIBRASIL | 3 | 46,7% |
+| só os 7 sinais de rótulo validado | 11 | **80,5%** 🟢 |
+| MINDS + só os 7 validados | 8 | **85,7%** 🟢 |
+
+Duas leituras que mudam o que fazer a seguir:
+
+1. **Clipes de bases diferentes quase nunca são vizinhos um do outro** (100% dos
+   vizinhos da MINDS são da MINDS; 93% dos da V-LIBRASIL são da V-LIBRASIL). As
+   bases não somaram pessoas — somaram um degrau de condição de gravação. O
+   amarelo vem em boa parte daí, não da dificuldade do sinal.
+2. **Os 3 rótulos pareados por julgamento** (`maca`, `medo`, `sapo` — §2) custam
+   ~10 pontos. Validá-los com consultor de Libras é a intervenção de maior
+   retorno antes de mexer em modelo.
+
+Ressalva que não sai com ajuste nenhum: as duas bases são frontais e controladas
+(a V-LIBRASIL com chroma key). **Mesmo 85,7% é teto otimista** para o balcão —
+confirmar no cenário real depende da coleta própria (§3). Detalhes em
+[`../datasets/README.md`](../datasets/README.md) §6.
+
 ---
 
 ## 7. Como rodar
@@ -218,7 +297,9 @@ pip install -r requirements.txt
 # 0) valida o pipeline inteiro sem câmera e sem participantes (~30 s)
 python src/selftest.py
 
-# 1) grave clipes (uma pessoa/sinal por vez, veja a convenção de nome em §4)
+# 1) traga os clipes. Das bases públicas (11 pessoas, sem gravar nada):
+(cd ../datasets && python ingest.py --reps 1)
+#    ou grave os seus (uma pessoa/sinal por vez, convenção de nome no §4):
 python src/record.py --pessoa 03 --sinal ajuda
 
 # 2) extraia landmarks de tudo em data/raw -> data/landmarks
@@ -229,6 +310,10 @@ python src/dtw_classifier.py
 
 # 4) rode a avaliação leave-one-signer-out (baseline DTW)
 python src/evaluate.py
+
+# 5) entenda de onde vem o erro (recorta o mesmo protocolo em subconjuntos)
+python src/diagnostico.py            # por base de origem e por subconjunto de sinais
+python src/diagnostico.py --sem-z    # mede o botão do §5.2 em vez de supor
 ```
 
 O passo 4 grava em `results/`:
