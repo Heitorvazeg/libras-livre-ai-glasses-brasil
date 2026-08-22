@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Libras Livre — libera HTTP puro (cleartext) apenas para a API de validação local.
+
+  A API roda sem TLS na máquina de desenvolvimento (PoC/api). O Android bloqueia
+  cleartext por padrão desde o Android 9, então liberamos SÓ os hosts de dev abaixo
+  — não o tráfego geral do app.
+
+  - 10.0.2.2  : a máquina host, vista de DENTRO do emulador Android padrão
+  - 10.0.3.2  : idem no Genymotion
+  - 127.0.0.1 / localhost : caso rode o servidor no próprio aparelho
+
+  DEVICE FÍSICO: acrescente aqui o IP LAN da sua máquina (o mesmo passado em
+  -PlibrasApiBaseUrl), por exemplo:
+      <domain includeSubdomains="false">192.168.0.42</domain>
+-->
+<network-security-config>
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="false">10.0.2.2</domain>
+        <domain includeSubdomains="false">10.0.3.2</domain>
+        <domain includeSubdomains="false">127.0.0.1</domain>
+        <domain includeSubdomains="false">localhost</domain>
+    </domain-config>
+</network-security-config>

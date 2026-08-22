@@ -42,6 +42,7 @@ import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.MicOff
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PhotoCamera
+import androidx.compose.material.icons.filled.SignLanguage
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.filled.Videocam
 import androidx.compose.material.icons.filled.Visibility
@@ -82,6 +83,7 @@ import com.meta.wearable.dat.core.types.RegistrationState
 import com.meta.wearable.dat.externalsampleapps.cameraaccess.R
 import com.meta.wearable.dat.externalsampleapps.cameraaccess.camera.CameraUiState
 import com.meta.wearable.dat.externalsampleapps.cameraaccess.camera.CameraViewModel
+import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.LibrasState
 import com.meta.wearable.dat.externalsampleapps.cameraaccess.wearables.WearablesViewModel
 
 // Scrims behind the top/bottom bars so the white controls stay legible over the live feed. Hoisted
@@ -158,9 +160,17 @@ fun CameraScreen(
           onCapturePhoto = cameraViewModel::capturePhoto,
           onToggleRecording = { cameraViewModel.toggleRecording(onRequestRecordAudioPermission) },
           onToggleMic = cameraViewModel::toggleMic,
+          onToggleSignCapture = cameraViewModel::toggleSignCapture,
           onUpdateFirmware = { activity?.let { wearablesViewModel.openFirmwareUpdate(it) } },
       )
     }
+
+    // Libras Livre: banner com o sinal reconhecido / status da classificação, sobre o preview.
+    LibrasBanner(
+        libras = ui.libras,
+        visible = ui.isStreaming || ui.libras.isClassifying,
+        modifier = Modifier.align(Alignment.TopCenter).statusBarsPadding().padding(top = 84.dp),
+    )
 
     ui.activePreview?.let { preview ->
       CapturePreviewScreen(
@@ -422,6 +432,7 @@ private fun BottomBar(
     onCapturePhoto: () -> Unit,
     onToggleRecording: () -> Unit,
     onToggleMic: () -> Unit,
+    onToggleSignCapture: () -> Unit,
     onUpdateFirmware: () -> Unit,
 ) {
   Column(
@@ -439,6 +450,8 @@ private fun BottomBar(
           onClick = onUpdateFirmware,
       )
     } else {
+      // Libras Livre: botão de captura de sinal (só quando o stream está ao vivo).
+      LibrasCaptureRow(ui = ui, onToggleSignCapture = onToggleSignCapture)
       CaptureRow(
           ui = ui,
           onStartPreview = onStartPreview,
@@ -668,6 +681,124 @@ private fun CircleIconButton(
         tint = if (enabled) tint else Color.White.copy(alpha = 0.45f),
         modifier = Modifier.size(22.dp),
     )
+  }
+}
+
+// MARK: - Libras Livre
+
+@Composable
+private fun LibrasCaptureRow(
+    ui: CameraUiState,
+    onToggleSignCapture: () -> Unit,
+) {
+  val collecting = ui.libras.isCollecting
+  val classifying = ui.libras.isClassifying
+  val enabled = ui.isStreaming && !classifying
+  Row(
+      modifier = Modifier.fillMaxWidth().alpha(if (ui.isStreaming) 1f else 0f),
+      horizontalArrangement = Arrangement.Center,
+      verticalAlignment = Alignment.CenterVertically,
+  ) {
+    val background =
+        if (collecting) AppColor.RecordAccent.copy(alpha = 0.5f)
+        else Color.White.copy(alpha = if (enabled) 0.18f else 0.08f)
+    Row(
+        modifier =
+            Modifier.fillMaxWidth()
+                .height(50.dp)
+                .clip(RoundedCornerShape(percent = 50))
+                .background(background)
+                .clickable(enabled = enabled, onClick = onToggleSignCapture)
+                .testTag("libras_capture_button")
+                .padding(horizontal = 16.dp),
+        horizontalArrangement = Arrangement.Center,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+      Icon(
+          imageVector = if (collecting) Icons.Filled.Stop else Icons.Filled.SignLanguage,
+          contentDescription = null,
+          tint = if (enabled) Color.White else Color.White.copy(alpha = 0.45f),
+          modifier = Modifier.size(20.dp),
+      )
+      Spacer(modifier = Modifier.width(8.dp))
+      Text(
+          text =
+              when {
+                classifying -> stringResource(R.string.libras_classifying)
+                collecting -> stringResource(R.string.libras_capture_stop)
+                else -> stringResource(R.string.libras_capture_start)
+              },
+          color = if (enabled) Color.White else Color.White.copy(alpha = 0.45f),
+          fontSize = 15.sp,
+          fontWeight = FontWeight.SemiBold,
+      )
+    }
+  }
+}
+
+/** Banner sobre o preview: status da classificação, sinal reconhecido ou erro. */
+@Composable
+private fun LibrasBanner(
+    libras: LibrasState,
+    visible: Boolean,
+    modifier: Modifier = Modifier,
+) {
+  val hasContent =
+      libras.isCollecting || libras.isClassifying || libras.lastResult != null || libras.error != null
+  if (!visible || !hasContent) return
+
+  Column(
+      modifier =
+          modifier
+              .clip(RoundedCornerShape(16.dp))
+              .background(Color.Black.copy(alpha = 0.6f))
+              .padding(horizontal = 20.dp, vertical = 12.dp),
+      horizontalAlignment = Alignment.CenterHorizontally,
+  ) {
+    when {
+      libras.isClassifying -> {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+          CircularProgressIndicator(color = Color.White, modifier = Modifier.size(18.dp))
+          Spacer(modifier = Modifier.width(10.dp))
+          Text(
+              text = stringResource(R.string.libras_classifying),
+              color = Color.White,
+              fontSize = 16.sp,
+              fontWeight = FontWeight.SemiBold,
+          )
+        }
+      }
+      libras.error != null -> {
+        Text(
+            text = libras.error,
+            color = AppColor.Yellow,
+            fontSize = 14.sp,
+            textAlign = TextAlign.Center,
+        )
+      }
+      libras.isCollecting -> {
+        Text(
+            text = stringResource(R.string.libras_capture_hint),
+            color = Color.White.copy(alpha = 0.9f),
+            fontSize = 14.sp,
+        )
+      }
+      libras.lastResult != null -> {
+        Text(
+            text = stringResource(R.string.libras_recognized_label),
+            color = Color.White.copy(alpha = 0.7f),
+            fontSize = 12.sp,
+            fontWeight = FontWeight.Medium,
+        )
+        Spacer(modifier = Modifier.height(2.dp))
+        Text(
+            text = libras.lastResult.sinal,
+            color = Color.White,
+            fontSize = 26.sp,
+            fontWeight = FontWeight.Bold,
+        )
+      }
+    }
   }
 }
 

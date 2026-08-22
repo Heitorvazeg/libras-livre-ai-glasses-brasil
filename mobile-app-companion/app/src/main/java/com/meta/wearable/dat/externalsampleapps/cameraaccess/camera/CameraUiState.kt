@@ -17,6 +17,7 @@ import android.graphics.Bitmap
 import android.net.Uri
 import com.meta.wearable.dat.camera.types.StreamState
 import com.meta.wearable.dat.core.session.DeviceSessionState
+import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.LibrasState
 
 /** A capture awaiting preview/share — a still photo or a recorded video file. */
 sealed interface CapturePreview {
@@ -47,6 +48,8 @@ data class CameraUiState(
     // i.e. while the camera-permission check runs. Folded into isBusy so the Preview button stays
     // disabled for the whole flow, closing the gap where the SDK state machine hasn't moved yet.
     val isStartingStream: Boolean = false,
+    // Libras Livre: estado do reconhecimento de sinal (captura, classificação, resultado, erro).
+    val libras: LibrasState = LibrasState(),
 ) {
   /** A session exists and is connected (or connecting); a stream can be started. */
   val hasSession: Boolean

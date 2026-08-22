@@ -1,0 +1,8 @@
+# Modelos do MediaPipe (Libras Livre) — baixáveis e pesados, não versionados.
+# Baixe-os para cá antes de rodar (ver ../java/.../libras/README.md):
+#   pose_landmarker_lite.task
+#   hand_landmarker.task
+*.task
+
+# Mantém a pasta no git mesmo vazia.
+!.gitignore

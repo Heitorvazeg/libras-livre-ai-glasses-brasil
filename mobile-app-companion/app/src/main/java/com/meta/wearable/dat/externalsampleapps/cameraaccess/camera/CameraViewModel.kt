@@ -41,7 +41,11 @@ import com.meta.wearable.dat.core.session.DeviceSession
 import com.meta.wearable.dat.core.session.DeviceSessionState
 import com.meta.wearable.dat.core.types.Permission
 import com.meta.wearable.dat.core.types.PermissionStatus
+import com.meta.wearable.dat.externalsampleapps.cameraaccess.BuildConfig
 import com.meta.wearable.dat.externalsampleapps.cameraaccess.R
+import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.LandmarkApi
+import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.LandmarkPipeline
+import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.Speaker
 import com.meta.wearable.dat.externalsampleapps.cameraaccess.stream.AudioInputHandler
 import com.meta.wearable.dat.externalsampleapps.cameraaccess.stream.HevcDecoder
 import com.meta.wearable.dat.externalsampleapps.cameraaccess.stream.HevcParameterSetCollector
@@ -87,6 +91,19 @@ class CameraViewModel(
   // passthrough MP4 writer.
   private val audioInputHandler = AudioInputHandler(application)
   private val videoRecorder = VideoRecorder(application, viewModelScope)
+
+  // Libras Livre — reconhecimento de sinal via API + voz. O pipeline consome os mesmos frames
+  // HEVC do stream (ver handleVideoFrame), decodifica num ImageReader dedicado, extrai landmarks
+  // com MediaPipe e classifica no servidor (PoC/api). Estado espelhado em uiState.libras.
+  private val speaker = Speaker(application)
+  private val landmarkPipeline =
+      LandmarkPipeline(
+          context = application,
+          scope = viewModelScope,
+          api = LandmarkApi(BuildConfig.LIBRAS_API_BASE_URL),
+          speaker = speaker,
+          onState = { transform -> _uiState.update { it.copy(libras = it.libras.transform()) } },
+      )
 
   // Per-frame work (byte copy, NAL parsing, MediaMuxer writes, decoder feed) runs at frame rate and
   // must stay off the main thread. A single-threaded dispatcher keeps frames serialized so the
@@ -365,6 +382,17 @@ class CameraViewModel(
         videoFrame.isCodecConfig,
     )
 
+    // Libras Livre: alimenta o pipeline de reconhecimento com o MESMO frame comprimido. Ele
+    // mantém um decoder próprio (para um ImageReader) e só roda o MediaPipe enquanto captura um
+    // sinal, então o custo em repouso é baixo. Independente do preview/gravação acima.
+    landmarkPipeline.feedCompressedFrame(
+        byteArray,
+        presentationTimeUs,
+        width,
+        height,
+        csdCollector.complete(),
+    )
+
     // Lazily create the decoder once a Surface is available; it renders directly to it. Prime it
     // with the cached config in case the surface arrived after the config frame. Guarded so a
     // concurrent setSurface(null) can't leave a decoder bound to a released Surface.
@@ -408,6 +436,8 @@ class CameraViewModel(
       hevcDecoder?.stop()
       hevcDecoder = null
     }
+    // Libras: solta o decoder/ImageReader/modelos do pipeline de reconhecimento junto com o stream.
+    landmarkPipeline.stop()
     csdCollector.reset()
     StreamingService.stop(getApplication())
     // STOPPED is restartable, so only stop() detaches the capability; without it the next
@@ -513,6 +543,22 @@ class CameraViewModel(
     _uiState.update { it.copy(includeAudioInStream = !it.includeAudioInStream) }
   }
 
+  // MARK: - Libras: captura e reconhecimento de sinal
+
+  /**
+   * Liga/desliga a captura de um sinal isolado. Ao começar, o pipeline acumula os landmarks de
+   * cada frame; ao parar, envia a sequência para a API e fala a palavra reconhecida (§ segmentação
+   * manual — o usuário marca início e fim, como no record.py da PoC).
+   */
+  fun toggleSignCapture() {
+    if (!_uiState.value.isStreaming) return
+    if (_uiState.value.libras.isCollecting) {
+      landmarkPipeline.stopCollectingAndClassify()
+    } else {
+      landmarkPipeline.startCollecting()
+    }
+  }
+
   // MARK: - Dismissers
 
   fun dismissCapturePreview() {
@@ -606,6 +652,8 @@ class CameraViewModel(
     cleanupSession()
     audioInputHandler.cleanup()
     videoRecorder.close()
+    landmarkPipeline.stop()
+    speaker.shutdown()
   }
 
   class Factory(
