@@ -267,6 +267,74 @@ cai quando muda o cenário de gravação. É a melhor aproximação disponível 
 
 ---
 
+## Achado D — o alvo realista já foi publicado: ~0,93 no MINDS, no nosso protocolo
+
+Levantamento do estado da arte de reconhecimento de sinais isolados de Libras com
+landmarks. **Dois trabalhos avaliam exatamente o MINDS-Libras com protocolo
+signer-independent** (LOPO, *leave-one-person-out* — o mesmo do nosso `evaluate.py`):
+
+| Trabalho | Dataset | Protocolo | Modelo | Resultado |
+|---|---|---|---|---|
+| dos Santos et al. 2025 ([arXiv 2510.24887](https://arxiv.org/abs/2510.24887)) | MINDS-Libras (1.155 clipes, 20 sinais, 12 pessoas) | nested LOPO (132 runs) | MediaPipe Holistic → subset de 80 pontos → Skeleton-DML → ResNet-18 (ImageNet) | **acc 0,94 ± 0,04** |
+| idem | LIBRAS-UFOP (56 sinais, 5 pessoas) | nested LOPO | idem | F1 0,91 |
+| Alves et al. 2024 ([arXiv 2404.19148](https://arxiv.org/abs/2404.19148), repo [`Dudu197`](https://github.com/Dudu197/sign-language-recognition)) | MINDS-Libras | nested LOPO | OpenPose → Skeleton-DML → ResNet-18 | **acc 0,93** |
+| idem | LIBRAS-UFOP | nested LOPO | idem | acc 0,82 |
+
+> Procedência: o arXiv está bloqueado no proxy desta sandbox. Os números vêm de snippets
+> de busca **mais** a leitura direta do repositório oficial do paper
+> ([`danielelvs/islr-subset`](https://github.com/danielelvs/islr-subset)) e do repo do
+> Alves et al., ambos acessíveis via `raw.githubusercontent.com`. As definições de
+> subconjunto de pontos e de protocolo vêm do código, não de resumo.
+
+### O que a literatura converge (e contraria nosso plano anterior)
+
+1. **A representação vencedora não é sequência crua nem esqueleto desenhado: é
+   Skeleton-DML.** Empilha-se a matriz `landmarks × frames` (x e y) como se fosse uma
+   imagem RGB, redimensiona para 224×224 e treina uma **CNN pré-treinada em ImageNet**.
+   O problema de "sequências de tamanhos diferentes" some no redimensionamento, e o
+   transfer learning cobre a escassez de dados.
+2. **ResNet-18 é a melhor** nas duas publicações. Ablação do repo do Alves et al.
+   (MINDS/UFOP, LOPO): ResNet-18 0,93/0,82 · ViT-medium 0,93/0,81 · ResNet-50 0,90/0,70 ·
+   EfficientNet-B6 0,89/0,78 · MobileNetV4 0,87/0,70. Modelo maior piora.
+3. **Menos landmarks é melhor.** Usar os 543 pontos do Holistic é o pior caso em todos os
+   datasets — a decisão do nosso `config.yaml` de trabalhar com um subconjunto está
+   alinhada com a literatura. O subconjunto "arcanjo" (75 pontos: pose + mãos, sem malha
+   facial densa) fica a ~1pp do melhor; o melhor ("2nd", 80 pontos) acrescenta 18 pontos
+   de lábios.
+4. **Imputação temporal de landmarks faltantes** (spline cúbica em falhas de até 5
+   frames) vale ≥4pp de F1 no MINDS e >15pp no UFOP. É barato e ainda não fazemos.
+5. **Augmentação** citada: rotação σ=12°, zoom σ=0,1, espelhamento 30%.
+
+### Consequência para o nosso plano de modelo
+
+O plano anterior (GRU treinado sobre a sequência de landmarks, §5.5 do plano da PoC) **não
+é o que a literatura usa nessa escala de dados**. Com ~1.000 clipes, treinar uma recorrente
+do zero disputa com uma CNN que já vem pré-treinada em milhões de imagens. A rota
+recomendada passa a ser:
+
+**Skeleton-DML + ResNet-18 (ImageNet), avaliado em LOPO** — mesma métrica, mesmo dataset
+e mesma escala em que 0,93-0,94 já foram publicados.
+
+Ressalva de deploy a resolver depois: o repo mira um `.tflite` leve rodando no celular.
+ResNet-18 quantizada é viável em aparelho, mas é mais pesada que o "modelo raso" prometido
+no README, e a conversão parte de PyTorch (os dois trabalhos são PyTorch). MobileNetV4
+seria o caminho mais leve ao custo de ~6pp (0,87), o que ainda é muito acima do baseline
+atual.
+
+### O que NÃO é comparável com os nossos 70,0%
+
+- Números de datasets com **split fixo** (ex.: INCLUDE-50, 0,91-0,95): a mesma pessoa
+  aparece em treino e teste.
+- Resultados com 20 ou 56 sinais têm chance aleatória de 5% e 1,8%, contra 10% nos nossos
+  10 sinais.
+- O nosso próprio **85,7%**: o recorte foi definido depois de olhar o resultado. Serve
+  como diagnóstico do degrau entre bases, não como métrica de entrega.
+
+Comparáveis em espírito ao nosso 70,0%: **0,93 e 0,94 no MINDS, ambos em LOPO**. Ou seja,
+há ~23 pontos de margem documentada entre onde estamos e onde a mesma tarefa já chegou.
+
+---
+
 ## Conclusão do Dia 1
 
 Ordem de custo-benefício, revisada com o que a investigação encontrou:
@@ -284,13 +352,31 @@ Ordem de custo-benefício, revisada com o que a investigação encontrou:
    por sinal, com trabalho de download/extração/identidade — ROI ruim dentro do prazo.
    Continua valendo como fonte de **pré-treino** na visão de produto
    (`libras-livre-arquitetura.md` §2), com autorização das fontes resolvida antes.
+5. **Trocar o modelo alvo de GRU para Skeleton-DML + ResNet-18 (Achado D).** Mesmo
+   dataset, mesmo protocolo, 0,93-0,94 publicados — contra 0,70 do baseline atual.
+
+### O plano que sai daqui
+
+| Ordem | O quê | Depende de |
+|---|---|---|
+| 1 | `diagnostico_bundle.py --fonte minds` | máquina com Kaggle |
+| 2 | Estender `selecao.yaml` + vocabulário para os 20 sinais do MINDS | item 1 |
+| 3 | Ingerir e extrair landmarks dos 1.158 clipes | itens 1-2 |
+| 4 | Rerodar o baseline DTW (`evaluate.py`) no dataset novo — referência atualizada | item 3 |
+| 5 | Implementar Skeleton-DML + ResNet-18 em LOPO e comparar com o item 4 | item 3 |
+| 6 | V-LIBRASIL como teste de domínio (treina MINDS, testa V-LIBRASIL) | item 5 |
+
+Ganhos baratos a incorporar no caminho, todos vindos do Achado D: imputação spline de
+landmarks faltantes, subir de 49 para ~75 pontos (pose completa) e augmentação
+(rotação/zoom/espelhamento).
 
 ## Pendências
 
 - [ ] Rodar `datasets/diagnostico_bundle.py --fonte minds` numa máquina com acesso ao
-      Kaggle e decidir entre as hipóteses 1 e 2.
-- [ ] Licenças por fonte do MALTA-LIBRAS e viabilidade dos scripts de download
-      (investigação paralela em curso).
-- [ ] Estado da arte de ISLR em Libras com landmarks: qual arquitetura e qual protocolo
-      (signer-independent ou não) — define o alvo realista do classificador treinado
-      (investigação paralela em curso).
+      Kaggle e decidir entre as hipóteses 1 e 2 da Ação A.
+- [ ] Se o bundle do Kaggle for parcial (hipótese 2), localizar a distribuição original do
+      MINDS-Libras para obter os sinalizadores 03/04/07/09.
+- [ ] Decidir o caminho de deploy do modelo escolhido: ResNet-18 (PyTorch → `.tflite`) ou
+      MobileNetV4 (mais leve, ~6pp abaixo).
+- [ ] Confirmar as licenças marcadas como "não encontrado" antes de qualquer uso além de
+      PoC acadêmica — e tratar LGPD (vídeo de pessoa identificável é dado biométrico).
