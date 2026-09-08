@@ -186,6 +186,7 @@ def main() -> None:
 
     print(f"[extract] {len(videos)} vídeo(s) | {cfg.num_pontos} pontos × {cfg.dims} dims por frame")
     extraidos = 0
+    falhas: list[str] = []
     with mp.solutions.holistic.Holistic(**cfg.holistic) as holistic:
         for v in videos:
             destino = lm_dir / (v.stem + ".npy")
@@ -193,7 +194,16 @@ def main() -> None:
                 print(f"[extract] pulando {v.name} (já extraído)")
                 continue
 
-            seq, descartados = extrair_video(v, holistic, cfg)
+            try:
+                seq, descartados = extrair_video(v, holistic, cfg)
+            except Exception as e:
+                # Um vídeo ilegível (corrompido, download interrompido, arquivo
+                # removido durante a execução) não pode derrubar o lote inteiro:
+                # numa extração de milhares de clipes, isso significaria perder
+                # horas de trabalho por causa de um arquivo.
+                falhas.append(v.name)
+                print(f"[extract] ⚠ {v.name}: falhou ({type(e).__name__}: {e}) — seguindo")
+                continue
             total = seq.shape[0] + descartados
             if seq.shape[0] == 0:
                 print(f"[extract] ⚠ {v.name}: nenhum frame com pose detectada "
@@ -212,6 +222,9 @@ def main() -> None:
                 print(f"[extract] vídeo bruto apagado: {v.name} (§4.4 — só os landmarks ficam)")
 
     print(f"[extract] concluído: {extraidos} clipe(s) extraído(s) em {lm_dir}")
+    if falhas:
+        print(f"[extract] ⚠ {len(falhas)} vídeo(s) falharam e foram pulados: "
+              f"{', '.join(falhas[:10])}{' ...' if len(falhas) > 10 else ''}")
 
 
 if __name__ == "__main__":
