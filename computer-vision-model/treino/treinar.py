@@ -216,6 +216,9 @@ def main() -> None:
     ap.add_argument("--workers", type=int, default=2)
     ap.add_argument("--threads", type=int, default=10,
                     help="threads de CPU do torch (deixa folga para a máquina seguir usável)")
+    ap.add_argument("--dispositivo", default="auto", choices=["auto", "cpu", "cuda"],
+                    help="auto usa GPU quando houver — o mesmo código roda no notebook "
+                         "e no Colab/Kaggle sem edição")
     ap.add_argument("--folds", type=int, default=0,
                     help="limita o nº de rodadas (0 = todas). Use 1 para testar o encanamento.")
     ap.add_argument("--final", action="store_true",
@@ -227,7 +230,9 @@ def main() -> None:
         args.saida = f"resultados-{args.arquitetura}"
 
     torch.set_num_threads(args.threads)
-    dispositivo = torch.device("cpu")
+    if args.dispositivo == "auto":
+        args.dispositivo = "cuda" if torch.cuda.is_available() else "cpu"
+    dispositivo = torch.device(args.dispositivo)
 
     cfg = yaml.safe_load(CONFIG.read_text(encoding="utf-8"))
     lm_dir = POC / cfg["paths"]["landmarks"]
