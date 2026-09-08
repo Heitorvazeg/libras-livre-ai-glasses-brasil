@@ -380,3 +380,33 @@ landmarks faltantes, subir de 49 para ~75 pontos (pose completa) e augmentação
       MobileNetV4 (mais leve, ~6pp abaixo).
 - [ ] Confirmar as licenças marcadas como "não encontrado" antes de qualquer uso além de
       PoC acadêmica — e tratar LGPD (vídeo de pessoa identificável é dado biométrico).
+
+---
+
+## Atualização — Dia 2: Ação A resolvida (hipótese 2 confirmada)
+
+Rodado em máquina com acesso ao Kaggle:
+
+```
+$ python diagnostico_bundle.py --fonte minds
+[minds] membros no bundle: 800
+[minds] casam com o regex atual: 800
+[minds] casariam pelo nome-base: 0
+[minds] pessoas encontradas (8): 01, 02, 05, 06, 08, 10, 11, 12
+[minds] total de clipes do vocabulário: 400
+```
+
+**O bundle do Kaggle `j0aopsantos/minds-libras` tem mesmo só 8 sinalizadores, 800
+vídeos.** Não é bug do `ingest.py` (o regex não estava descartando nada por subpasta) —
+o mirror do Kaggle é parcial em relação à base publicada (12 sinalizadores, 1.158
+vídeos). O CSV usado no Achado C (`Dudu197/sign-language-recognition`) reflete a base
+completa, vinda de outra distribuição — não deste bundle.
+
+**Revisão do Achado C:** "MINDS completo" como dataset de treino segue sendo a melhor
+opção *se* conseguirmos a distribuição completa (12 pessoas) por outro canal (contato
+direto com o grupo MINDS/UFMG, ou outro mirror). Até resolver isso, o dataset
+disponível **hoje** é o de sempre: 8 sinalizadores MINDS + 3 V-LIBRASIL = 11 pessoas.
+
+### Pendência atualizada
+- [ ] Localizar a distribuição completa do MINDS-Libras (12 sinalizadores) — contato
+      direto com os autores (grupo MINDS, UFMG) é o caminho mais confiável.
