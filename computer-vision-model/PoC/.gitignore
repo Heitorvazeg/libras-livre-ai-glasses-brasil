@@ -18,3 +18,5 @@ __pycache__/
 .venv/
 venv/
 .ipynb_checkpoints/
+# Corpus de pré-treino (vídeos pesados, não versionar)
+data/raw-*/*

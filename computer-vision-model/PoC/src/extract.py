@@ -142,6 +142,12 @@ def main() -> None:
     ap.add_argument("--overwrite", action="store_true", help="reprocessa .npy já existentes")
     ap.add_argument("--descartar-video", action="store_true",
                     help="apaga o vídeo bruto após extrair os landmarks (§4.4)")
+    ap.add_argument("--entrada", metavar="DIR",
+                    help="diretório de vídeos (padrão: paths.raw_videos do config)")
+    ap.add_argument("--saida", metavar="DIR",
+                    help="diretório dos .npy (padrão: paths.landmarks do config). "
+                         "Use um par --entrada/--saida próprio para corpora que NÃO "
+                         "entram na avaliação, como o de pré-treino.")
     ap.add_argument("--particao", metavar="i/N",
                     help="processa só a fatia i de N (1-indexado), para rodar N "
                          "processos em paralelo — ex.: --particao 1/4")
@@ -162,7 +168,9 @@ def main() -> None:
         raise SystemExit("mediapipe não instalado — rode: pip install -r requirements.txt") from e
 
     cfg = load_config()
-    raw_dir, lm_dir = cfg.path("raw_videos"), cfg.path("landmarks")
+    raiz = Path(__file__).resolve().parent.parent
+    raw_dir = raiz / args.entrada if args.entrada else cfg.path("raw_videos")
+    lm_dir = raiz / args.saida if args.saida else cfg.path("landmarks")
     lm_dir.mkdir(parents=True, exist_ok=True)
 
     videos = sorted(raw_dir.glob("*.mp4"))
