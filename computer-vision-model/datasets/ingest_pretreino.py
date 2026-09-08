@@ -24,6 +24,7 @@ Uso:
 from __future__ import annotations
 
 import argparse
+import csv
 import re
 import sys
 import time
@@ -35,6 +36,7 @@ from remote_zip import ZipRemoto, zip_do_kaggle
 
 AQUI = Path(__file__).resolve().parent
 DESTINO = AQUI.parent / "PoC" / "data" / "raw-pretreino"
+MANIFESTO = AQUI / "manifest.csv"
 KAGGLE = "davimedio01/v-librasil"
 PREFIXO_PESSOA = "V"
 
@@ -66,9 +68,32 @@ def slug(palavra: str) -> str:
     return re.sub(r"-{2,}", "-", s)
 
 
+def origens_da_avaliacao() -> set[str]:
+    """Membros do zip que já estão no conjunto de avaliação — barrados no pré-treino.
+
+    Os 30 clipes da V-LIBRASIL reservados como teste de domínio são os MESMOS
+    vídeos que este script baixaria. Se entrassem, o modelo os veria no
+    pré-treino e depois seria "testado" neles — o teste de domínio deixaria de
+    medir qualquer coisa.
+
+    A comparação é pelo caminho do membro DENTRO DO ZIP, não pelo nome do arquivo
+    de destino. Motivo concreto: `maca`, `medo` e `sapo` têm rótulos diferentes
+    nas duas bases ("Maçã (rosto)", "Com medo", "Rã (sapo)"), então o mesmo vídeo
+    vira `sinal-maca` na avaliação e `sinal-maca-rosto` aqui. Comparar nomes
+    deixaria 9 dos 30 passarem — o vazamento seria silencioso e o número, falso.
+    """
+    if not MANIFESTO.exists():
+        return set()
+    with open(MANIFESTO, newline="", encoding="utf-8") as fh:
+        return {linha["origem"] for linha in csv.DictReader(fh)
+                if linha.get("fonte") == "vlibrasil"}
+
+
 def coletar(z: ZipRemoto) -> list[Clipe]:
     clipes: list[Clipe] = []
     vistos: dict[str, str] = {}
+    reservados = origens_da_avaliacao()
+    excluidos = 0
     for nome, membro in z.membros.items():
         m = _RE_MEMBRO.match(nome)
         if not m:
@@ -80,8 +105,15 @@ def coletar(z: ZipRemoto) -> list[Clipe]:
         if anterior != m["palavra"]:
             print(f"[pretreino] ⚠ '{m['palavra']}' e '{anterior}' geram o mesmo rótulo "
                   f"'{rotulo}' — serão tratados como a MESMA classe")
-        clipes.append(Clipe(sinal=rotulo, pessoa=f"{PREFIXO_PESSOA}{int(m['pessoa']):02d}",
-                            origem=nome, bytes=membro.tamanho))
+        clipe = Clipe(sinal=rotulo, pessoa=f"{PREFIXO_PESSOA}{int(m['pessoa']):02d}",
+                      origem=nome, bytes=membro.tamanho)
+        if nome in reservados:
+            excluidos += 1
+            continue
+        clipes.append(clipe)
+    if excluidos:
+        print(f"[pretreino] {excluidos} clipe(s) excluídos por já estarem no conjunto de "
+              f"avaliação (teste de domínio) — ver origens_da_avaliacao()")
     return sorted(clipes, key=lambda c: (c.sinal, c.pessoa))
 
 
