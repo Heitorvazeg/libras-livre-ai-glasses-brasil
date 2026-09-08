@@ -22,12 +22,14 @@ import sys
 import tempfile
 import traceback
 from pathlib import Path
+from unittest.mock import patch
 
 import numpy as np
 import torch
 
 import dados as dd
 import gcn
+import modelo as mm
 import representacao as rp
 import treinar as tr
 
@@ -218,12 +220,68 @@ def teste_gcn_ponta_a_ponta() -> None:
     _ok(f"treino de ponta a ponta com ST-GCN ({acc:.0%})")
 
 
-def teste_controle_negativo() -> None:
+def teste_controle_negativo(arquitetura: str = "resnet") -> None:
     """Rótulo aleatório tem de ficar na chance — senão há vazamento em algum lugar."""
-    acc = _rodada_sintetica(rotulo_aleatorio=True)
+    acc = _rodada_sintetica(rotulo_aleatorio=True, arquitetura=arquitetura)
     assert acc < 0.70, (f"com rótulos aleatórios a acurácia foi {acc:.1%} — alta demais "
                         "para 3 classes; suspeite de vazamento entre treino e teste")
-    _ok(f"controle negativo: rótulo aleatório fica perto da chance ({acc:.0%})")
+    _ok(f"controle negativo ({arquitetura}): rótulo aleatório ({acc:.0%})")
+
+
+def teste_gcn_controle_negativo() -> None:
+    teste_controle_negativo(arquitetura="gcn")
+
+
+def teste_checkpoints() -> None:
+    """Salvar/carregar preserva arquitetura, configuração, rótulos e predições."""
+    rotulos = ["classe0", "classe1", "classe2"]
+    with tempfile.TemporaryDirectory() as tmp:
+        caminho = Path(tmp) / "modelo.pt"
+        casos = [
+            ("gcn", gcn.construir(3), torch.randn(2, 2, gcn.T_FIXO, N_PONTOS)),
+            ("gcn", gcn.construir(3, largura=16, canais_ent=3, dropout=0.1),
+             torch.randn(2, 3, 16, N_PONTOS)),
+            ("resnet", mm.construir(3, pretreinado=False), torch.randn(2, 3, 64, 64)),
+        ]
+        resnet18_original = mm.resnet18
+
+        def resnet_sem_download(**kwargs):
+            assert kwargs.get("weights") is None, "carregar não deve baixar pesos ImageNet"
+            return resnet18_original(**kwargs)
+
+        for arquitetura, original, entrada in casos:
+            original.eval()
+            meta = {"origem": "selftest"}
+            mm.salvar(original, caminho, rotulos, meta)
+            with patch.object(mm, "resnet18", side_effect=resnet_sem_download):
+                restaurado, classes, info = mm.carregar(caminho)
+            assert type(restaurado) is type(original), "arquitetura alterada ao carregar"
+            assert not restaurado.training, "carregar deve devolver modelo em modo eval"
+            assert classes == rotulos and info == meta, "rótulos/metadados alterados"
+            if arquitetura == "gcn":
+                assert restaurado.config == original.config, "configuração GCN perdida"
+            with torch.no_grad():
+                torch.testing.assert_close(restaurado(entrada), original(entrada))
+
+        # Formato antigo: GCN padrão com arquitetura em meta.args; ResNet sem ela.
+        for arquitetura, original, entrada in (casos[0], casos[2]):
+            meta = {"args": {"arquitetura": arquitetura}} if arquitetura == "gcn" else {}
+            torch.save({"state_dict": original.state_dict(), "rotulos": rotulos,
+                        "meta": meta}, caminho)
+            with patch.object(mm, "resnet18", side_effect=resnet_sem_download):
+                restaurado, classes, info = mm.carregar(caminho)
+            assert classes == rotulos and info == meta
+            with torch.no_grad():
+                torch.testing.assert_close(restaurado(entrada), original(entrada))
+
+        torch.save({"arquitetura": "desconhecida", "rotulos": rotulos}, caminho)
+        try:
+            mm.carregar(caminho)
+        except ValueError as exc:
+            assert "arquitetura" in str(exc)
+        else:
+            raise AssertionError("arquitetura desconhecida deveria falhar explicitamente")
+    _ok("checkpoints GCN/ResNet: round-trip, variantes, legado e carga sem download")
 
 
 TESTES = [
@@ -235,6 +293,8 @@ TESTES = [
     ("grafo do esqueleto (ST-GCN)", teste_grafo_conectado),
     ("treino de ponta a ponta com ST-GCN", teste_gcn_ponta_a_ponta),
     ("controle negativo (rótulo aleatório)", teste_controle_negativo),
+    ("controle negativo ST-GCN", teste_gcn_controle_negativo),
+    ("checkpoints GCN e ResNet", teste_checkpoints),
 ]
 
 

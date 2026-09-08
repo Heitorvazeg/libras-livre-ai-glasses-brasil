@@ -20,17 +20,21 @@ from __future__ import annotations
 import torch
 from torch import nn
 from torchvision.models import ResNet18_Weights, resnet18
+from torchvision.models.resnet import ResNet
 
 
-def construir(num_classes: int, congelar_ate: int = 0) -> nn.Module:
+def construir(num_classes: int, congelar_ate: int = 0, *,
+              pretreinado: bool = True) -> nn.Module:
     """ResNet-18 ImageNet com cabeça nova de `num_classes` saídas.
 
     `congelar_ate`: quantos blocos iniciais manter congelados (0 = fine-tuning
     completo, que é o que os trabalhos de referência fazem). Existe para a etapa
     de fine-tuning no vocabulário de domínio, quando houver pouquíssimo dado
     próprio por classe e congelar o início do backbone evita destruí-lo.
+    `pretreinado=False`: reconstrói sem baixar pesos ImageNet, para carregar
+    um checkpoint que já contém todos os pesos.
     """
-    modelo = resnet18(weights=ResNet18_Weights.IMAGENET1K_V1)
+    modelo = resnet18(weights=ResNet18_Weights.IMAGENET1K_V1 if pretreinado else None)
 
     if congelar_ate:
         blocos = [modelo.conv1, modelo.bn1, modelo.layer1, modelo.layer2,
@@ -57,12 +61,33 @@ def salvar(modelo: nn.Module, caminho, rotulos: list[str], meta: dict) -> None:
     classes que ele mesmo prevê é uma armadilha — a inferência acerta o índice e
     erra a palavra.
     """
-    torch.save({"state_dict": modelo.state_dict(), "rotulos": rotulos, "meta": meta}, caminho)
+    from gcn import STGCN
+
+    if isinstance(modelo, STGCN):
+        arquitetura, config = "gcn", dict(modelo.config)
+    elif isinstance(modelo, ResNet):
+        arquitetura, config = "resnet", {}
+    else:
+        raise ValueError(f"arquitetura não suportada: {type(modelo).__name__}")
+    torch.save({"state_dict": modelo.state_dict(), "rotulos": rotulos, "meta": meta,
+                "arquitetura": arquitetura, "config_modelo": config}, caminho)
 
 
 def carregar(caminho, map_location="cpu") -> tuple[nn.Module, list[str], dict]:
+    """Restaura a arquitetura salva; aceita também checkpoints legados do treino."""
     dados = torch.load(caminho, map_location=map_location, weights_only=False)
-    modelo = construir(len(dados["rotulos"]))
+    meta = dados.get("meta", {})
+    # Antes do campo explícito, treinar.py registrava a arquitetura em args.
+    # Checkpoints ResNet mais antigos não tinham nenhum dos dois campos.
+    arquitetura = dados.get("arquitetura", meta.get("args", {}).get("arquitetura", "resnet"))
+    if arquitetura == "gcn":
+        from gcn import construir as construir_gcn
+
+        modelo = construir_gcn(len(dados["rotulos"]), **dados.get("config_modelo", {}))
+    elif arquitetura == "resnet":
+        modelo = construir(len(dados["rotulos"]), pretreinado=False)
+    else:
+        raise ValueError(f"arquitetura de checkpoint não suportada: {arquitetura!r}")
     modelo.load_state_dict(dados["state_dict"])
     modelo.eval()
-    return modelo, dados["rotulos"], dados.get("meta", {})
+    return modelo, dados["rotulos"], meta

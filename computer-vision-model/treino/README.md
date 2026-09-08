@@ -52,6 +52,7 @@ justamente a que cabe no celular depois.
 | `representacao.py` | landmarks → imagem Skeleton-DML; augmentação (rotação, zoom, translação, espelhamento) |
 | `dados.py` | carga dos `.npy`, partições leave-one-signer-out |
 | `modelo.py` | ResNet-18 ImageNet com a cabeça trocada; salvar/carregar checkpoint |
+| `gcn.py` | alternativa ST-GCN para clipes isolados, sobre o grafo de 57 pontos |
 | `treinar.py` | laço LOSO, relatório e checkpoint final |
 | `selftest.py` | valida o pipeline inteiro com dados sintéticos, em segundos |
 
@@ -64,10 +65,24 @@ python selftest.py                       # 1º: valida o encanamento (segundos)
 python treinar.py --epocas 5 --folds 1    # 2º: uma rodada curta, para ver de pé
 python treinar.py                        # 3º: LOSO completo (8 rodadas)
 python treinar.py --final                # 4º: treina com todos e salva o checkpoint
+
+# Alternativa experimental, com as mesmas partições por pessoa:
+python treinar.py --arquitetura gcn
+python treinar.py --arquitetura gcn --final
 ```
 
-Saídas em `resultados/`: `relatorio.md` (acurácia por rodada e por sinal, pares
+Saídas em `resultados-resnet/` ou `resultados-gcn/` (ajustável por `--saida`):
+`relatorio.md` (acurácia por rodada e por sinal, pares
 confundidos), `matriz_confusao.npy` e `modelo_final.pt`.
+
+`modelo.carregar(caminho)` reconstrói a arquitetura salva, sem baixar pesos
+ImageNet. Checkpoints novos guardam também a configuração do GCN (largura,
+canais, nós e dropout); os checkpoints antigos do treino continuam aceitos.
+
+O ST-GCN atual consome coordenadas x/y reamostradas para 64 frames: não calcula
+ossos/ângulos e não é causal. É um experimento para sinais isolados, não a rede
+de streaming com atenção descrita na arquitetura de produto. Exportação para
+TFLite e robustez a mudanças de ponto de vista ainda precisam ser validadas.
 
 ### Custo nesta máquina (CPU, 12 núcleos, sem GPU)
 
@@ -78,9 +93,13 @@ usável (padrão 10 de 12).
 ## O que o self-test garante
 
 Além das formas e faixas, ele roda um **controle negativo**: com rótulos
-aleatórios, a acurácia tem de ficar na chance. Se subir, é sinal de vazamento
+aleatórios, ResNet e GCN não devem obter acurácia alta. Se subir, é sinal de vazamento
 entre treino e teste — o erro mais caro possível aqui, porque produz um número
 bonito e falso.
+
+Também verifica salvar/carregar GCN e ResNet, preservação das predições e dos
+metadados, variantes do GCN e compatibilidade com checkpoints antigos, sem
+downloads durante o carregamento.
 
 ## Dataset
 

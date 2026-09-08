@@ -7,11 +7,14 @@ que vizinhos têm relação, e ali eles não têm. O GCN corrige isso na raiz �
 vizinhança é a ANATOMIA (o cotovelo é vizinho do ombro e do pulso, ponto), e a
 convolução caminha por essas arestas.
 
-Duas vantagens que interessam ao produto, além da elegância:
+Duas motivações que interessam ao produto, ainda a validar:
   - modelo bem menor que uma ResNet-18, o que importa no `.tflite` do celular;
-  - ângulos/ossos são representação nativa aqui, e é isso que dá robustez a
-    ponto de vista (óculos apontando de cima, de baixo, de lado) — a lacuna que
-    a normalização atual NÃO cobre.
+    - o grafo permite explorar vetores de ossos/ângulos para lidar com mudanças
+        de ponto de vista. Esta versão usa somente coordenadas x/y: não implementa
+        essas features nem garante invariância ao ângulo da câmera.
+
+O modelo atual classifica clipes completos; não é causal e não implementa
+atenção dependente da entrada. A exportação TFLite também permanece pendente.
 
 O QUE AINDA NÃO SABEMOS: não há, até onde a pesquisa foi, número publicado de
 GCN no MINDS-Libras com protocolo leave-one-signer-out. Este módulo existe para
@@ -176,6 +179,11 @@ class STGCN(nn.Module):
     def __init__(self, num_classes: int, n_nos: int = N_POSE + 2 * N_MAO,
                  canais_ent: int = 2, largura: int = 64, dropout: float = 0.3):
         super().__init__()
+        # Necessário para reconstruir também variantes não padrão do checkpoint.
+        self.config = {
+            "n_nos": n_nos, "canais_ent": canais_ent,
+            "largura": largura, "dropout": dropout,
+        }
         a = adjacencia(n_nos, arestas())
         self.register_buffer("a", a)
         # Importância de aresta aprendida: o grafo anatômico é o ponto de
