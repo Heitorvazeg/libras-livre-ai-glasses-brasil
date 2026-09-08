@@ -27,6 +27,7 @@ import numpy as np
 import torch
 
 import dados as dd
+import gcn
 import representacao as rp
 import treinar as tr
 
@@ -41,12 +42,19 @@ def _ok(msg: str) -> None:
 
 
 def _clipe_sintetico(rng, classe: int, n_classes: int, pessoa: int, n_frames: int) -> np.ndarray:
-    """Trajetória senoidal com frequência/fase próprias da classe (+ estilo por pessoa)."""
+    """Trajetória senoidal com frequência e padrão espacial próprios da classe.
+
+    O padrão espacial por classe é ALEATÓRIO-mas-fixo (semeado pela classe), não
+    uma função suave do índice do ponto. Isso importa: um padrão suave no índice
+    é trivial para a representação em imagem (índices viram linhas vizinhas) e
+    quase invisível para o GCN, cuja vizinhança é anatômica — o teste passaria a
+    medir a representação em vez do encanamento. Assim as duas arquiteturas
+    enxergam a mesma dificuldade.
+    """
     t = np.linspace(0, 1, n_frames)[:, None, None]
+    rng_classe = np.random.default_rng(1000 + classe)
+    direcao = rng_classe.normal(0, 1.0, size=(1, N_PONTOS, 2))
     base = rng.normal(0, 0.05, size=(1, N_PONTOS, 2))
-    direcao = np.zeros((1, N_PONTOS, 2))
-    direcao[0, :, 0] = np.cos(np.linspace(0, np.pi, N_PONTOS)) * (1 + classe)
-    direcao[0, :, 1] = np.sin(np.linspace(0, np.pi, N_PONTOS)) * (1 + classe)
     freq = 1.0 + classe * (2.0 / max(n_classes, 1))
     fase = pessoa * 0.15
     onda = np.sin(2 * np.pi * freq * t + fase)
@@ -154,17 +162,19 @@ def teste_particoes() -> None:
     _ok("partições LOSO: teste, validação e treino disjuntos")
 
 
-def _rodada_sintetica(rotulo_aleatorio: bool, epocas: int = 6) -> float:
+def _rodada_sintetica(rotulo_aleatorio: bool, epocas: int = 6,
+                      arquitetura: str = "resnet") -> float:
     with tempfile.TemporaryDirectory() as tmp:
         destino = Path(tmp)
-        _dataset_sintetico(destino, n_pessoas=4, n_classes=3, reps=4,
+        _dataset_sintetico(destino, n_pessoas=6, n_classes=3, reps=8,
                            rotulo_aleatorio=rotulo_aleatorio)
         clipes = dd.carregar(destino, fontes="minds")
         rotulos = dd.rotulos(clipes)
         perm = rp.permutacao_espelho(POSE)
         part = dd.particoes(clipes)[0]
 
-        args = argparse.Namespace(epocas=epocas, lr=1e-3, wd=1e-4, batch=8, workers=0)
+        args = argparse.Namespace(epocas=epocas, lr=1e-3, wd=1e-4, batch=8, workers=0,
+                                  arquitetura=arquitetura)
         treino = [c for c in clipes if c.pessoa in part.treino]
         val = [c for c in clipes if c.pessoa == part.validacao]
         teste = [c for c in clipes if c.pessoa == part.teste]
@@ -177,6 +187,35 @@ def teste_treino_ponta_a_ponta() -> None:
     acc = _rodada_sintetica(rotulo_aleatorio=False)
     assert acc > 0.60, f"classes separáveis deveriam passar de 60%, veio {acc:.1%}"
     _ok(f"treino de ponta a ponta aprende classes separáveis ({acc:.0%})")
+
+
+def teste_grafo_conectado() -> None:
+    """Mãos precisam alcançar o tronco: grafo desconectado isola os dedos."""
+    import numpy as _np
+    v = gcn.N_POSE + 2 * gcn.N_MAO
+    adj = _np.zeros((v, v), dtype=bool)
+    for i, j in gcn.arestas():
+        adj[i, j] = adj[j, i] = True
+    visto, fila = {0}, [0]
+    while fila:
+        u = fila.pop()
+        for w in _np.where(adj[u])[0]:
+            if int(w) not in visto:
+                visto.add(int(w))
+                fila.append(int(w))
+    assert len(visto) == v, f"grafo desconectado: {sorted(set(range(v)) - visto)} inalcançáveis"
+
+    a = gcn.adjacencia(v, gcn.arestas())
+    assert a.shape == (2, v, v), a.shape
+    assert torch.allclose(a[1].sum(0), torch.ones(v), atol=1e-5), \
+        "adjacência dos vizinhos não está normalizada por grau"
+    _ok(f"grafo do esqueleto conectado ({v} nós, {len(gcn.arestas())} arestas)")
+
+
+def teste_gcn_ponta_a_ponta() -> None:
+    acc = _rodada_sintetica(rotulo_aleatorio=False, arquitetura="gcn")
+    assert acc > 0.60, f"GCN em classes separáveis deveria passar de 60%, veio {acc:.1%}"
+    _ok(f"treino de ponta a ponta com ST-GCN ({acc:.0%})")
 
 
 def teste_controle_negativo() -> None:
@@ -193,6 +232,8 @@ TESTES = [
     ("augmentação", teste_augmentacao),
     ("partições leave-one-signer-out", teste_particoes),
     ("treino de ponta a ponta", teste_treino_ponta_a_ponta),
+    ("grafo do esqueleto (ST-GCN)", teste_grafo_conectado),
+    ("treino de ponta a ponta com ST-GCN", teste_gcn_ponta_a_ponta),
     ("controle negativo (rótulo aleatório)", teste_controle_negativo),
 ]
 

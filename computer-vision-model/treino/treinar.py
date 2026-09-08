@@ -29,6 +29,7 @@ from torch import nn
 from torch.utils.data import DataLoader, Dataset
 
 import dados as dd
+import gcn as gg
 import modelo as mm
 import representacao as rp
 
@@ -42,7 +43,9 @@ class DatasetSinais(Dataset):
     """Clipes -> imagens Skeleton-DML 224×224, com augmentação só no treino."""
 
     def __init__(self, clipes: list[dd.Clipe], rotulos: list[str],
-                 permutacao: np.ndarray | None, aumentar: bool, semente: int = 0):
+                 permutacao: np.ndarray | None, aumentar: bool, semente: int = 0,
+                 arquitetura: str = "resnet"):
+        self.arquitetura = arquitetura
         self.clipes = clipes
         self.indice = {r: i for i, r in enumerate(rotulos)}
         self.permutacao = permutacao
@@ -61,15 +64,20 @@ class DatasetSinais(Dataset):
             rng = np.random.default_rng(abs(hash((self.semente, i, torch.initial_seed()))) % 2**32)
             seq = rp.aumentar(seq, rng, self.permutacao)
 
-        img = rp.para_imagem(seq)                      # (P, W, 3) em [0,1]
-        t = torch.from_numpy(img).permute(2, 0, 1)     # (3, P, W)
-        t = F.interpolate(t.unsqueeze(0), size=(LADO, LADO),
-                          mode="bilinear", align_corners=False).squeeze(0)
+        if self.arquitetura == "gcn":
+            # O GCN consome o esqueleto direto: (canais, tempo, nós).
+            t = torch.from_numpy(gg.para_sequencia(seq))
+        else:
+            img = rp.para_imagem(seq)                      # (P, W, 3) em [0,1]
+            t = torch.from_numpy(img).permute(2, 0, 1)     # (3, P, W)
+            t = F.interpolate(t.unsqueeze(0), size=(LADO, LADO),
+                              mode="bilinear", align_corners=False).squeeze(0)
         return t, self.indice[clipe.sinal]
 
 
-def _loader(clipes, rotulos, permutacao, aumentar, batch, workers, embaralhar):
-    ds = DatasetSinais(clipes, rotulos, permutacao, aumentar)
+def _loader(clipes, rotulos, permutacao, aumentar, batch, workers, embaralhar,
+            arquitetura="resnet"):
+    ds = DatasetSinais(clipes, rotulos, permutacao, aumentar, arquitetura=arquitetura)
     return DataLoader(ds, batch_size=batch, shuffle=embaralhar, num_workers=workers,
                       drop_last=embaralhar and len(ds) > batch)
 
@@ -93,13 +101,15 @@ def _avaliar(modelo, loader, criterio, dispositivo):
 
 def treinar_rodada(treino, validacao, teste, rotulos, permutacao, args, dispositivo):
     """Treina uma rodada e devolve (acurácia no teste, predições, verdadeiros)."""
-    modelo = mm.construir(len(rotulos)).to(dispositivo)
+    arq = getattr(args, "arquitetura", "resnet")
+    construtor = gg.construir if arq == "gcn" else mm.construir
+    modelo = construtor(len(rotulos)).to(dispositivo)
     criterio = nn.CrossEntropyLoss()
     otim = torch.optim.Adam(modelo.parameters(), lr=args.lr, weight_decay=args.wd)
 
-    l_treino = _loader(treino, rotulos, permutacao, True, args.batch, args.workers, True)
-    l_val = _loader(validacao, rotulos, None, False, args.batch, args.workers, False)
-    l_teste = _loader(teste, rotulos, None, False, args.batch, args.workers, False)
+    l_treino = _loader(treino, rotulos, permutacao, True, args.batch, args.workers, True, arq)
+    l_val = _loader(validacao, rotulos, None, False, args.batch, args.workers, False, arq)
+    l_teste = _loader(teste, rotulos, None, False, args.batch, args.workers, False, arq)
 
     melhor_perda, melhores_pesos, melhor_epoca = float("inf"), None, -1
     for epoca in range(args.epocas):
@@ -147,7 +157,7 @@ def escrever_relatorio(destino: Path, rotulos, accs, nomes_fold, cm, args, segun
                     if i != j and cm[i, j] > 0), key=lambda t: -t[2])[:10]
 
     linhas = [
-        "# Resultado do treino — Skeleton-DML + ResNet-18 (ImageNet)",
+        f"# Resultado do treino — {'ST-GCN (grafo do esqueleto)' if args.arquitetura == 'gcn' else 'Skeleton-DML + ResNet-18 (ImageNet)'}",
         "",
         f"Gerado em {datetime.now():%Y-%m-%d %H:%M} · protocolo leave-one-signer-out "
         f"({len(accs)} rodadas) · {segundos / 60:.0f} min de treino.",
@@ -195,6 +205,9 @@ def escrever_relatorio(destino: Path, rotulos, accs, nomes_fold, cm, args, segun
 
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    ap.add_argument("--arquitetura", default="resnet", choices=["resnet", "gcn"],
+                    help="resnet: Skeleton-DML + ResNet-18 (imagem). "
+                         "gcn: ST-GCN sobre o grafo do esqueleto.")
     ap.add_argument("--fontes", default="minds", choices=["minds", "vlibrasil", "todas"])
     ap.add_argument("--epocas", type=int, default=30)
     ap.add_argument("--lr", type=float, default=1e-4)
@@ -207,8 +220,11 @@ def main() -> None:
                     help="limita o nº de rodadas (0 = todas). Use 1 para testar o encanamento.")
     ap.add_argument("--final", action="store_true",
                     help="treina com TODAS as pessoas e salva o checkpoint (sem avaliação)")
-    ap.add_argument("--saida", default="resultados")
+    ap.add_argument("--saida", default=None,
+                    help="diretório de saída (padrão: resultados-<arquitetura>)")
     args = ap.parse_args()
+    if args.saida is None:
+        args.saida = f"resultados-{args.arquitetura}"
 
     torch.set_num_threads(args.threads)
     dispositivo = torch.device("cpu")
@@ -224,8 +240,11 @@ def main() -> None:
     avisos = dd.conferir(clipes, cfg["vocabulario"])
     for a in avisos:
         print(f"[treino] ⚠ {a}")
+    n_par = sum(p.numel() for p in (gg.construir if args.arquitetura == "gcn"
+                                    else mm.construir)(len(rotulos)).parameters())
     print(f"[treino] {len(clipes)} clipes | {len(dd.pessoas(clipes))} pessoas | "
-          f"{len(rotulos)} sinais | dispositivo={dispositivo} threads={args.threads}")
+          f"{len(rotulos)} sinais | arquitetura={args.arquitetura} ({n_par/1e6:.2f}M par.) "
+          f"| dispositivo={dispositivo} threads={args.threads}")
 
     saida = AQUI / args.saida
     saida.mkdir(parents=True, exist_ok=True)
