@@ -42,7 +42,7 @@ def teste_vocabularios_batem() -> None:
     for config in (AQUI.parent / "PoC" / "config.yaml", AQUI.parent / "config.yaml"):
         vocab = set(yaml.safe_load(config.read_text(encoding="utf-8"))["vocabulario"])
         assert vocab == selecionados, f"{config}: vocabulário {sorted(vocab)} != seleção"
-    assert len(selecionados) == 10, f"esperava 10 sinais, veio {len(selecionados)}"
+    assert len(selecionados) == 20, f"esperava 20 sinais, veio {len(selecionados)}"
     _ok("vocabulário igual em selecao.yaml, PoC/config.yaml e config.yaml")
 
 
@@ -53,7 +53,7 @@ def teste_traducao_de_nomes() -> None:
         "01AcontecerSinalizador05-3.mp4": 100,
         "17RuimSinalizador12-5.mp4": 100,
         "13MacaSinalizador01-1.mp4": 100,
-        "02AlunoSinalizador05-3.mp4": 100,   # fora da seleção: tem que ser ignorado
+        "21AbacaxiSinalizador05-3.mp4": 100,  # fora da seleção: tem que ser ignorado
     }), sel)
     obtidos = {c.destino for c in minds}
     assert obtidos == {"pessoaM05_sinal-acontecer_rep03.mp4",

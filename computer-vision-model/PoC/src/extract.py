@@ -65,8 +65,14 @@ def _hand_px(hand_landmarks, w: int, h: int) -> np.ndarray | None:
                     dtype=np.float64)
 
 
-def frame_normalizado(results, w: int, h: int, cfg) -> np.ndarray | None:
-    """Pontos do frame normalizados (num_pontos, dims), ou None se não dá para normalizar."""
+def frame_normalizado(results, w: int, h: int, cfg, dims: int | None = None) -> np.ndarray | None:
+    """Pontos do frame normalizados (num_pontos, dims), ou None se não dá para normalizar.
+
+    `dims` sobrescreve cfg.dims. A extração passa 3 de propósito: o .npy é o
+    artefato caro (horas de MediaPipe), então guarda tudo que foi calculado e
+    deixa o descarte do z para a LEITURA (carregar_dataset corta conforme
+    normalizacao.usar_z). Assim, testar o z de novo não exige reextrair.
+    """
     pose = results.pose_landmarks
     if pose is None:
         return None  # sem tronco não há referência estável de normalização
@@ -97,7 +103,7 @@ def frame_normalizado(results, w: int, h: int, cfg) -> np.ndarray | None:
             blocos.append((mao - origem) / escala)
 
     pontos = np.concatenate(blocos, axis=0)
-    return pontos[:, : cfg.dims].astype(np.float32)
+    return pontos[:, : (dims if dims is not None else cfg.dims)].astype(np.float32)
 
 
 def extrair_video(caminho: Path, holistic, cfg) -> tuple[np.ndarray, int]:
@@ -119,7 +125,7 @@ def extrair_video(caminho: Path, holistic, cfg) -> tuple[np.ndarray, int]:
             h, w = frame.shape[:2]
         rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
         rgb.flags.writeable = False
-        vec = frame_normalizado(holistic.process(rgb), w, h, cfg)
+        vec = frame_normalizado(holistic.process(rgb), w, h, cfg, dims=3)
         if vec is None:
             descartados += 1
         else:
@@ -127,7 +133,7 @@ def extrair_video(caminho: Path, holistic, cfg) -> tuple[np.ndarray, int]:
     cap.release()
 
     if not frames:
-        return np.empty((0, cfg.num_pontos, cfg.dims), dtype=np.float32), descartados
+        return np.empty((0, cfg.num_pontos, 3), dtype=np.float32), descartados
     return np.stack(frames).astype(np.float32), descartados
 
 
