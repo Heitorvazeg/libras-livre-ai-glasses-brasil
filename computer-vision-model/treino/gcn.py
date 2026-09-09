@@ -148,8 +148,9 @@ def com_ossos(seq: np.ndarray, pai: np.ndarray | None = None) -> np.ndarray:
         pai = pais()
     if pai.shape[0] != seq.shape[1]:
         raise ValueError(f"árvore tem {pai.shape[0]} nós, sequência tem {seq.shape[1]}")
-    xy = seq[:, :, :2]
-    return np.concatenate([xy, xy - xy[:, pai, :]], axis=2).astype(np.float32)
+    # Genérico no número de dimensões: com x,y saem 4 canais; com x,y,z saem 6.
+    # Fixar 2 aqui faria `--ossos --com-z` descartar o z em silêncio.
+    return np.concatenate([seq, seq - seq[:, pai, :]], axis=2).astype(np.float32)
 
 
 def adjacencia(n_nos: int, lista_arestas: list[tuple[int, int]]) -> torch.Tensor:

@@ -267,6 +267,51 @@ def teste_ossos() -> None:
     _ok("ossos: árvore coerente, simétrica ao espelho e invariante a translação")
 
 
+def teste_terceira_coordenada() -> None:
+    """As duas representações têm de aceitar 3 coordenadas sem perder o z."""
+    import numpy as _np
+    rng = _np.random.default_rng(5)
+    v = gcn.N_POSE + 2 * gcn.N_MAO
+    seq = rng.normal(scale=0.8, size=(12, v, 3)).astype(_np.float32)
+
+    # Imagem: o z entra como bloco de COLUNAS, não como 4º canal — os 3 canais
+    # RGB continuam sendo 3 frames consecutivos.
+    img2 = rp.para_imagem(seq[:, :, :2])
+    img3 = rp.para_imagem(seq)
+    assert img3.shape[0] == img2.shape[0] and img3.shape[2] == img2.shape[2]
+    assert img3.shape[1] == img2.shape[1] * 3 // 2, (img2.shape, img3.shape)
+    # O bloco x,y da imagem 3D tem de ser idêntico ao da 2D: acrescentar z não
+    # pode reescalar o que já estava medido em 93,4%.
+    assert _np.allclose(img3[:, :img2.shape[1]], img2, atol=1e-6), \
+        "acrescentar z alterou os blocos x,y da imagem"
+    assert 0.0 <= img3.min() and img3.max() <= 1.0
+
+    # O limite do z é maior: um z grande não pode saturar como saturaria em x,y.
+    grande = _np.zeros((3, v, 3), dtype=_np.float32); grande[:, :, 2] = 3.5
+    assert rp.para_imagem(grande).max() < 1.0, \
+        "z de 3.5 saturou — LIMITE_Z não está sendo aplicado (com LIMITE=2.0 ele viraria 1.0)"
+
+    # GCN: 3 canais, e 6 com ossos (o dobro, não 4).
+    assert gcn.para_sequencia(seq).shape == (3, gcn.T_FIXO, v)
+    com_ossos = gcn.com_ossos(seq, gcn.pais())
+    assert com_ossos.shape == (12, v, 6), com_ossos.shape
+    assert _np.allclose(com_ossos[:, :, :3], seq, atol=1e-6)
+    m = gcn.construir(3, canais_ent=6)
+    assert m(torch.from_numpy(gcn.para_sequencia(com_ossos)).unsqueeze(0)).shape == (1, 3)
+
+    # Recentrar o z zera o punho de cada mão e NÃO toca em x, y nem na pose.
+    rec = dd.recentrar_z(seq)
+    assert _np.allclose(rec[:, :, :2], seq[:, :, :2]), "recentrar mexeu em x,y"
+    assert _np.allclose(rec[:, :dd.N_POSE, 2], seq[:, :dd.N_POSE, 2]), "recentrar mexeu na pose"
+    for a, _b in dd.BLOCOS_MAO:
+        assert _np.allclose(rec[:, a, 2], 0.0), "o punho da mão deveria virar z=0"
+    # Mão ausente (bloco zerado) continua detectada como ausente depois de recentrar.
+    ausente = seq.copy(); a, b = dd.BLOCOS_MAO[0]; ausente[3, a:b, :] = 0.0
+    assert dd.maos_ausentes(dd.recentrar_z(ausente))[0][3], \
+        "mão ausente deixou de ser detectada após recentrar o z"
+    _ok("terceira coordenada: imagem, grafo, ossos e recentramento do z")
+
+
 def teste_gcn_ponta_a_ponta() -> None:
     acc = _rodada_sintetica(rotulo_aleatorio=False, arquitetura="gcn")
     assert acc > 0.60, f"GCN em classes separáveis deveria passar de 60%, veio {acc:.1%}"
@@ -453,6 +498,7 @@ TESTES = [
     ("treino de ponta a ponta", teste_treino_ponta_a_ponta),
     ("grafo do esqueleto (ST-GCN)", teste_grafo_conectado),
     ("vetores de osso (two-stream)", teste_ossos),
+    ("terceira coordenada (x,y,z)", teste_terceira_coordenada),
     ("treino de ponta a ponta com ST-GCN", teste_gcn_ponta_a_ponta),
     ("controle negativo (rótulo aleatório)", teste_controle_negativo),
     ("contrastivo: perda e amostrador", teste_contrastivo),
