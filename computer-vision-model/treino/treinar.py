@@ -217,6 +217,8 @@ def escrever_relatorio(destino: Path, rotulos, accs, nomes_fold, cm, args, segun
         (f"- Inicializado a partir do backbone `{args.inicializar}` (pré-treino), "
          "não do ImageNet puro." if getattr(args, "inicializar", None) else
          "- Inicializado do ImageNet (sem pré-treino em Libras)."),
+        ("- Landmarks SEM imputação de lacunas." if getattr(args, "sem_imputacao", False)
+         else "- Lacunas curtas de mão preenchidas por interpolação (<=5 frames)."),
         "",
         "## Acurácia por rodada (pessoa deixada de fora)",
         "",
@@ -254,6 +256,9 @@ def main() -> None:
                     help="resnet: Skeleton-DML + ResNet-18 (imagem). "
                          "gcn: ST-GCN sobre o grafo do esqueleto.")
     ap.add_argument("--fontes", default="minds", choices=["minds", "vlibrasil", "todas"])
+    ap.add_argument("--sem-imputacao", action="store_true",
+                    help="desliga o preenchimento de lacunas curtas de mão — existe para "
+                         "medir o efeito da imputação contra o mesmo pipeline sem ela")
     ap.add_argument("--epocas", type=int, default=30)
     ap.add_argument("--lr", type=float, default=1e-4)
     ap.add_argument("--wd", type=float, default=1e-4)
@@ -287,7 +292,7 @@ def main() -> None:
 
     cfg = yaml.safe_load(CONFIG.read_text(encoding="utf-8"))
     lm_dir = POC / cfg["paths"]["landmarks"]
-    clipes = dd.carregar(lm_dir, fontes=args.fontes)
+    clipes = dd.carregar(lm_dir, fontes=args.fontes, imputar=not args.sem_imputacao)
     if not clipes:
         raise SystemExit(f"nenhum landmark em {lm_dir} — rode ../PoC/src/extract.py primeiro.")
 

@@ -362,11 +362,48 @@ def teste_pretreino_contrastivo_ponta_a_ponta() -> None:
     _ok("pré-treino contrastivo roda de ponta a ponta e salva backbone limpo")
 
 
+def teste_imputacao_maos() -> None:
+    """Lacuna curta é preenchida com continuidade; lacuna longa fica como ausência.
+
+    O limite existe porque as duas coisas são diferentes: interpolar 3 frames entre
+    duas detecções reconstrói o que houve; interpolar 40 inventa uma trajetória que
+    ninguém observou. E ausência longa é informação legítima — sinais de uma mão só
+    existem.
+    """
+    seq = np.zeros((30, 57, 2), dtype=np.float32)
+    seq[:, :dd.N_POSE, :] = 0.5
+    mao = slice(dd.N_POSE, dd.N_POSE + dd.N_MAO)
+    for f in range(30):
+        seq[f, mao, :] = 1.0 + f * 0.01
+    seq[10:13, mao, :] = 0.0     # lacuna curta (3)
+    seq[20:30, mao, :] = 0.0     # lacuna longa (10)
+
+    fora = dd.imputar_maos(seq, lacuna_maxima=5)
+    ausente = dd.maos_ausentes(fora)[0]
+    assert not ausente[10:13].any(), "lacuna curta deveria ter sido preenchida"
+    assert ausente[20:30].all(), "lacuna longa NÃO deveria ser inventada"
+
+    # o preenchimento tem de ficar entre os vizinhos, e ser monotônico aqui
+    v = fora[10:13, dd.N_POSE, 0]
+    assert seq[9, dd.N_POSE, 0] < v[0] <= v[-1] < seq[13, dd.N_POSE, 0], \
+        f"interpolação fora do intervalo dos vizinhos: {v}"
+
+    # a pose não pode ser tocada — só as mãos
+    assert np.allclose(fora[:, :dd.N_POSE, :], seq[:, :dd.N_POSE, :]), \
+        "imputação alterou pontos de pose"
+
+    # clipe sem nenhuma detecção não pode quebrar nem inventar dados
+    vazio = np.zeros((10, 57, 2), dtype=np.float32)
+    assert dd.maos_ausentes(dd.imputar_maos(vazio))[0].all()
+    _ok("imputação: lacuna curta preenchida, longa preservada, pose intacta")
+
+
 TESTES = [
     ("Skeleton-DML (representação)", teste_representacao),
     ("espelhamento esquerda/direita", teste_espelho),
     ("augmentação", teste_augmentacao),
     ("partições leave-one-signer-out", teste_particoes),
+    ("imputação de mãos ausentes", teste_imputacao_maos),
     ("treino de ponta a ponta", teste_treino_ponta_a_ponta),
     ("grafo do esqueleto (ST-GCN)", teste_grafo_conectado),
     ("treino de ponta a ponta com ST-GCN", teste_gcn_ponta_a_ponta),

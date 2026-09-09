@@ -48,13 +48,19 @@ def parse_nome(stem: str) -> tuple[str, str, str]:
     return m.group("pessoa"), m.group("sinal"), m.group("rep")
 
 
-def carregar(lm_dir: Path, fontes: str = "minds", min_frames: int = 3) -> list[Clipe]:
+def carregar(lm_dir: Path, fontes: str = "minds", min_frames: int = 3,
+             imputar: bool = True, lacuna_maxima: int = 5) -> list[Clipe]:
     """Lê os .npy de `lm_dir`, ficando só com x,y.
 
     `fontes`: 'minds' (pessoas M*), 'vlibrasil' (V*) ou 'todas'. O padrão é
     MINDS porque é a única fonte com pessoas suficientes por sinal para a
     avaliação signer-independent valer — a V-LIBRASIL tem sempre os mesmos 3
     articuladores (docs/vocabulario-mvp-proposta.md).
+
+    `imputar` preenche lacunas curtas de mão não detectada (ver imputar_maos).
+    É feito na LEITURA, não na extração: o .npy guarda a verdade crua, custa horas
+    de MediaPipe para refazer, e assim a imputação é reversível e comparável com
+    um `--sem-imputacao`.
     """
     prefixos = {"minds": ("M",), "vlibrasil": ("V",), "todas": ("M", "V")}
     if fontes not in prefixos:
@@ -75,12 +81,66 @@ def carregar(lm_dir: Path, fontes: str = "minds", min_frames: int = 3) -> list[C
             # quase sempre um vídeo em que o MediaPipe não achou o tronco.
             curtos.append(arquivo.name)
             continue
-        clipes.append(Clipe(pessoa, sinal, rep, arr[:, :, :2].astype(np.float32)))
+        seq = arr[:, :, :2].astype(np.float32)
+        if imputar:
+            seq = imputar_maos(seq, lacuna_maxima)
+        clipes.append(Clipe(pessoa, sinal, rep, seq))
 
     if curtos:
         print(f"[dados] {len(curtos)} clipe(s) descartado(s) por ter < {min_frames} frames "
               f"válidos: {', '.join(curtos[:5])}{' ...' if len(curtos) > 5 else ''}")
     return clipes
+
+
+# Layout do vetor de pontos que extract.py produz (config.pose_indices + 2 mãos).
+N_POSE, N_MAO = 15, 21
+BLOCOS_MAO = ((N_POSE, N_POSE + N_MAO), (N_POSE + N_MAO, N_POSE + 2 * N_MAO))
+
+
+def maos_ausentes(seq: np.ndarray) -> list[np.ndarray]:
+    """Máscara booleana por frame, para cada mão: True = não detectada.
+
+    `extract.py` escreve zeros quando o MediaPipe não acha a mão. Zero é a ORIGEM
+    (ponto médio dos ombros), então a ausência não é neutra: ela teleporta a mão
+    para o meio do peito. Detectamos pelo bloco inteiro exatamente zerado — 42
+    coordenadas darem 0.0 por acaso não acontece.
+    """
+    return [np.abs(seq[:, a:b, :]).sum(axis=(1, 2)) == 0 for a, b in BLOCOS_MAO]
+
+
+def imputar_maos(seq: np.ndarray, lacuna_maxima: int = 5) -> np.ndarray:
+    """Interpola as mãos em lacunas curtas; preserva as longas como ausência.
+
+    POR QUE ISTO EXISTE, com número. Medido nos 800 clipes do MINDS: 51,7% dos
+    frames chegam sem NENHUMA mão detectada, e cada aparecimento/desaparecimento
+    injeta um salto de 1,09 unidades de ombro (mediana) — cerca de 30% da
+    amplitude total dos dados, que vai de -1,6 a +1,8. É um movimento brusco que
+    nós mesmos criamos ao representar ausência como zero, e o modelo o vê como se
+    fosse parte do sinal.
+
+    Tentamos primeiro melhorar a DETECÇÃO, e não resolve: model_complexity=2
+    (44,7% contra 47,4%), MediaPipe Hands isolado, e recorte ao redor do pulso
+    (+5,3 pp apenas). Sobra tratar a lacuna, que é o que a literatura de ISLR em
+    Libras já reportava valer >=4pp de F1 no MINDS.
+
+    O limite de `lacuna_maxima` é deliberado: interpolar 3 frames entre duas
+    detecções é reconstruir; interpolar 40 é inventar uma trajetória que não foi
+    observada. Lacunas longas continuam zeradas — ausência é informação legítima
+    (sinais de uma mão só existem, e a mão parada de fato não aparece).
+    """
+    saida = seq.copy()
+    for (a, b), ausente in zip(BLOCOS_MAO, maos_ausentes(seq)):
+        presentes = np.flatnonzero(~ausente)
+        if presentes.size < 2:
+            continue  # nada para interpolar entre
+        for ini, fim in zip(presentes[:-1], presentes[1:]):
+            vao = fim - ini - 1
+            if 0 < vao <= lacuna_maxima:
+                # interpolação linear entre as duas detecções que cercam a lacuna
+                pesos = np.linspace(0, 1, vao + 2)[1:-1].reshape(-1, 1, 1)
+                saida[ini + 1:fim, a:b, :] = (
+                    seq[ini, a:b, :][None] * (1 - pesos) + seq[fim, a:b, :][None] * pesos)
+    return saida
 
 
 def rotulos(clipes: list[Clipe]) -> list[str]:
