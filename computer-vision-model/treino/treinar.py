@@ -99,11 +99,39 @@ def _avaliar(modelo, loader, criterio, dispositivo):
     return perda / max(total, 1), certos / max(total, 1), preds, reais
 
 
+def aplicar_backbone(modelo, caminho: Path, arquitetura: str) -> int:
+    """Carrega pesos de pré-treino no corpo da rede, preservando a cabeça nova.
+
+    A cabeça (`fc`) do backbone previa as classes do corpus de pré-treino — 1.353
+    palavras da V-LIBRASIL, por exemplo — e não serve para os 20 sinais daqui. Só
+    o corpo transfere. `strict=False` é intencional e a contagem devolvida serve
+    de conferência: se o número de tensores carregados vier baixo, o backbone é
+    de outra arquitetura e o "pré-treino" seria silenciosamente nenhum.
+    """
+    dados = torch.load(caminho, map_location="cpu", weights_only=False)
+    if dados.get("arquitetura") != arquitetura:
+        raise SystemExit(f"backbone é de '{dados.get('arquitetura')}' mas o treino é "
+                         f"'{arquitetura}' — arquiteturas não são intercambiáveis")
+    pesos = dados["backbone"]
+    faltando, inesperados = modelo.load_state_dict(pesos, strict=False)
+    carregados = len(pesos) - len(inesperados)
+    if inesperados:
+        raise SystemExit(f"backbone tem {len(inesperados)} tensores que o modelo não "
+                         f"reconhece (ex.: {inesperados[:3]}) — formatos incompatíveis")
+    if carregados == 0:
+        raise SystemExit("nenhum peso do backbone foi aplicado — o pré-treino seria inócuo")
+    return carregados
+
+
 def treinar_rodada(treino, validacao, teste, rotulos, permutacao, args, dispositivo):
     """Treina uma rodada e devolve (acurácia no teste, predições, verdadeiros)."""
     arq = getattr(args, "arquitetura", "resnet")
     construtor = gg.construir if arq == "gcn" else mm.construir
-    modelo = construtor(len(rotulos)).to(dispositivo)
+    modelo = construtor(len(rotulos))
+    if getattr(args, "inicializar", None):
+        n = aplicar_backbone(modelo, Path(args.inicializar), arq)
+        print(f"      backbone de pré-treino aplicado ({n} tensores)")
+    modelo = modelo.to(dispositivo)
     criterio = nn.CrossEntropyLoss()
     otim = torch.optim.Adam(modelo.parameters(), lr=args.lr, weight_decay=args.wd)
 
@@ -172,6 +200,9 @@ def escrever_relatorio(destino: Path, rotulos, accs, nomes_fold, cm, args, segun
         "ver `../PoC/results/relatorio.md`.",
         "- Referência publicada no MINDS-Libras com este protocolo: 0,93-0,94 "
         "(Alves et al. 2024; dos Santos et al. 2025).",
+        (f"- Inicializado a partir do backbone `{args.inicializar}` (pré-treino), "
+         "não do ImageNet puro." if getattr(args, "inicializar", None) else
+         "- Inicializado do ImageNet (sem pré-treino em Libras)."),
         "",
         "## Acurácia por rodada (pessoa deixada de fora)",
         "",
@@ -221,6 +252,8 @@ def main() -> None:
                          "e no Colab/Kaggle sem edição")
     ap.add_argument("--folds", type=int, default=0,
                     help="limita o nº de rodadas (0 = todas). Use 1 para testar o encanamento.")
+    ap.add_argument("--inicializar", metavar="CHECKPOINT",
+                    help="parte de um backbone de pretreinar.py em vez do ImageNet")
     ap.add_argument("--final", action="store_true",
                     help="treina com TODAS as pessoas e salva o checkpoint (sem avaliação)")
     ap.add_argument("--saida", default=None,
