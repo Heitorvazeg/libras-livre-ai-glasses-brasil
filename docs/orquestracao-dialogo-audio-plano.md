@@ -8,6 +8,13 @@
 > do avatar já planejada em `docs/vlibras-webview-plano.md` (branch
 > `feat/Empacota-player-vlibras-em-webview-nativa`) — não reinventa nenhum dos
 > dois, só desenha o que os conecta.
+>
+> **Início e fim de cada captura (vídeo e áudio) são controlados por duas wake
+> words** ("Libras Livre, iniciar" / "Libras Livre, encerrar"), não por
+> detecção automática de pausa — esse detector existe, mas evolui em branch e
+> plano próprios
+> (`docs/sign-boundary-detector-plano.md`, branch `feat/sign-boundary-detector`),
+> desacoplado deste fluxo.
 
 ---
 
@@ -37,9 +44,9 @@ pra caber no caso de uso real (atendente ocupado, balcão).
 | Gravação de vídeo+áudio (MP4) | `stream/VideoRecorder.kt` + `VideoCaptureHandler.kt` | Não relacionado a este plano — continua intocado |
 | Gatilho de captura do sinal | `ui/CameraScreen.kt` (`LibrasCaptureRow`) | Hoje é um **toque manual** (início E fim) |
 
-Este plano **substitui só o gatilho** (toque manual → wake word + detecção
-automática de pausa) e **adiciona** a perna de resposta (escuta → STT → avatar).
-Nada do pipeline de vídeo/gravação MP4 muda.
+Este plano **substitui só o gatilho** (toque manual → duas wake words,
+"Libras Livre, iniciar" / "Libras Livre, encerrar") e **adiciona** a perna de
+resposta (escuta → STT → avatar). Nada do pipeline de vídeo/gravação MP4 muda.
 
 ---
 
@@ -56,7 +63,7 @@ Pra quem for implementar ou revisar isso sem ter acompanhado a discussão:
 | 5 | **Wake word / keyword spotting** | Detecção contínua e leve de uma palavra-gatilho específica, rodando local (não é STT genérico, não depende de nuvem). Precisa ser **on-device**, alinhado com o objetivo geral do projeto (ver `PoC/api/README.md`: "o objetivo do projeto é on-device/offline"). |
 | 6 | **STT** (Speech-to-Text) | Diferente de wake word: roda só depois do gatilho, converte a fala inteira do atendente em texto. Mais pesado, só ativa sob demanda. |
 | 7 | **Glosa** | Formato intermediário PT-BR→Libras que o player VLibras consome (ver `docs/vlibras-webview-plano.md`, §5.1). O texto do STT é o insumo que alimenta essa tradução — a costura entre este plano e aquele. |
-| 8 | **Endpointing (detecção de pausa)** | Decidir automaticamente "a pessoa parou de sinalizar/falar" sem gatilho manual. Aplica dos dois lados aqui: pausa no movimento das mãos (fim do sinal) e silêncio na fala (fim da resposta do atendente — não coberto em detalhe neste documento, ver §8). |
+| 8 | **Endpointing (detecção de fim)** | Decidir "a pessoa parou de sinalizar/falar". Neste plano, resolvido **sem** detecção automática de pausa — uma segunda wake word ("Libras Livre, encerrar") falada pelo atendente fecha tanto a captura de vídeo quanto a de áudio. Existe uma heurística de pausa por movimento (`docs/sign-boundary-detector-plano.md`), mas é um componente à parte, não usado aqui. |
 
 ---
 
@@ -71,19 +78,48 @@ produto/arquitetura, com o motivo:
    degradado sempre) e gasta bateria/rádio à toa. O mic do celular já está
    disponível sem esse custo (`AudioInputHandler` já mostra o padrão de uso).
 
-2. **Uma wake word só; o estado do diálogo decide a ação.**
-   Em vez de duas frases-gatilho diferentes (uma pra "começar a assistir o
-   sinal", outra pra "responder"), a mesma detecção dispara ações diferentes
-   dependendo do `DialogState` atual — um único modelo de wake word pra
-   treinar/manter.
+2. **Duas wake words: "Libras Livre, iniciar" / "Libras Livre, encerrar"; o
+   estado do diálogo decide o que cada uma significa.** Em vez de uma
+   detecção só combinada com heurística de pausa, são dois gatilhos verbais
+   simétricos — "iniciar" começa uma captura (de vídeo em ①, de áudio em ⑤),
+   "encerrar" termina a que estiver ativa no momento (vídeo em ②, áudio em
+   ⑥). O `DialogState` decide qual ação cada frase dispara; o mesmo par serve
+   pros dois canais, não precisa de quatro frases diferentes.
 
-3. **Fim da captura do sinal por detecção automática de pausa nos landmarks —
-   não por toque, não por segunda wake word.**
-   Ressalva registrada: isso reintroduz uma variável que o projeto tinha
-   **deliberadamente adiado** (`LandmarkPipeline.kt` e o README raiz: a
-   segmentação manual existia "pra tirar essa variável da validação" enquanto
-   a PoC valida generalização entre sinalizantes). Ao automatizar, a
-   calibração desse detector vira uma frente de teste própria — ver §8.
+   **Por que o prefixo "Libras Livre" e não só "iniciar"/"encerrar" soltas:**
+   as duas são palavras comuns do português — um atendente pode dizer
+   "vamos iniciar o atendimento" ou "posso encerrar sua ficha" sem nenhuma
+   intenção de acionar o app. Prefixar com o nome do produto reduz bastante
+   esse risco de falso-positivo, ao custo de uma frase mais longa pra falar
+   (mais sílabas até o gatilho disparar — aceitável, no mesmo patamar da
+   latência de conexão do SCO que já existe em outras partes do fluxo).
+   Tecnicamente é só uma frase mais longa treinada como um wake word atômico
+   — não muda a arquitetura de detecção (`WakeWordDetector` continua
+   reconhecendo exatamente duas frases fixas, como antes), tanto Porcupine
+   quanto um modelo TFLite próprio suportam frases de várias palavras sem
+   precisar de um segundo estágio de reconhecimento.
+
+3. **Fim da captura — de vídeo E de áudio — é por wake word "encerrar",
+   não por detecção automática de pausa.**
+   Decisão consciente contra a heurística de movimento (que existe, mas em
+   plano/branch separados — `docs/sign-boundary-detector-plano.md`): evita
+   depender de um limiar calibrado, e resolve de graça o endpointing da fala
+   do atendente (§3, item 8) — o mesmo mecanismo serve pros dois canais.
+   Três implicações a não perder de vista:
+   - **Quem fala "encerrar" na captura de vídeo é o atendente**, não a
+     pessoa sinalizando (ela não fala) — ele que decide, olhando, quando o
+     sinal terminou. Isso expande a janela em que o `WakeWordDetector`
+     precisa estar ativo: não só em ①/⑤ (espera), mas também durante ②
+     (captura de sinal) e ⑥ (escuta do atendente) — ver §5 e §6.3.
+   - **Concorrência não validada**: durante ⑥, o `WakeWordDetector` (mic do
+     celular) precisa continuar funcionando com o HFP simultaneamente ativo
+     (mic dos óculos). São mics fisicamente diferentes, mas
+     `AudioManager.mode = MODE_IN_COMMUNICATION` é uma configuração global —
+     item de validação em hardware real na Fase 0 (§7), não uma premissa
+     garantida.
+   - **A frase de encerrar pode vazar pro texto transcrito**: o STT grava a
+     fala do atendente inteira em ⑥, inclusive a wake word do final — precisa
+     ser cortada do texto antes do handoff pro avatar (§6.4, §7 Fase 5).
 
 4. **Resposta do atendente é capturada pelo mic dos ÓCULOS (HFP), não pelo do
    celular.** Motivo: o atendente está de óculos — o microfone fica perto da
@@ -109,25 +145,25 @@ produto/arquitetura, com o motivo:
 ## 5. Máquina de estados
 
 ```
-① AGUARDANDO SINAL            ← wake word ATIVA (mic celular)
-        │ wake word detectada
+① AGUARDANDO SINAL            ← wake INICIAR ativa (mic celular)
+        │ "Libras Livre, iniciar"
         ▼
-② CAPTURANDO SINAL             ← vídeo + landmarks acumulando
-        │ pausa detectada nos landmarks (SignBoundaryDetector)
+② CAPTURANDO SINAL             ← vídeo + landmarks acumulando; wake ENCERRAR ativa
+        │ "Libras Livre, encerrar" (falado pelo atendente)
         ▼
-③ CLASSIFICANDO                ← POST /classify (API da PoC)
+③ CLASSIFICANDO                ← POST /classify (API da PoC) — automático
         │ resultado
         ▼
-④ FALANDO (TTS → A2DP)         ← Speaker.speakAndAwait()
+④ FALANDO (TTS → A2DP)         ← Speaker.speakAndAwait() — automático
         │ TTS termina (UtteranceProgressListener.onDone)
         ▼
-⑤ AGUARDANDO RESPOSTA          ← wake word ATIVA de novo (mic celular)
-        │ wake word detectada
+⑤ AGUARDANDO RESPOSTA          ← wake INICIAR ativa de novo (mic celular)
+        │ "Libras Livre, iniciar"
         ▼
-⑥ ESCUTANDO ATENDENTE          ← AudioSessionManager troca A2DP→HFP; mic dos óculos
-        │ fim da fala do atendente (ver §8 — em aberto)
+⑥ ESCUTANDO ATENDENTE          ← AudioSessionManager troca A2DP→HFP; mic dos óculos; wake ENCERRAR ativa
+        │ "Libras Livre, encerrar" (mesmas duas frases, mesmo mic do celular — ver §4, item 3)
         ▼
-⑦ TRANSCREVENDO                ← STT converte a captura em texto
+⑦ TRANSCREVENDO                ← STT converte a captura em texto; corta a wake word do final
         │ texto pronto; AudioSessionManager libera HFP → volta A2DP
         ▼
 ⑧ GERANDO AVATAR               ← entrega o texto pro pipeline VLibras (outro plano)
@@ -135,12 +171,19 @@ produto/arquitetura, com o motivo:
         └──────────────────────► volta pro ①
 ```
 
+`INICIAR`/`ENCERRAR` nos rótulos acima são os nomes internos dos dois estados
+de wake word (§6.3) — a frase de fato treinada/falada é sempre "Libras Livre,
+..." (§4, item 2).
+
 **Regra que percorre a máquina inteira:** só existe um dono do áudio por vez.
 Nenhum componente decide roteamento por conta própria — todos consultam/mudam
-o estado através do orquestrador central (§6).
+o estado através do orquestrador central (§6.5). As duas wake words são o
+único evento externo — tudo mais no diagrama é automático.
 
-O detector de wake word só fica **ativo** nos estados ① e ⑤ — nos demais,
-pausado (evita gasto de CPU e falso-positivo fora de contexto).
+O detector de wake word fica **ativo** em ①②⑤⑥ (tanto nos estados de espera
+quanto durante as duas capturas, porque "encerrar" precisa ser ouvido
+enquanto a captura está rolando) — só pausa em ③④⑦⑧, onde nenhuma das duas
+palavras tem ação a disparar.
 
 ---
 
@@ -181,34 +224,32 @@ suspend fun speakAndAwait(text: String)
 
 ### 6.3 `WakeWordDetector.kt`
 
-Mic do celular, escuta contínua **só quando ativo** (estados ① e ⑤). Emite um
-único evento — quem decide a ação é o orquestrador:
+Mic do celular, escuta contínua **enquanto ativo** — agora em quatro estados
+(①②⑤⑥, não só nos dois de espera; ver §5). Reconhece **duas frases fixas**
+("Libras Livre, iniciar" / "Libras Livre, encerrar"), cada uma treinada como
+um wake word atômico só — não é STT nem reconhecimento de frase livre. Emite
+qual das duas ouviu; quem decide a ação é o orquestrador, olhando o
+`DialogState` atual:
 
 ```kotlin
-class WakeWordDetector(context: Context, private val onWakeWord: () -> Unit) {
+enum class WakeWord { INICIAR, ENCERRAR }
+
+class WakeWordDetector(context: Context, private val onWakeWord: (WakeWord) -> Unit) {
   fun start()
   fun pause()
   fun stop()
 }
 ```
 
-Motor ainda **em aberto** — ver §8.
+Motor ainda **em aberto** — ver §8. Validar cedo (Fase 0, §7) se o motor
+escolhido continua confiável rodando ao lado do HFP ativo (estado ⑥) — é a
+concorrência levantada em §4, item 3.
 
-### 6.4 `SignBoundaryDetector.kt`
+> Nota: `SignBoundaryDetector` (heurística de pausa por movimento) não faz
+> parte deste plano — evolui em `docs/sign-boundary-detector-plano.md`,
+> branch `feat/sign-boundary-detector`, desacoplado deste fluxo.
 
-Vive dentro (ou ao lado) do `LandmarkPipeline`, no mesmo ponto onde os frames
-já são acumulados (`collected.add(fl)`). A cada frame novo, mede o
-deslocamento das mãos em relação ao(s) frame(s) anterior(es); se ficar abaixo
-de um limiar por uma janela sustentada, dispara o equivalente a
-`stopCollectingAndClassify()` sozinho.
-
-Precisa de três parâmetros calibráveis (ver §8):
-- limiar de "parado" (magnitude de deslocamento);
-- janela de sustentação (quanto tempo parado até considerar fim de sinal);
-- duração mínima de captura (não classificar 2-3 frames) e teto máximo de
-  segurança (não travar se a mão nunca entrar em quadro).
-
-### 6.5 Captura da resposta do atendente (STT input)
+### 6.4 Captura da resposta do atendente (STT input)
 
 Uma classe nova, não uma extensão do `AudioInputHandler` existente (que está
 acoplado ao `VideoRecorder`/gravação MP4 — propositalmente não mexido aqui).
@@ -216,12 +257,18 @@ Usa `AudioRecord` com `AudioSource.VOICE_COMMUNICATION` (segue o roteamento do
 sistema, ao contrário de `AudioSource.MIC`) e `setPreferredDevice` pro
 dispositivo SCO retornado pelo `AudioSessionManager`.
 
-### 6.6 `DialogOrchestrator` (ou extensão do `CameraViewModel`)
+Responsável também por **cortar a wake word "Libras Livre, encerrar" do final
+da transcrição** antes de entregar o texto pro handoff da §7 Fase 6 — ou
+delega isso a quem chama o STT; qualquer uma das duas, mas precisa acontecer
+em algum lugar único, não em ambos. Implementação em si fica pra §7 Fase 5.
+
+### 6.5 `DialogOrchestrator` (ou extensão do `CameraViewModel`)
 
 Dono do `DialogState` (§5) e de todas as transições. Coordena
-`WakeWordDetector`, `LandmarkPipeline`/`SignBoundaryDetector`,
-`Speaker.speakAndAwait`, `AudioSessionManager` e a captura de STT — nenhum
-componente individual decide sozinho para onde o áudio vai.
+`WakeWordDetector`, `LandmarkPipeline`, `Speaker.speakAndAwait`,
+`AudioSessionManager` e a captura de STT — nenhum componente individual
+decide sozinho para onde o áudio vai, nem o que uma wake word significa (isso
+é decisão do orquestrador, não do detector).
 
 ---
 
@@ -235,9 +282,14 @@ validar cada camada isolada antes de integrar.
   aparece em `audioManager.availableCommunicationDevices` — sem isso, todo o
   resto do plano de resposta por voz não tem base.
 - [ ] Medir se o codec negociado é narrowband (8kHz) ou wideband (16kHz/mSBC)
-  — define o `sampleRate` da captura em §6.5.
+  — define o `sampleRate` da captura em §6.4.
+- [ ] Confirmar que o `WakeWordDetector` (mic do celular) continua detectando
+  "encerrar" de forma confiável com o HFP ativo ao mesmo tempo (estado ⑥) —
+  a concorrência levantada em §4, item 3. Sem isso, o fim da escuta do
+  atendente não tem como disparar.
 - **Critério de sucesso**: script isolado (fora do app, ou um botão de debug)
-  que troca pra HFP e grava alguns segundos de PCM reconhecível.
+  que troca pra HFP, grava alguns segundos de PCM reconhecível, e confirma a
+  wake word ainda disparando nesse meio tempo.
 
 ### Fase 1 — `AudioSessionManager` isolado
 - [ ] Implementar `acquireListening()`/`releaseListening()`.
@@ -251,48 +303,48 @@ validar cada camada isolada antes de integrar.
 - [ ] Confirmar que `onDone`/`onError` disparam de forma confiável em
   diferentes tamanhos de frase.
 
-### Fase 3 — `WakeWordDetector` (mic do celular, isolado)
+### Fase 3 — `WakeWordDetector` (mic do celular, isolado, duas frases)
 - [ ] Escolher o motor (ver §8).
+- [ ] Treinar/configurar as **duas** frases ("Libras Livre, iniciar" /
+  "Libras Livre, encerrar") — dobra o trabalho de dataset/calibração em
+  relação a uma frase só.
 - [ ] Validar taxa de falso-positivo/falso-negativo num ambiente ruidoso
-  parecido com um balcão de atendimento (não silêncio de laboratório).
-- **Critério de sucesso**: detecção funcionando com o app em foreground,
-  antes de integrar ao `StreamingService`.
+  parecido com um balcão de atendimento (não silêncio de laboratório),
+  **incluindo confundir uma frase pela outra** e confundir com menções
+  soltas ao nome do produto ("Libras Livre" sem o resto da frase).
+- **Critério de sucesso**: as duas detecções funcionando com o app em
+  foreground, antes de integrar ao `StreamingService`.
 
-### Fase 4 — `SignBoundaryDetector`
-- [ ] Implementar sobre os landmarks já coletados no `LandmarkPipeline`.
-- [ ] Calibrar limiar/janela **com dado real**, não só `MockDeviceKit` — é a
-  ressalva já registrada em §4.3.
-- **Critério de sucesso**: corta no fim de um sinal isolado sem cortar no
-  meio (falso positivo em uma pausa natural do próprio sinal).
-
-### Fase 5 — `DialogOrchestrator`
+### Fase 4 — `DialogOrchestrator`
 - [ ] Implementar o `DialogState` e as transições ①→⑧ completas.
-- [ ] Trocar o gatilho hoje manual (`LibrasCaptureRow`) pelo `WakeWordDetector`
+- [ ] Trocar o gatilho hoje manual (`LibrasCaptureRow`) pelas duas wake words
   — manter o botão manual como fallback/debug é uma opção a avaliar, não uma
   obrigação deste plano.
 - **Critério de sucesso**: ciclo ①→④ (sinal → TTS) funcionando end-to-end
-  via wake word, sem toque na tela.
+  por wake word ("iniciar"/"encerrar"), sem toque na tela.
 
-### Fase 6 — Captura + STT da resposta
-- [ ] Implementar a classe de §6.5.
-- [ ] Escolher motor de STT (ver §8) e definir onde/como o silêncio de fim de
-  fala do atendente é detectado (endpointing do lado da fala — não
-  aprofundado neste documento).
-- **Critério de sucesso**: ciclo ⑤→⑦ (wake word → resposta transcrita)
-  funcionando isolado.
+### Fase 5 — Captura + STT da resposta
+- [ ] Implementar a classe de §6.4.
+- [ ] Escolher motor de STT (ver §8).
+- [ ] Implementar o corte do "encerrar" final da transcrição (§4, item 3;
+  §6.4) — validar que sobrevive a variações de como o STT pontua/formata o
+  texto (maiúscula, pontuação depois da palavra, etc.).
+- **Critério de sucesso**: ciclo ⑤→⑦ (wake word → resposta transcrita, sem
+  o "encerrar" no texto final) funcionando isolado.
 
-### Fase 7 — Handoff pro avatar
+### Fase 6 — Handoff pro avatar
 - [ ] Integrar a saída de texto de ⑦ com o pipeline de `docs/vlibras-webview-plano.md`
   (a API espera texto PT-BR; ver o fluxo `texto → glosa → player` lá descrito).
 - [ ] Testar o ciclo completo ①→⑧→① pelo menos uma vez ponta a ponta.
 
-### Fase 8 — Refinamento
-- [ ] Timeout em ⑤/⑥ (se o atendente nunca responder, voltar pro `IDLE`
-  sozinho).
+### Fase 7 — Refinamento
+- [ ] Timeout em ⑤/⑥ (se o atendente nunca responder — nem falar "iniciar"
+  em ⑤, nem falar "encerrar" em ⑥ — voltar pro `IDLE` sozinho).
 - [ ] Tratamento de interrupção do sistema durante ⑥ (ligação chegando —
   mesmo padrão que `AudioInputHandler.wasInterrupted` já cobre pro mic do
   celular).
-- [ ] Medir impacto de bateria da escuta contínua de wake word.
+- [ ] Medir impacto de bateria da escuta contínua de wake word (agora em
+  quatro estados, não só dois — ver §5).
 
 ---
 
@@ -303,13 +355,17 @@ em diante:
 
 1. **Motor de wake word.** Duas rotas discutidas:
    - **Picovoice Porcupine** — motor on-device pronto, SDK Android, treino de
-     palavra customizada via console deles. Caminho mais rápido; precisa
+     frase customizada via console deles (suporta frases de várias
+     palavras, não só uma sílaba curta). Caminho mais rápido; precisa
      validar estado atual de licenciamento/custo antes de comprometer.
    - **Modelo próprio (TFLite pequeno)** — mesmo espírito do
      `sinal_classifier.tflite` já treinado neste projeto: features de áudio
      (ex. MFCC) + classificador raso. Mais controle e zero dependência
-     externa, mas exige dataset de áudio da wake word (várias vozes, ruído de
-     ambiente) — um projeto de coleta paralelo ao de landmarks.
+     externa, mas exige dataset de áudio das duas frases completas (várias
+     vozes, ruído de ambiente) — um projeto de coleta paralelo ao de
+     landmarks. Frase mais longa ("Libras Livre, iniciar/encerrar") facilita
+     diferenciar as duas classes (mais sinal temporal pro modelo aprender)
+     às custas de mais dado por amostra de treino.
 
 2. **Motor de STT da resposta do atendente.** Não decidido neste documento.
    Precisa ser coerente com o objetivo on-device/offline do projeto (mesmo
@@ -317,12 +373,7 @@ em diante:
    on-device (ex. Vosk) vs. `SpeechRecognizer` do Android (mais simples, mas
    historicamente dependente de rede em muitos aparelhos).
 
-3. **Endpointing da fala do atendente** (fim do estado ⑥). Opções não
-   exploradas em profundidade aqui: silêncio sustentado no VAD (voice activity
-   detection), timeout fixo, ou nova wake word de "terminei". Fica para
-   quando a Fase 6 começar.
-
-4. **Manter ou não o botão manual como fallback.** Útil para debug/teste sem
+3. **Manter ou não o botão manual como fallback.** Útil para debug/teste sem
    depender do wake word funcionando, mas é uma decisão de UX a validar com
    uso real.
 
@@ -334,6 +385,9 @@ em diante:
   reconhecimento de sinal já implementado.
 - `computer-vision-model/PoC/api/README.md` — decisão de manter tudo
   on-device/offline como objetivo do projeto.
+- `docs/sign-boundary-detector-plano.md` (branch `feat/sign-boundary-detector`)
+  — heurística de pausa por movimento, evoluindo em paralelo a este plano; não
+  usada no fluxo aqui descrito (§4, item 3).
 - `docs/vlibras-webview-plano.md` (branch
   `feat/Empacota-player-vlibras-em-webview-nativa`) — plano completo do avatar
   3D (texto → glosa → WebView).
