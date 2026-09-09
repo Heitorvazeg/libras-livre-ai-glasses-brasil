@@ -438,6 +438,49 @@ def teste_imputacao_maos() -> None:
     _ok("imputação: lacuna curta preenchida, longa preservada, pose intacta")
 
 
+def teste_export_cabeca() -> None:
+    """O pré-processamento embutido no .tflite tem que ser o mesmo do treino.
+
+    O modo `landmarks` do export move `representacao.para_imagem` + resize para
+    dentro do grafo, reescritos em ops do torch. Se as duas implementações
+    divergirem, o modelo exportado recebe uma imagem que ninguém treinou — e o
+    app não tem como perceber: ele recebe logits plausíveis e fala a palavra
+    errada. Este teste é o que impede essa divergência de passar.
+    """
+    import exportar as ex
+
+    for t_frames in (96, 100):  # 100 não é múltiplo de 3: a sobra é descartada
+        seq = np.random.uniform(-2.5, 2.5, size=(t_frames, N_PONTOS, 2)).astype(np.float32)
+
+        # caminho do treino (treinar.py:79-82): numpy -> imagem -> permute -> resize
+        img = rp.para_imagem(seq)
+        t = torch.from_numpy(img).permute(2, 0, 1).unsqueeze(0)
+        esperado = torch.nn.functional.interpolate(
+            t, size=(ex.LADO, ex.LADO), mode="bilinear", align_corners=False)
+
+        obtido = ex.CabecaSkeletonDML()(torch.from_numpy(seq).unsqueeze(0))
+        assert obtido.shape == esperado.shape, \
+            f"T={t_frames}: forma {tuple(obtido.shape)} != {tuple(esperado.shape)}"
+        dif = (obtido - esperado).abs().max().item()
+        assert dif < 1e-6, f"T={t_frames}: cabeça do export diverge do treino em {dif:.2e}"
+
+    # a faixa ±2,0 satura, como no numpy — senão o export mediria outra coisa
+    extremo = torch.full((1, 96, N_PONTOS, 2), 99.0)
+    saida = ex.CabecaSkeletonDML()(extremo)
+    assert saida.min() >= 0.0 and saida.max() <= 1.0, "clip do limite não sobreviveu ao torch"
+
+    # o wrapper completo tem que dar o mesmo logit que rede(imagem) do treino
+    rede = mm.construir(4, pretreinado=False).eval()
+    seq = np.random.uniform(-1.5, 1.5, size=(96, N_PONTOS, 2)).astype(np.float32)
+    entrada = torch.from_numpy(seq).unsqueeze(0)
+    with torch.no_grad():
+        via_wrapper = ex.ClassificadorLandmarks(rede)(entrada)
+        via_treino = rede(ex.CabecaSkeletonDML()(entrada))
+    assert torch.allclose(via_wrapper, via_treino, atol=1e-6), \
+        "ClassificadorLandmarks não é equivalente a rede(cabeca(x))"
+    _ok("export: cabeça Skeleton-DML em torch == pré-processamento do treino")
+
+
 def teste_isolamento_proveniencia() -> None:
     from test_proveniencia import executar
     executar()
@@ -459,6 +502,7 @@ TESTES = [
     ("contrastivo: pré-treino ponta a ponta", teste_pretreino_contrastivo_ponta_a_ponta),
     ("controle negativo ST-GCN", teste_gcn_controle_negativo),
     ("checkpoints GCN e ResNet", teste_checkpoints),
+    ("export: cabeça Skeleton-DML", teste_export_cabeca),
     ("isolamento e proveniência", teste_isolamento_proveniencia),
 ]
 
