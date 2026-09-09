@@ -1,0 +1,3 @@
+# Artefatos do treino: pesos e matrizes são regeneráveis; o relatório é entregável
+resultados-*/*
+!resultados-*/relatorio.md

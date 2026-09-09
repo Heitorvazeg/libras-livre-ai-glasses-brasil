@@ -1,6 +1,8 @@
 # Dados da PoC — pesados e/ou sensíveis (vídeos de participantes), não versionar.
 data/raw/*
 data/landmarks/*
+# Extrações com outro conjunto de pontos (ex.: landmarks-49pts, o da PoC original)
+data/landmarks-*/*
 !data/**/.gitkeep
 
 # Resultados gerados: o relatório e a matriz de confusão SÃO entregáveis (§10) e
@@ -16,3 +18,5 @@ __pycache__/
 .venv/
 venv/
 .ipynb_checkpoints/
+# Corpus de pré-treino (vídeos pesados, não versionar)
+data/raw-*/*

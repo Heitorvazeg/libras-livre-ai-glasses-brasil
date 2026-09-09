@@ -18,6 +18,16 @@ vocabulario:
   - medo
   - ruim
   - sapo
+  - aluno
+  - america
+  - aproveitar
+  - bala
+  - banco
+  - cinco
+  - conhecer
+  - esquina
+  - vacina
+  - vontade
 
 paths:
   raw_videos: data/raw

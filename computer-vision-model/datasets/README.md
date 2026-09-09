@@ -1,5 +1,11 @@
 # datasets/ — vídeos públicos de Libras usados pela PoC
 
+> **Pré-treino (2026-09-09):** a receita histórica abaixo descreve a PoC inicial.
+> Para o protocolo atual (MINDS separado, V-LIBRASIL com auditoria obrigatória,
+> sidecars por amostra e migração offline), veja
+> [isolamento e proveniência](../../docs/protocolo-pretreino.md).
+> Não misture o corpus completo de pré-treino à pasta de avaliação.
+
 Esta pasta integra ao repositório dois bancos públicos de vídeos de Libras e
 transforma um recorte deles no dataset que a PoC consome. Ela existe porque a
 pergunta da PoC — *o reconhecimento generaliza entre pessoas diferentes?* — não
