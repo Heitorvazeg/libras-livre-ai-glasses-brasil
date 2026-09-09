@@ -18,6 +18,7 @@ Uso:
 from __future__ import annotations
 
 import argparse
+import collections
 import sys
 import tempfile
 import traceback
@@ -296,6 +297,37 @@ def teste_checkpoints() -> None:
     _ok("checkpoints GCN/ResNet: round-trip, variantes, legado e carga sem download")
 
 
+def teste_contrastivo() -> None:
+    """SupCon premia pares da mesma classe, e a diagonal mascarada não vira NaN."""
+    torch.manual_seed(0)
+    z = torch.nn.functional.normalize(torch.randn(8, 16), dim=1)
+    y = torch.tensor([0, 0, 1, 1, 2, 2, 3, 3])
+    aleatorio = ct.perda_supcon(z, y)
+    base = torch.nn.functional.normalize(torch.randn(4, 16), dim=1)
+    agrupado = ct.perda_supcon(torch.repeat_interleave(base, 2, dim=0), y)
+    assert torch.isfinite(aleatorio) and torch.isfinite(agrupado), \
+        "perda virou NaN — a diagonal mascarada com -inf multiplicada por 0 faz isso"
+    assert agrupado < aleatorio, "pares agrupados deveriam ter perda MENOR"
+
+    # lote sem nenhum par positivo não pode quebrar o treino
+    assert torch.isfinite(ct.perda_supcon(z, torch.arange(8)))
+
+    zg = torch.nn.functional.normalize(torch.randn(8, 16), dim=1).requires_grad_(True)
+    ct.perda_supcon(zg, y).backward()
+    assert torch.isfinite(zg.grad).all(), "gradiente não finito"
+
+    # amostrador precisa garantir K exemplos por classe, senão não há par
+    rotulos = [f"c{i // 3}" for i in range(300)]
+    am = ct.AmostradorPK(rotulos, p=8, k=2, semente=0)
+    indices = list(am)
+    for i in range(0, len(indices), 16):
+        conta = collections.Counter(rotulos[j] for j in indices[i:i + 16])
+        assert sum(v >= 2 for v in conta.values()) == 8, f"lote sem 8 pares: {conta}"
+    assert len(ct.AmostradorPK(["a", "a", "b"], p=1, k=2).classes) == 1, \
+        "classe com 1 exemplo deveria ser excluída"
+    _ok("contrastivo: SupCon, máscara sem NaN e amostrador P×K")
+
+
 TESTES = [
     ("Skeleton-DML (representação)", teste_representacao),
     ("espelhamento esquerda/direita", teste_espelho),
@@ -305,6 +337,7 @@ TESTES = [
     ("grafo do esqueleto (ST-GCN)", teste_grafo_conectado),
     ("treino de ponta a ponta com ST-GCN", teste_gcn_ponta_a_ponta),
     ("controle negativo (rótulo aleatório)", teste_controle_negativo),
+    ("pré-treino contrastivo", teste_contrastivo),
     ("controle negativo ST-GCN", teste_gcn_controle_negativo),
     ("checkpoints GCN e ResNet", teste_checkpoints),
 ]

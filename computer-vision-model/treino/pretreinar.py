@@ -44,6 +44,7 @@ import torch
 from torch import nn
 from torch.utils.data import DataLoader
 
+import contrastivo as ct
 import dados as dd
 import gcn as gg
 import modelo as mm
@@ -104,6 +105,16 @@ def main() -> None:
     ap.add_argument("--corpus", action="append", required=True, type=Path,
                     help="diretório de landmarks (repita para juntar vários)")
     ap.add_argument("--arquitetura", default="resnet", choices=["resnet", "gcn"])
+    ap.add_argument("--objetivo", default="classificacao",
+                    choices=["classificacao", "contrastivo"],
+                    help="contrastivo aproxima clipes do MESMO sinal feitos por PESSOAS "
+                         "diferentes — ensina invariância a sinalizante e funciona com "
+                         "poucos exemplos por classe, ao contrário da classificação.")
+    ap.add_argument("--p-classes", type=int, default=32,
+                    help="contrastivo: classes por lote")
+    ap.add_argument("--k-exemplos", type=int, default=2,
+                    help="contrastivo: exemplos por classe no lote (>=2 para haver par)")
+    ap.add_argument("--temperatura", type=float, default=0.07)
     ap.add_argument("--epocas", type=int, default=15)
     ap.add_argument("--lr", type=float, default=1e-4)
     ap.add_argument("--wd", type=float, default=1e-4)
@@ -139,11 +150,29 @@ def main() -> None:
     construtor = gg.construir if args.arquitetura == "gcn" else mm.construir
     modelo = construtor(len(rotulos)).to(disp)
     criterio = nn.CrossEntropyLoss()
-    otim = torch.optim.Adam(modelo.parameters(), lr=args.lr, weight_decay=args.wd)
+
+    cabeca = None
+    if args.objetivo == "contrastivo":
+        # A cabeça de classificação não é usada aqui; a perda vive num espaço
+        # projetado próprio, que é descartado ao salvar o backbone.
+        n_feat = modelo.fc[1].in_features if args.arquitetura == "resnet" \
+            else modelo.fc.in_features
+        modelo.fc = nn.Identity()
+        cabeca = ct.CabecaProjecao(entrada=n_feat).to(disp)
+
+    params = list(modelo.parameters()) + (list(cabeca.parameters()) if cabeca else [])
+    otim = torch.optim.Adam(params, lr=args.lr, weight_decay=args.wd)
 
     def loader(cl, aug, shuffle):
         ds = DatasetSinais(cl, rotulos, perm if aug else None, aug,
                            arquitetura=args.arquitetura)
+        if args.objetivo == "contrastivo" and shuffle:
+            # Lotes P×K: sem eles, um corpus de 1.353 classes quase nunca colocaria
+            # dois clipes da mesma palavra no mesmo lote, e não haveria par positivo.
+            amostrador = ct.AmostradorPK([c.sinal for c in cl], args.p_classes,
+                                         args.k_exemplos, args.semente)
+            return DataLoader(ds, batch_size=args.p_classes * args.k_exemplos,
+                              sampler=amostrador, num_workers=args.workers, drop_last=True)
         return DataLoader(ds, batch_size=args.batch, shuffle=shuffle,
                           num_workers=args.workers, drop_last=shuffle and len(ds) > args.batch)
 
@@ -157,12 +186,15 @@ def main() -> None:
         for x, y in l_treino:
             x, y = x.to(disp), y.to(disp)
             otim.zero_grad()
-            saida = modelo(x)
-            perda = criterio(saida, y)
+            if cabeca is not None:
+                perda = ct.perda_supcon(cabeca(modelo(x)), y, args.temperatura)
+            else:
+                saida = modelo(x)
+                perda = criterio(saida, y)
+                certos += (saida.argmax(1) == y).sum().item()
             perda.backward()
             otim.step()
             soma += perda.item() * y.size(0)
-            certos += (saida.argmax(1) == y).sum().item()
             total += y.size(0)
 
         modelo.eval()
@@ -170,9 +202,13 @@ def main() -> None:
         with torch.no_grad():
             for x, y in l_val:
                 x, y = x.to(disp), y.to(disp)
-                s = modelo(x)
-                vperda += criterio(s, y).item() * y.size(0)
-                vcertos += (s.argmax(1) == y).sum().item()
+                if cabeca is not None:
+                    vperda += ct.perda_supcon(cabeca(modelo(x)), y,
+                                              args.temperatura).item() * y.size(0)
+                else:
+                    s = modelo(x)
+                    vperda += criterio(s, y).item() * y.size(0)
+                    vcertos += (s.argmax(1) == y).sum().item()
                 vtotal += y.size(0)
         vperda /= max(vtotal, 1)
         if vperda < melhor:
@@ -186,7 +222,8 @@ def main() -> None:
         modelo.load_state_dict(melhores_pesos)
 
     saida = AQUI / args.saida
-    meta = {"corpora": [str(d) for d in args.corpus], "classes": len(rotulos),
+    meta = {"corpora": [str(d) for d in args.corpus], "objetivo": args.objetivo,
+            "classes": len(rotulos),
             "clipes": len(clipes), "pessoas": dd.pessoas(clipes),
             "melhor_epoca": melhor_epoca + 1, "args": vars(args),
             "gerado_em": f"{datetime.now():%Y-%m-%d %H:%M}"}
