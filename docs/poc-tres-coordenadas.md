@@ -126,7 +126,39 @@ exatamente como já absorve clipes de durações diferentes.
    GitHub**, senão o clone falha.
 3. Subir `landmarks-minds.tar.gz` (só esse; esta PoC não pré-treina).
 4. Rodar as três variantes (~minutos cada em T4) e a célula de comparação.
-5. Célula opcional repete no ST-GCN, incluindo `--ossos`.
+5. Célula opcional (§5 do notebook) responde mais duas perguntas — ver abaixo.
+
+## Célula opcional: ST-GCN e a imputação pareada
+
+**(a) A imputação ajuda o ST-GCN?** Ela mora em `dados.py`, na leitura, então vale para as
+duas arquiteturas — mas só foi medida na ResNet. Há motivo para o efeito ser diferente no
+grafo: uma mão zerada vira 21 nós teleportados para a origem, e a convolução espacial
+propaga isso aos vizinhos pela aresta punho↔mão. O dano pode ser maior ali, e o ganho
+também. Par: `G-xy` contra `G-xy-sem-imput`.
+
+**(b) Quanto a imputação vale na ResNet, pareado?** O número atual (93,4% → 95,1%) veio de
+duas execuções **sem semente fixa**. Comparação não pareada: cada delta carrega ruído de
+inicialização. `A-xy-sem-imput` roda com a mesma semente da variante A e dá o delta limpo.
+
+| Variante | Arquitetura | Controle | Responde |
+|---|---|---|---|
+| `A-xy-sem-imput` | ResNet | `A-xy` | (b) |
+| `G-xy` | ST-GCN | — | controle do grupo |
+| `G-xy-sem-imput` | ST-GCN | `G-xy` | (a) |
+| `G-xyz-rec` | ST-GCN | `G-xy` | o z no grafo |
+| `G-xy-ossos` | ST-GCN | `G-xy` | B2, ainda sem número |
+
+O ST-GCN usa **120 épocas, lr 1e-3, cosseno** — orçamento de treino **do zero**. Usar a
+config de fine-tuning aqui foi o erro que fez o GCN "perder" por 49 pontos
+(`CONTEXTO.md` §6, armadilha 2).
+
+⏱️ Em T4, ~20-30 min por variante do GCN; as quatro passam de 1h30. O Colab derruba runtime
+ocioso. Se o tempo apertar, rodar só `G-xy` e `G-xy-sem-imput`, que respondem (a).
+
+A célula de comparação lê **o que existir**: se a opcional não rodar, a tabela da ResNet
+sai igual. Ela também imprime, para cada variante, **quantos dos 8 folds ficaram acima do
+controle** — a consistência diz mais que a média, porque a média pode subir 2 pp com um
+fold sortudo.
 
 V-LIBRASIL é **CC BY-NC-ND**: não publicar dados, sidecars, pacotes ou checkpoints
 derivados. Aqui só entra MINDS, mas a regra vale para os artefatos baixados.
