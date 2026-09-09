@@ -46,10 +46,15 @@ do ST-GCN, e a diferença é grande demais para a atribuição errada passar bat
 | ST-GCN (config de fine-tuning) | 0,446 | 0,46M | subtreinado — não é veredito de arquitetura |
 
 **A ResNet-18 é o modelo do MVP.** O ST-GCN está ~19 pontos atrás e existe para ser
-medido, não como candidato de entrega. Ele economiza 24× em parâmetros — o que
-importaria se o tamanho fosse o gargalo do celular, e não é: 11,2M dão ~11 MB em
-`.tflite` quantizado int8, folgado num aparelho que já roda MediaPipe Holistic em
-tempo real.
+medido, não como candidato de entrega.
+
+Sobre o argumento "o GCN é o único que cabe no celular": ele economiza 24× em
+parâmetros, mas isso só decide se o tamanho for o gargalo. Por aritmética, 11,2M
+parâmetros dão ~11 MB em `.tflite` int8 (~22 MB em float16) — ordem de grandeza
+comum em app. **O que NÃO está medido, para nenhuma das duas: se a conversão para
+TFLite funciona e qual a latência no aparelho.** Nada aqui autoriza afirmar que a
+ResNet roda em tempo real nos óculos; autoriza dizer que descartá-la por tamanho,
+sem medir, é decidir cedo demais.
 
 ⚠️ **Variância entre execuções: ~1,7 ponto.** Diferença menor que ~2 pontos é ruído.
 
