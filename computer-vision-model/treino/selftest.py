@@ -165,7 +165,16 @@ def teste_particoes() -> None:
 
 
 def _rodada_sintetica(rotulo_aleatorio: bool, epocas: int = 6,
-                      arquitetura: str = "resnet") -> float:
+                      arquitetura: str = "resnet", folds: int = 3) -> float:
+    """Média de `folds` rodadas LOSO — uma só é ruído demais para virar asserção.
+
+    Aprendemos isso na prática: a versão anterior media UMA rodada e passava em
+    CPU (100%) enquanto reprovava em GPU (41,7%) com o MESMO código. Não era bug
+    de pipeline, era o teste: uma ResNet de 11M de parâmetros generalizando a
+    partir de ~100 clipes sintéticos tem variância enorme, e o resultado dependia
+    de sorte de inicialização. Três rodadas reduzem isso o bastante para a
+    asserção significar alguma coisa.
+    """
     with tempfile.TemporaryDirectory() as tmp:
         destino = Path(tmp)
         _dataset_sintetico(destino, n_pessoas=6, n_classes=3, reps=8,
@@ -173,16 +182,19 @@ def _rodada_sintetica(rotulo_aleatorio: bool, epocas: int = 6,
         clipes = dd.carregar(destino, fontes="minds")
         rotulos = dd.rotulos(clipes)
         perm = rp.permutacao_espelho(POSE)
-        part = dd.particoes(clipes)[0]
 
         args = argparse.Namespace(epocas=epocas, lr=1e-3, wd=1e-4, batch=8, workers=0,
-                                  arquitetura=arquitetura)
-        treino = [c for c in clipes if c.pessoa in part.treino]
-        val = [c for c in clipes if c.pessoa == part.validacao]
-        teste = [c for c in clipes if c.pessoa == part.teste]
-        acc, _, _, _, _ = tr.treinar_rodada(treino, val, teste, rotulos, perm,
-                                            args, torch.device("cpu"))
-        return acc
+                                  arquitetura=arquitetura, agendador="nenhum",
+                                  inicializar=None)
+        accs = []
+        for part in dd.particoes(clipes)[:folds]:
+            treino = [c for c in clipes if c.pessoa in part.treino]
+            val = [c for c in clipes if c.pessoa == part.validacao]
+            teste = [c for c in clipes if c.pessoa == part.teste]
+            acc, _, _, _, _ = tr.treinar_rodada(treino, val, teste, rotulos, perm,
+                                                args, torch.device("cpu"))
+            accs.append(acc)
+        return float(np.mean(accs))
 
 
 def teste_treino_ponta_a_ponta() -> None:

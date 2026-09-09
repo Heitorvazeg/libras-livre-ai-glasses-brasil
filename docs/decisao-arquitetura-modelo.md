@@ -55,14 +55,65 @@ Dois pontos que a média sozinha esconde:
 Relatório completo, incluindo acurácia por sinal e pares confundidos:
 [`computer-vision-model/treino/resultados-resnet/relatorio.md`](../computer-vision-model/treino/resultados-resnet/relatorio.md).
 
+### Reprodutibilidade entre máquinas
+
+O mesmo treino rodou depois numa GPU T4 (Colab) e deu **93,5%** — 0,1 ponto do valor
+medido na CPU local. Mesmo código, hardware diferente, resultado igual. Isso descarta que
+os 93,4% tenham sido artefato de uma configuração local.
+
 ---
 
-## 3. O que NÃO está medido — e é o cerne da decisão
+## 3. O ST-GCN medido: 44,6%, com uma ressalva que muda a leitura
+
+Primeira medição, mesmas 8 rodadas, mesmo dataset, GPU T4:
+
+```
+acurácia signer-independent média = 44,6%   (desvio entre pessoas: 9,3 pontos)
+por rodada: 42 · 51 · 58 · 48 · 37 · 41 · 27 · 53
+```
+
+Relatório: [`computer-vision-model/treino/resultados-gcn/relatorio.md`](../computer-vision-model/treino/resultados-gcn/relatorio.md).
+
+**Mas este número mede menos do que parece, e a causa é a configuração usada.** Os
+hiperparâmetros vieram do paper de referência, que faz *fine-tuning* de uma ResNet
+pré-treinada — não treino do zero:
+
+```
+600 clipes de treino ÷ lote 64 =  9 atualizações de peso por época
+9 × 30 épocas                  = ~270 atualizações no total
+```
+
+270 passos de gradiente bastam para **ajustar** uma rede que já vem do ImageNet sabendo
+enxergar. Para **treinar** um GCN do zero, é quase nada. A assimetria não é só "um tem
+pré-treino e o outro não" — é que o orçamento de treino foi dimensionado para quem tem.
+
+O padrão por sinal confirma subtreino em vez de incapacidade: o GCN acerta **87,5% em
+`esquina`** e **2,5% em `aproveitar`**. Rede que aprendeu as classes fáceis e ficou sem
+passos para o resto — não rede incapaz de representar o problema.
+
+**Portanto:** 44,6% é um resultado válido para "ST-GCN, sem pré-treino, com os
+hiperparâmetros da ResNet". Registrá-lo como "o GCN é pior" seria afirmar mais do que foi
+medido.
+
+### O teste justo, pendente
+
+```bash
+python treinar.py --arquitetura gcn --dispositivo auto \
+    --epocas 120 --lr 1e-3 --batch 32 --agendador cosseno
+```
+
+~2.160 atualizações (8× mais), taxa de aprendizado de treino do zero e decaimento por
+cosseno. Custa menos de uma hora na GPU. **Enquanto isso não rodar, a comparação entre as
+duas arquiteturas continua em aberto.**
+
+---
+
+## 3b. Por que a comparação é difícil de fazer justa
 
 **Não existe, até onde a pesquisa foi, número publicado de GCN no MINDS-Libras com
-protocolo signer-independent.** A superioridade do GCN é, hoje, um argumento de projeto,
-não um resultado. Isso não o desqualifica: o argumento é bom, e por isso o modelo foi
-implementado. Mas a comparação precisa ser feita, não presumida.
+protocolo signer-independent.** Não há referência externa para dizer se 44,6% ou 85% seria
+o esperado — por isso a medição própria importa tanto, e por isso ela precisa ser feita
+com o orçamento de treino adequado.
 
 Há também um agravante estatístico que precisa entrar na conversa: **estamos em 93,4%,
 sobram 3,7 pontos de teto.** O GCN não precisa ser "melhor em tese"; precisa bater 93,4%
@@ -105,14 +156,16 @@ ressalva de "estúdio é teto otimista": os 93,4% não dizem nada sobre ângulo 
 ## 5. Recomendação
 
 **Para o MVP (16/09): manter Skeleton-DML + ResNet-18.** É o que está medido, entrega
-93,4%, e o app hoje consome o modelo por uma **API em Python** (`PoC/api/server.py`) — não
+93,4-93,5% em duas máquinas diferentes, e o app hoje consome o modelo por uma **API em Python** (`PoC/api/server.py`) — não
 por `.tflite` —, então a vantagem de tamanho do GCN não é cobrada nesta entrega.
 
 **Para o produto: o GCN é o candidato certo**, pelos motivos da seção 4, e o diagrama está
 correto em registrá-lo como destino. A transição deve ser decidida por medição, não por
 prazo.
 
-**Como decidir entre os dois:** rodar o experimento do §3. Se o GCN chegar perto (digamos,
+**Como decidir entre os dois:** rodar o experimento 1b da §6 — o GCN com orçamento de
+treino do zero. O 44,6% já medido NÃO serve para essa decisão, pelos motivos da §3. Se o
+GCN chegar perto (digamos,
 dentro de 2 pontos), a decisão passa a ser de engenharia, não de acurácia — e aí os 24× de
 diferença de tamanho provavelmente decidem a favor dele.
 
@@ -124,7 +177,8 @@ Em ordem de custo-benefício. Cada um é uma rodada de treino; na GPU, minutos.
 
 | # | Experimento | Responde | Estado |
 |---|---|---|---|
-| 1 | ST-GCN, mesmas 8 rodadas | GCN bate 93,4% no nosso dataset? | pronto para rodar |
+| 1 | ST-GCN, hiperparâmetros da ResNet | — | ✅ feito: **44,6%**, mas subtreinado (§3) |
+| 1b | **ST-GCN com orçamento de treino do zero** | GCN bate 93,5% no nosso dataset? | **pendente — é o que decide** |
 | 2 | Mais épocas na ResNet | o modelo não convergiu (melhor época foi a 30 de 30 em 4 das 8 rodadas) | pendente |
 | 3 | Pré-treino na V-LIBRASIL completa (1.363 palavras) + fine-tuning | mesclar bases ajuda? | extração em andamento |
 | 4 | Features de ângulo entre juntas | fecha a lacuna de ponto de vista do §4? | a implementar |
