@@ -68,6 +68,24 @@ noite      doloroso (~dor)       número
 ```
 `*` já está na Camada 1 — a V-LIBRASIL soma pessoas a mais (3) para essas palavras.
 
+**Ressalva após pré-treino (2026-09-09):** são pessoas adicionais à base MINDS, mas
+não inéditas para um modelo desenvolvido com V-LIBRASIL. Os 30 clipes curados ficam
+reservados, **sem sobreposição exata** com o corpus de pré-treino; seus três
+articuladores e domínio visual, porém, são conhecidos após esse estágio (V03 participa
+da validação interna). Não chamar esse recorte de teste de domínio ou de pessoas
+inéditas. O corpus atual contém **4.053 clipes após a exclusão** dos 30 reservados.
+Generalização a pessoas novas no balcão só pode ser medida com coleta própria
+independente do desenvolvimento.
+
+**Compartilhar classes não é contaminação em transferência supervisionada.** Palavras
+comuns a MINDS e V-LIBRASIL não precisam ser excluídas automaticamente; a separação
+obrigatória é de amostras/origens e das pessoas MINDS reservadas para teste.
+
+**Disponibilidade não é autorização de produto:** V-LIBRASIL é **CC BY-NC-ND**
+(não-comercial, sem derivações). Manter vídeos, landmarks, sidecars, pacotes e
+checkpoints derivados privados; não publicar esses arquivos. O uso desta camada em
+produto/distribuição exige resolver a licença, não apenas atingir acurácia.
+
 **Como usar na demonstração/apresentação:** rotular explicitamente como "vocabulário
 estendido" e não misturar com a métrica de acurácia signer-independent da Camada 1. Se
 o modelo errar uma palavra desta camada com uma pessoa nova no palco, isso é esperado e

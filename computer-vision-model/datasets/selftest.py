@@ -148,6 +148,43 @@ def teste_manifesto(tmp: Path) -> None:
     _ok("manifesto reflete origem, destino e estado em disco")
 
 
+def teste_proveniencia_ingestao(tmp: Path) -> None:
+    import csv
+    import zlib
+    from types import SimpleNamespace
+    import proveniencia as pv
+    import ingest_pretreino as ip
+
+    video = tmp / "pessoaV01_sinal-abacaxi_rep01.mp4"
+    conteudo = b"video sintetico para testar proveniencia"
+    video.write_bytes(conteudo)
+    origem = "videos UFPE (V-LIBRASIL)/data/Abacaxi_Articulador1.mp4"
+    membro = Membro(origem, len(conteudo), len(conteudo), 0, 0, zlib.crc32(conteudo))
+    z = SimpleNamespace(membros={origem: membro})
+    clipe = ip.Clipe("abacaxi", "V01", origem, len(conteudo))
+    # Caminho retomado: não baixa, mas confere os bytes e registra origem.
+    assert ip.baixar([clipe], z, tmp) == 0
+    registro = pv.ler(video)
+    assert registro["origem"] == origem and registro["video"]["sha256"] == pv.hash_arquivo(video)
+    video.write_bytes(b"corrompido")
+    try:
+        ip.baixar([clipe], z, tmp)
+    except ValueError as e:
+        assert "tamanho/CRC" in str(e)
+    else:
+        raise AssertionError("arquivo reaproveitado corrompido passou")
+
+    # Rodar ingestão de MINDS depois de V-LIBRASIL não pode apagar sua reserva.
+    manifesto = tmp / "reservas.csv"
+    reservado = ingest.Clipe("abacaxi", "vlibrasil", "V01", 1, origem, len(conteudo), True)
+    minds = ingest.Clipe("ruim", "minds", "M01", 1, "17RuimSinalizador01-1.mp4", 1, True)
+    ingest.escrever_manifesto([reservado], tmp, manifesto)
+    ingest.escrever_manifesto([minds], tmp, manifesto)
+    with manifesto.open(encoding="utf-8") as f:
+        assert {r["fonte"] for r in csv.DictReader(f)} == {"minds", "vlibrasil"}
+    _ok("proveniência de vídeos reaproveitados, corrupção e preservação das reservas")
+
+
 def main() -> None:
     import tempfile
 
@@ -160,6 +197,7 @@ def main() -> None:
     teste_somente_validados()
     with tempfile.TemporaryDirectory() as tmp:
         teste_manifesto(Path(tmp))
+        teste_proveniencia_ingestao(Path(tmp))
     print("[selftest] tudo OK — a receita de ingestão está coerente com o repositório.")
 
 

@@ -17,10 +17,70 @@ transferem mesmo assim, que é o resultado empírico dos dois papers.
 """
 from __future__ import annotations
 
+import json
+import platform
+import subprocess
+import sys
+from importlib.metadata import version, PackageNotFoundError
+from pathlib import Path
+
 import torch
 from torch import nn
 from torchvision.models import ResNet18_Weights, resnet18
 from torchvision.models.resnet import ResNet
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "datasets"))
+import proveniencia as pv
+
+
+def codigo_atual() -> dict:
+    """Snapshot local, inclusive código não commitado; nunca lê dados/segredos."""
+    base = Path(__file__).resolve().parents[1]
+    raiz = base.parent
+    arquivos = sorted({p for d in (base / "treino", base / "datasets", base / "PoC" / "src")
+                       for p in d.glob("*.py")})
+    fontes = {str(p.relative_to(raiz)): {"sha256": pv.hash_arquivo(p),
+                                       "conteudo": p.read_text(encoding="utf-8")}
+              for p in arquivos}
+    try:
+        commit = subprocess.run(["git", "rev-parse", "HEAD"], cwd=raiz,
+                                capture_output=True, text=True, check=True).stdout.strip()
+        sujo = bool(subprocess.run(["git", "status", "--porcelain", "--",
+                                   "computer-vision-model"], cwd=raiz,
+                                  capture_output=True, text=True, check=True).stdout.strip())
+    except (OSError, subprocess.CalledProcessError):
+        commit, sujo = None, None
+    pacotes = {}
+    for nome in ("torch", "torchvision", "numpy", "PyYAML", "scipy"):
+        try:
+            pacotes[nome] = version(nome)
+        except PackageNotFoundError:
+            pacotes[nome] = None
+    return {"commit": commit, "arvore_modificada": sujo,
+            "fontes_sha256": pv.hash_json(fontes), "fontes": fontes,
+            "python": platform.python_version(), "pacotes": pacotes}
+
+
+def proveniencia_execucao(config: dict, dados: dict, particao: dict, args: dict) -> dict:
+    return json.loads(json.dumps({"schema": 1, "codigo": codigo_atual(),
+                                 "config": config, "dados": dados,
+                                 "particao": particao, "args": args}, default=str))
+
+
+def inventario_final(lm_dir: Path, clipes: list) -> dict:
+    """Inventário exato do fine-tuning; legado fica explicitamente identificado."""
+    amostras = []
+    for c in clipes:
+        p = lm_dir / f"pessoa{c.pessoa}_sinal-{c.sinal}_rep{c.rep}.npy"
+        r = {"arquivo": p.name, "sha256": pv.hash_arquivo(p), "pessoa": c.pessoa,
+             "sinal": c.sinal, "rep": c.rep,
+             "origem_status": "verificada" if pv.sidecar(p).exists() else "legado_sem_sidecar"}
+        if pv.sidecar(p).exists():
+            r["registro"] = pv.ler(p)
+        amostras.append(r)
+    reservas = pv.ler_reservas()
+    return {"amostras": amostras, "manifesto_corpus_sha256": pv.hash_json(amostras),
+            "reservas": reservas, "manifesto_avaliacao_sha256": pv.hash_arquivo(pv.MANIFESTO)}
 
 
 def construir(num_classes: int, congelar_ate: int = 0, *,
@@ -69,8 +129,17 @@ def salvar(modelo: nn.Module, caminho, rotulos: list[str], meta: dict) -> None:
         arquitetura, config = "resnet", {}
     else:
         raise ValueError(f"arquitetura não suportada: {type(modelo).__name__}")
+    procedencia = dict(meta.get("proveniencia") or {"schema": 1, "codigo": codigo_atual(),
+                       "dados": None, "aviso": "chamador não forneceu inventário/partição"})
+    inicializar = meta.get("args", {}).get("inicializar")
+    if inicializar:
+        pai = Path(inicializar)
+        checkpoint = torch.load(pai, map_location="cpu", weights_only=False)
+        procedencia["inicializacao"] = {"arquivo": pai.name, "sha256": pv.hash_arquivo(pai),
+                                        "meta": checkpoint.get("meta", {})}
     torch.save({"state_dict": modelo.state_dict(), "rotulos": rotulos, "meta": meta,
-                "arquitetura": arquitetura, "config_modelo": config}, caminho)
+                "arquitetura": arquitetura, "config_modelo": config,
+                "proveniencia": procedencia}, caminho)
 
 
 def carregar(caminho, map_location="cpu") -> tuple[nn.Module, list[str], dict]:

@@ -1,5 +1,19 @@
 # Investigação — expansão do dataset (Dia 1)
 
+> **Correção de interpretação — 2026-09-09:** os 30 clipes V-LIBRASIL curados são
+> **clipes reservados, sem sobreposição exata** com o corpus de pré-treino, não teste
+> de domínio ou pessoas inéditas após pré-treinar nessa base. Os mesmos três
+> articuladores e o mesmo domínio visual participam do desenvolvimento (V03 na
+> validação interna). O corpus atual tem **4.053 clipes após a exclusão** dos 30;
+> não se subtrai esse conjunto novamente. Um teste real no balcão exige coleta própria
+> com pessoas e condições não usadas no desenvolvimento.
+>
+> Classes compartilhadas com MINDS **não são contaminação em transferência
+> supervisionada**: não se excluem automaticamente palavras comuns. Exigem-se
+> isolamento de clipes/origens e ausência das pessoas MINDS de teste no pré-treino.
+> A investigação abaixo preserva o histórico, com as recomendações de avaliação
+> corrigidas para esse limite.
+
 **Objetivo:** antes de treinar o classificador do §5.5, descobrir se dá para aumentar o
 dataset da PoC (hoje 430 clipes · 11 pessoas · 10 sinais) sem inventar coleta nova, e a
 que custo. A métrica que importa é **pessoas diferentes por sinal**, não clipes — é ela
@@ -169,7 +183,7 @@ consome.
    | UFSC SignBank | indícios de Creative Commons (variante não confirmada) | depende de ser NC | idem |
    | Corpus Libras (UFSC) | não encontrado (corpus com consentimento de participantes) | não encontrado | não encontrado |
    | USP / UFV | não encontrado | não encontrado | não encontrado |
-   | V-LIBRASIL (UFPE) | CC (variante não confirmada) | provável se CC BY | provável |
+   | V-LIBRASIL (UFPE) | sujeito aos termos CC BY-NC-ND | ❌ não-comercial | restrita; não publicar arquivos/derivados neste fluxo |
 
    O `README` do toolkit declara MIT, mas **o MIT cobre o empacotamento, não os direitos
    dos vídeos originais**. Somando: são vídeos de pessoas identificáveis — dado
@@ -260,10 +274,12 @@ Três consequências que importam mais que o tamanho:
 3. **Vocabulário dobra sem custo.** 20 classes em vez de 10 é um teste mais honesto
    (chance aleatória cai de 10% para 5%) e gera um modelo mais interessante de demonstrar.
 
-O papel da V-LIBRASIL muda de "parte do treino" para algo mais útil: **conjunto de teste
-de domínio diferente** — treina no MINDS, testa na V-LIBRASIL para medir quanto o modelo
-cai quando muda o cenário de gravação. É a melhor aproximação disponível da pergunta
-"vai funcionar no balcão?" antes da coleta própria.
+O papel dos 30 clipes curados da V-LIBRASIL é o de **conjunto reservado de clipes**.
+Para um baseline treinado apenas no MINDS, sem V-LIBRASIL em qualquer estágio de
+desenvolvimento, esse recorte pode diagnosticar a mudança entre bases de estúdio.
+**Após pré-treino V-LIBRASIL, não é teste de domínio nem de pessoas inéditas:** não há
+sobreposição exata dos vídeos, mas articuladores e domínio são conhecidos. Esse
+diagnóstico não responde "vai funcionar no balcão?" — só a coleta própria responde.
 
 ---
 
@@ -346,8 +362,9 @@ Ordem de custo-benefício, revisada com o que a investigação encontrou:
 2. **Verificar o bundle do Kaggle (Ação A).** Pré-requisito do item 1: confirmar se os
    sinalizadores 03/04/07/09 estão no zip → `python diagnostico_bundle.py --fonte minds`.
    Se não estiverem, buscar a distribuição original da base.
-3. **V-LIBRASIL como teste de domínio, não como treino.** Reaproveita os 30 clipes que já
-   temos para medir a queda entre cenários de gravação.
+3. **V-LIBRASIL: 30 clipes reservados, não usados no pré-treino.** Reaproveitáveis para
+   diagnóstico, mas com articuladores/domínio conhecidos após pré-treino no restante
+   da base; não medem generalização a domínio ou pessoas inéditas.
 4. **MALTA-LIBRAS (Ação B): não agora.** Depois do filtro de licença sobra ~1 pessoa nova
    por sinal, com trabalho de download/extração/identidade — ROI ruim dentro do prazo.
    Continua valendo como fonte de **pré-treino** na visão de produto
@@ -364,7 +381,7 @@ Ordem de custo-benefício, revisada com o que a investigação encontrou:
 | 3 | Ingerir e extrair landmarks dos 1.158 clipes | itens 1-2 |
 | 4 | Rerodar o baseline DTW (`evaluate.py`) no dataset novo — referência atualizada | item 3 |
 | 5 | Implementar Skeleton-DML + ResNet-18 em LOPO e comparar com o item 4 | item 3 |
-| 6 | V-LIBRASIL como teste de domínio (treina MINDS, testa V-LIBRASIL) | item 5 |
+| 6 | Diagnóstico nos 30 clipes V-LIBRASIL reservados; após pré-treino, articuladores/domínio conhecidos | item 5; teste real de domínio depende de coleta própria |
 
 Ganhos baratos a incorporar no caminho, todos vindos do Achado D: imputação spline de
 landmarks faltantes, subir de 49 para ~75 pontos (pose completa) e augmentação
@@ -410,3 +427,19 @@ disponível **hoje** é o de sempre: 8 sinalizadores MINDS + 3 V-LIBRASIL = 11 p
 ### Pendência atualizada
 - [ ] Localizar a distribuição completa do MINDS-Libras (12 sinalizadores) — contato
       direto com os autores (grupo MINDS, UFMG) é o caminho mais confiável.
+
+### Execução privada do experimento contrastivo
+
+O [notebook GPU](../computer-vision-model/treino/notebook_gpu.ipynb) usa dois pacotes
+privados: `landmarks-minds.tar.gz` (pasta `landmarks/`, metadados opcionais no treino
+normal) e `landmarks-vlibrasil.tar.gz` (pasta `landmarks-pretreino/`, cada `.npy`
+acompanhado de `*.npy.proveniencia.json`). A auditoria `--auditar` é obrigatória antes
+do pré-treino `--objetivo contrastivo --pessoa-val V03`; o fine-tuning usa
+`--fontes minds --inicializar <checkpoint>`, com avaliação LOSO separada do modelo
+final. A auditoria e a geração dos sidecars são pré-requisitos implementados fora do
+notebook; validar apenas presença/JSON não comprova origem ou isolamento.
+
+V-LIBRASIL é **CC BY-NC-ND**: não-comercial e sem derivações. Landmarks não eliminam
+as restrições da fonte. Não publicar vídeos, landmarks, sidecars, pacotes nem
+checkpoints derivados; manter entradas, notebook e downloads de artefatos privados,
+em ambiente autorizado. O fluxo não concede licença comercial ou de redistribuição.

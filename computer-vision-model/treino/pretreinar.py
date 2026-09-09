@@ -8,25 +8,25 @@ arquitetura, é quanto ele já viu. A ResNet resolve parte disso vindo do ImageN
     ImageNet  ->  Libras em geral  ->  os sinais que interessam
     (fotos)       (este script)        (treinar.py, LOSO)
 
-O corpus daqui é grande em vocabulário e pobre em pessoas (V-LIBRASIL: 1.353
-palavras, 3 articuladores; WLASL: 2.000 classes, 78 sinalizantes). Isso o
-inutiliza como conjunto de AVALIAÇÃO, mas serve bem ao propósito de aprender
-"como um corpo se move sinalizando".
+O corpus habilitado aqui é a V-LIBRASIL: grande em vocabulário e pobre em
+pessoas (1.353 palavras, 3 articuladores). A ingestão de WLASL existe, mas seu
+carregamento e protocolo multi-fonte ainda precisam de um experimento separado.
 
 POR QUE NÃO HÁ LEAVE-ONE-SIGNER-OUT AQUI. Nenhum número deste script vai para
 lugar nenhum: o produto dele são os pesos. A acurácia que vale continua saindo
 do treinar.py, sobre o MINDS, com uma pessoa inteira fora. A separação é o que
-mantém a medição honesta — e é por isso que os 30 clipes da V-LIBRASIL que
-servem de teste de domínio foram excluídos deste corpus (ver
-datasets/ingest_pretreino.py).
+mantém a medição honesta. Os 30 clipes reservados da V-LIBRASIL são excluídos
+por origem, mas seus articuladores/domínio aparecem no restante da base:
+eles NÃO constituem teste de domínio inédito após este pré-treino.
 
-A divisão interna aqui (90/10 aleatório) serve só para escolher a época; não é
-resultado.
+A classificação usa divisão aleatória 90/10; o contrastivo reserva uma pessoa
+e escolhe a época por recuperação top-1 contra a galeria de treino. São métricas
+de seleção interna, não resultados de teste externo.
 
 Uso:
-    python pretreinar.py --corpus ../PoC/data/landmarks-pretreino
+    python pretreinar.py --corpus ../PoC/data/landmarks-pretreino --auditar
     python pretreinar.py --corpus ../PoC/data/landmarks-pretreino \\
-                         --corpus ../PoC/data/landmarks-wlasl --arquitetura gcn
+                         --objetivo contrastivo --pessoa-val V03
 
 Depois:
     python treinar.py --inicializar resultados-pretreino/backbone_resnet.pt
@@ -35,6 +35,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import sys
 import time
 from datetime import datetime
 from pathlib import Path
@@ -52,19 +53,86 @@ import representacao as rp
 from treinar import DatasetSinais
 
 AQUI = Path(__file__).resolve().parent
+sys.path.insert(0, str(AQUI.parent / "datasets"))
+import proveniencia as pv
 
 
-def carregar_corpora(dirs: list[Path], min_clipes_por_classe: int) -> list[dd.Clipe]:
+def auditar_corpora(dirs: list[Path], manifesto: Path = pv.MANIFESTO,
+                    avaliacao: Path | None = None) -> dict:
+    """Valida TODOS os arquivos, antes de filtros de classe/frames ou modelo.
+
+    Não confundir hash com identidade: origem barra renomeações de um vídeo;
+    hash barra cópias com outra origem declarada. Os dois são necessários.
+    """
+    resolvidos = [d.resolve() for d in dirs]
+    if len(set(resolvidos)) != len(resolvidos):
+        raise ValueError("diretório de corpus repetido (incluindo symlinks)")
+    arquivos = []
+    for i, d in enumerate(resolvidos):
+        if not d.is_dir() or not list(d.glob("*.npy")):
+            raise ValueError(f"diretório de corpus inexistente ou vazio: {d}")
+        for p in sorted(d.glob("*.npy")):
+            pessoa, _, _ = dd.parse_nome(p.stem)
+            if pessoa.startswith("M"):
+                raise ValueError(f"MINDS (prefixo M) proibido no pré-treino: {p.name}")
+            # dados.carregar ainda não suporta W. Não deixar o filtro descartá-lo
+            # silenciosamente; a habilitação de WLASL é um experimento separado.
+            if not pessoa.startswith("V"):
+                raise ValueError(f"fonte não suportada no pré-treino atual: {p.name}; use V-LIBRASIL")
+            arquivos.append((i, p))
+    reservas = pv.ler_reservas(manifesto)
+    if not any(r["fonte"] == "vlibrasil" for r in reservas):
+        raise ValueError("manifesto sem reservas V-LIBRASIL")
+    origens_reservadas = {(r["fonte"], r["origem"]) for r in reservas}
+    if avaliacao is None:
+        import yaml
+        cfg = yaml.safe_load((AQUI.parent / "PoC" / "config.yaml").read_text(encoding="utf-8"))
+        avaliacao = AQUI.parent / "PoC" / cfg["paths"]["landmarks"]
+    hashes_avaliacao = {pv.hash_arquivo(p) for p in avaliacao.glob("*.npy")}
+    videos_avaliacao = set()
+    for p in avaliacao.glob("*.npy"):
+        if pv.sidecar(p).exists():
+            videos_avaliacao.add(pv.ler(p)["video"]["sha256"])
+    amostras, origens, hashes, videos = [], set(), set(), set()
+    for i, p in arquivos:
+        r = pv.ler(p)
+        origem = (r["fonte"], r["origem"])
+        h, hv = r["landmarks"]["sha256"], r["video"]["sha256"]
+        if origem in origens_reservadas or h in hashes_avaliacao or hv in videos_avaliacao:
+            raise ValueError(f"clipe reservado para avaliação no corpus: {p.name} ({r['origem']})")
+        if origem in origens or h in hashes or hv in videos:
+            raise ValueError(f"amostra duplicada por origem/hash: {p.name}")
+        origens.add(origem)
+        hashes.add(h)
+        videos.add(hv)
+        amostras.append({"corpus": i, "arquivo": p.name, "id": pv.hash_json(origem),
+                         "registro": r})
+    return {"schema": 1, "manifesto_avaliacao_sha256": pv.hash_arquivo(manifesto),
+            "reservas": reservas, "manifesto_corpus_sha256": pv.hash_json(amostras),
+            "amostras": amostras}
+
+
+def carregar_corpora(dirs: list[Path], min_clipes_por_classe: int,
+                     *, manifesto: Path = pv.MANIFESTO,
+                     auditoria: dict | None = None) -> list[dd.Clipe]:
     """Junta um ou mais diretórios de landmarks num corpus só.
 
     Classes com pouquíssimos exemplos são descartadas: elas não ensinam
     representação (o modelo decora), inflam a camada de saída e desequilibram o
     treino. O corte é explícito para que a perda apareça no log, não em silêncio.
     """
+    verificado = auditar_corpora(dirs, manifesto)
+    if auditoria is not None:
+        auditoria.update(verificado)
+    registros = {(r["corpus"], r["arquivo"]): r for r in verificado["amostras"]}
     clipes: list[dd.Clipe] = []
-    for d in dirs:
+    for i, d in enumerate(dirs):
         antes = len(clipes)
-        clipes += dd.carregar(d, fontes="todas")
+        novos = dd.carregar(d, fontes="vlibrasil")
+        for c in novos:
+            nome = f"pessoa{c.pessoa}_sinal-{c.sinal}_rep{c.rep}.npy"
+            c.proveniencia = registros[i, nome]
+        clipes += novos
         print(f"[pretreino] {d.name}: {len(clipes) - antes} clipes")
 
     contagem: dict[str, int] = {}
@@ -129,6 +197,9 @@ def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--corpus", action="append", required=True, type=Path,
                     help="diretório de landmarks (repita para juntar vários)")
+    ap.add_argument("--manifesto-avaliacao", type=Path, default=pv.MANIFESTO)
+    ap.add_argument("--auditar", action="store_true",
+                    help="confere isolamento/proveniência e sai sem construir ou treinar modelo")
     ap.add_argument("--arquitetura", default="resnet", choices=["resnet", "gcn"])
     ap.add_argument("--objetivo", default="classificacao",
                     choices=["classificacao", "contrastivo"],
@@ -162,9 +233,20 @@ def main() -> None:
     disp = torch.device(args.dispositivo)
     torch.manual_seed(args.semente)
 
-    clipes = carregar_corpora(args.corpus, args.min_clipes_por_classe)
+    auditoria: dict = {}
+    try:
+        clipes = carregar_corpora(args.corpus, args.min_clipes_por_classe,
+                                  manifesto=args.manifesto_avaliacao, auditoria=auditoria)
+    except (ValueError, OSError) as e:
+        raise SystemExit(f"[auditoria] ABORTADO: {e}") from e
     if not clipes:
         raise SystemExit("corpus vazio — confira os diretórios passados em --corpus")
+    print(f"[auditoria] OK: {len(auditoria['amostras'])} amostras sem sobreposição; "
+          f"manifesto {auditoria['manifesto_corpus_sha256']}")
+    if args.auditar:
+        return
+    if args.epocas < 1 or args.batch < 2 or not 0 < args.fracao_val < 1:
+        raise SystemExit("epocas >= 1, batch >= 2 e 0 < fracao-val < 1 são obrigatórios")
     rotulos = dd.rotulos(clipes)
     if args.objetivo == "contrastivo":
         pessoa_val = args.pessoa_val or sorted(dd.pessoas(clipes))[-1]
@@ -175,6 +257,8 @@ def main() -> None:
               f"(recuperação entre pessoas), não divisão aleatória")
     else:
         treino, val = separar(clipes, args.fracao_val, args.semente)
+    if not treino or not val:
+        raise SystemExit("partição de treino/validação vazia")
     print(f"[pretreino] {len(clipes)} clipes | {len(rotulos)} classes | "
           f"{len(dd.pessoas(clipes))} pessoas | treino {len(treino)} / val {len(val)} | "
           f"arquitetura={args.arquitetura} dispositivo={disp}")
@@ -207,14 +291,29 @@ def main() -> None:
             # dois clipes da mesma palavra no mesmo lote, e não haveria par positivo.
             amostrador = ct.AmostradorPK([c.sinal for c in cl], args.p_classes,
                                          args.k_exemplos, args.semente)
-            return DataLoader(ds, batch_size=args.p_classes * args.k_exemplos,
+            return DataLoader(ds, batch_size=amostrador.p * amostrador.k,
                               sampler=amostrador, num_workers=args.workers, drop_last=True)
         return DataLoader(ds, batch_size=args.batch, shuffle=shuffle,
                           num_workers=args.workers, drop_last=shuffle and len(ds) > args.batch)
 
     l_treino, l_val = loader(treino, True, True), loader(val, False, False)
+    if len(l_treino) == 0:
+        raise SystemExit("nenhum lote de treino válido após amostragem")
     # Galeria: os clipes de treino SEM augmentação, para a métrica de recuperação.
     l_galeria = loader(treino, False, False) if args.objetivo == "contrastivo" else None
+
+    def ids(grupo):
+        return [c.proveniencia["id"] for c in grupo]
+
+    elegiveis = (set(l_treino.sampler.classes) if args.objetivo == "contrastivo"
+                 else set(rotulos))
+    particao = {"metodo": "por_pessoa" if args.objetivo == "contrastivo" else "aleatoria",
+                "treino": ids(treino), "validacao": ids(val), "teste": [],
+                "galeria": ids(treino) if l_galeria is not None else [],
+                "otimizacao_elegiveis": ids([c for c in treino if c.sinal in elegiveis]),
+                "descartadas": [r["id"] for r in auditoria["amostras"]
+                                if r["id"] not in set(ids(clipes))]}
+    procedencia = mm.proveniencia_execucao(cfg, auditoria, particao, vars(args))
 
     melhor = -1.0 if args.objetivo == "contrastivo" else float("inf")
     melhores_pesos, melhor_epoca = None, -1
@@ -275,6 +374,9 @@ def main() -> None:
     meta = {"corpora": [str(d) for d in args.corpus], "objetivo": args.objetivo,
             "classes": len(rotulos),
             "clipes": len(clipes), "pessoas": dd.pessoas(clipes),
+            "proveniencia": procedencia,
+            "melhor_metrica": melhor,
+            "metrica": "recuperacao_top1" if args.objetivo == "contrastivo" else "entropia_cruzada",
             "melhor_epoca": melhor_epoca + 1, "args": vars(args),
             "gerado_em": f"{datetime.now():%Y-%m-%d %H:%M}"}
     salvar_backbone(modelo, saida / f"backbone_{args.arquitetura}.pt", args.arquitetura, meta)

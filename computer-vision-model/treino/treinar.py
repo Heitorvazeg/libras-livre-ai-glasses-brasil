@@ -318,11 +318,19 @@ def main() -> None:
         todas = dd.pessoas(clipes)
         val = [c for c in clipes if c.pessoa == todas[-1]]
         treino = clipes
+        # Snapshot antes de treinar. Este modo NÃO é uma avaliação independente:
+        # validação reutiliza parte do treino; registrar isso sem disfarçar.
+        procedencia = mm.proveniencia_execucao(
+            cfg, mm.inventario_final(lm_dir, clipes),
+            {"metodo": "final_sem_holdout", "treino_pessoas": todas,
+             "validacao_pessoas": [todas[-1]], "teste": [],
+             "validacao_sobrepoe_treino": True}, vars(args))
         _, _, _, _, modelo_final = treinar_rodada(treino, val, val, rotulos, permutacao,
                                                   args, dispositivo)
         destino = saida / "modelo_final.pt"
         mm.salvar(modelo_final, destino, rotulos,
                   {"fontes": args.fontes, "pessoas": todas, "args": vars(args),
+                   "proveniencia": procedencia,
                    "pontos": cfg["pose_indices"], "limite_escala": rp.LIMITE})
         print(f"[treino] checkpoint salvo em {destino}")
         return

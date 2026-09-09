@@ -39,6 +39,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from remote_zip import ZipRemoto, zip_do_kaggle
+import proveniencia as pv
 
 AQUI = Path(__file__).resolve().parent
 DESTINO = AQUI.parent / "PoC" / "data" / "raw-wlasl"
@@ -118,6 +119,10 @@ def resumo(clipes: list[Clipe], rotulo: str) -> str:
 
 def baixar(clipes: list[Clipe], z: ZipRemoto, destino: Path) -> int:
     destino.mkdir(parents=True, exist_ok=True)
+    bundle = pv.descrever_bundle(z, "wlasl")
+    for c in clipes:
+        if (destino / c.destino).exists():
+            pv.registrar_clipe(c, z, destino, "wlasl", bundle)
     pendentes = [c for c in clipes if not (destino / c.destino).exists()]
     if ja := len(clipes) - len(pendentes):
         print(f"[wlasl] {ja} clipe(s) já em disco — pulando")
@@ -130,6 +135,7 @@ def baixar(clipes: list[Clipe], z: ZipRemoto, destino: Path) -> int:
     inicio, feitos = time.time(), 0
     for i, c in enumerate(pendentes, 1):
         z.extrair(c.origem, destino / c.destino)
+        pv.registrar_clipe(c, z, destino, "wlasl", bundle)
         feitos += c.bytes
         if i % 50 == 0 or i == len(pendentes):
             passado = time.time() - inicio

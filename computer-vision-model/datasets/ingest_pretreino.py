@@ -24,7 +24,6 @@ Uso:
 from __future__ import annotations
 
 import argparse
-import csv
 import re
 import sys
 import time
@@ -33,6 +32,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from remote_zip import ZipRemoto, zip_do_kaggle
+import proveniencia as pv
 
 AQUI = Path(__file__).resolve().parent
 DESTINO = AQUI.parent / "PoC" / "data" / "raw-pretreino"
@@ -71,10 +71,10 @@ def slug(palavra: str) -> str:
 def origens_da_avaliacao() -> set[str]:
     """Membros do zip que já estão no conjunto de avaliação — barrados no pré-treino.
 
-    Os 30 clipes da V-LIBRASIL reservados como teste de domínio são os MESMOS
+    Os 30 clipes reservados da V-LIBRASIL são os MESMOS
     vídeos que este script baixaria. Se entrassem, o modelo os veria no
-    pré-treino e depois seria "testado" neles — o teste de domínio deixaria de
-    medir qualquer coisa.
+    pré-treino e depois seria "testado" neles. Mesmo excluídos, seus articuladores
+    e domínio estão no restante da base: não são um teste de domínio inédito.
 
     A comparação é pelo caminho do membro DENTRO DO ZIP, não pelo nome do arquivo
     de destino. Motivo concreto: `maca`, `medo` e `sapo` têm rótulos diferentes
@@ -82,11 +82,14 @@ def origens_da_avaliacao() -> set[str]:
     vira `sinal-maca` na avaliação e `sinal-maca-rosto` aqui. Comparar nomes
     deixaria 9 dos 30 passarem — o vazamento seria silencioso e o número, falso.
     """
-    if not MANIFESTO.exists():
-        return set()
-    with open(MANIFESTO, newline="", encoding="utf-8") as fh:
-        return {linha["origem"] for linha in csv.DictReader(fh)
-                if linha.get("fonte") == "vlibrasil"}
+    try:
+        linhas = pv.ler_reservas(MANIFESTO)
+    except ValueError as e:
+        raise SystemExit(str(e)) from e
+    reservados = {linha["origem"] for linha in linhas if linha["fonte"] == "vlibrasil"}
+    if not reservados:
+        raise SystemExit("manifesto sem reservas V-LIBRASIL — confira a seleção de avaliação")
+    return reservados
 
 
 def coletar(z: ZipRemoto) -> list[Clipe]:
@@ -103,8 +106,8 @@ def coletar(z: ZipRemoto) -> list[Clipe]:
             continue
         anterior = vistos.setdefault(rotulo, m["palavra"])
         if anterior != m["palavra"]:
-            print(f"[pretreino] ⚠ '{m['palavra']}' e '{anterior}' geram o mesmo rótulo "
-                  f"'{rotulo}' — serão tratados como a MESMA classe")
+            raise SystemExit(f"colisão de rótulos: '{m['palavra']}' e '{anterior}' "
+                         f"geram '{rotulo}'; resolva o mapeamento antes de baixar")
         clipe = Clipe(sinal=rotulo, pessoa=f"{PREFIXO_PESSOA}{int(m['pessoa']):02d}",
                       origem=nome, bytes=membro.tamanho)
         if nome in reservados:
@@ -113,7 +116,7 @@ def coletar(z: ZipRemoto) -> list[Clipe]:
         clipes.append(clipe)
     if excluidos:
         print(f"[pretreino] {excluidos} clipe(s) excluídos por já estarem no conjunto de "
-              f"avaliação (teste de domínio) — ver origens_da_avaliacao()")
+              f"clipes reservados — ver origens_da_avaliacao()")
     return sorted(clipes, key=lambda c: (c.sinal, c.pessoa))
 
 
@@ -135,6 +138,10 @@ def resumo(clipes: list[Clipe]) -> str:
 
 def baixar(clipes: list[Clipe], z: ZipRemoto, destino: Path) -> int:
     destino.mkdir(parents=True, exist_ok=True)
+    bundle = pv.descrever_bundle(z, "vlibrasil")
+    for c in clipes:
+        if (destino / c.destino).exists():
+            pv.registrar_clipe(c, z, destino, "vlibrasil", bundle)
     pendentes = [c for c in clipes if not (destino / c.destino).exists()]
     if ja := len(clipes) - len(pendentes):
         print(f"[pretreino] {ja} clipe(s) já em disco — pulando")
@@ -148,6 +155,7 @@ def baixar(clipes: list[Clipe], z: ZipRemoto, destino: Path) -> int:
     inicio, feitos = time.time(), 0
     for i, c in enumerate(pendentes, 1):
         z.extrair(c.origem, destino / c.destino)
+        pv.registrar_clipe(c, z, destino, "vlibrasil", bundle)
         feitos += c.bytes
         if i % 25 == 0 or i == len(pendentes):
             passado = time.time() - inicio
@@ -165,6 +173,8 @@ def main() -> None:
     ap.add_argument("--sem-cache", action="store_true")
     args = ap.parse_args()
 
+    # Falhar ANTES de qualquer acesso à rede se a proteção estiver indisponível.
+    origens_da_avaliacao()
     print(f"[pretreino] lendo o índice de {KAGGLE} (só o rodapé do zip)...", flush=True)
     z = zip_do_kaggle(KAGGLE, cache_dir=None if args.sem_cache else AQUI / ".cache")
     clipes = coletar(z)

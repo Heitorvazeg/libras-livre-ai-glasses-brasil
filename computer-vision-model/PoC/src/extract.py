@@ -43,11 +43,15 @@ Uso:
 from __future__ import annotations
 
 import argparse
+import sys
 from pathlib import Path
 
 import numpy as np
 
 from config import load_config
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "datasets"))
+import proveniencia as pv
 
 # cv2 e mediapipe são importados SOB DEMANDA (dentro das funções que os usam), não
 # no topo: assim `from extract import frame_normalizado` — que é numpy puro — funciona
@@ -195,6 +199,11 @@ def main() -> None:
                 continue
 
             try:
+                # Não atribuir retrospectivamente a configuração atual a um .npy
+                # antigo. Só a extração nova herda automaticamente a identidade.
+                tem_origem = pv.sidecar(v).exists()
+                if tem_origem:
+                    pv.ler(v)
                 seq, descartados = extrair_video(v, holistic, cfg)
             except Exception as e:
                 # Um vídeo ilegível (corrompido, download interrompido, arquivo
@@ -211,6 +220,14 @@ def main() -> None:
                 continue
 
             np.save(destino, seq)
+            if tem_origem:
+                pv.registrar_landmarks(v, destino, cfg.raw)
+            else:
+                # Gravações próprias/legadas continuam extraíveis, mas não passam
+                # pela auditoria estrita de corpora públicos de pré-treino.
+                pv.sidecar(destino).unlink(missing_ok=True)
+                print(f"[extract] ⚠ {v.name}: sem origem registrada; "
+                      "landmarks NÃO elegíveis para pré-treino")
             extraidos += 1
             aviso = ""
             if total and descartados / total > 0.3:

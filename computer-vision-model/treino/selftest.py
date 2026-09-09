@@ -341,7 +341,8 @@ def teste_pretreino_contrastivo_ponta_a_ponta() -> None:
     with tempfile.TemporaryDirectory() as tmp:
         destino = Path(tmp) / "corpus"
         # imita a V-LIBRASIL: muitas classes, 3 exemplos, um por pessoa
-        _dataset_sintetico(destino, n_pessoas=3, n_classes=12, reps=1, seed=3)
+        from test_proveniencia import criar_corpus
+        criar_corpus(destino, n_pessoas=3, n_classes=12, reps=1, seed=3)
         saida = Path(tmp) / "saida"
         r = subprocess.run(
             [sys.executable, str(Path(__file__).parent / "pretreinar.py"),
@@ -398,6 +399,12 @@ def teste_imputacao_maos() -> None:
     _ok("imputação: lacuna curta preenchida, longa preservada, pose intacta")
 
 
+def teste_isolamento_proveniencia() -> None:
+    from test_proveniencia import executar
+    executar()
+    _ok("pré-treino: isolamento, cadeia de origem e proveniência de checkpoint")
+
+
 TESTES = [
     ("Skeleton-DML (representação)", teste_representacao),
     ("espelhamento esquerda/direita", teste_espelho),
@@ -412,6 +419,7 @@ TESTES = [
     ("contrastivo: pré-treino ponta a ponta", teste_pretreino_contrastivo_ponta_a_ponta),
     ("controle negativo ST-GCN", teste_gcn_controle_negativo),
     ("checkpoints GCN e ResNet", teste_checkpoints),
+    ("isolamento e proveniência", teste_isolamento_proveniencia),
 ]
 
 

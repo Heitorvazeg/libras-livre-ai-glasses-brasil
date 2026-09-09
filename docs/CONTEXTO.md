@@ -20,8 +20,9 @@ fica com o atendente e serve dezenas de pessoas surdas diferentes por dia. Não 
 calibração por usuário. O modelo precisa funcionar com alguém que ele nunca viu, desde
 o primeiro sinal.
 
-Consequência prática: **toda avaliação neste projeto deixa uma pessoa inteira de fora do
-treino** (*leave-one-signer-out*, LOSO). Um número que não respeite isso não vale.
+Consequência prática: **a avaliação de generalização entre pessoas no MINDS deixa uma
+pessoa inteira de fora do treino** (*leave-one-signer-out*, LOSO), inclusive do
+pré-treino. Diagnósticos com pessoas conhecidas não sustentam essa alegação.
 
 ---
 
@@ -52,16 +53,27 @@ controlado. É teto otimista. O número de balcão só sai com coleta própria.
 | Conjunto | Clipes | Classes | Pessoas | Papel |
 |---|---|---|---|---|
 | **MINDS-Libras** | 800 | 20 sinais | 8 | **treino + avaliação LOSO** |
-| V-LIBRASIL (curada) | 30 | 10 sinais | 3 | teste de domínio — **nunca treinada** |
-| V-LIBRASIL (completa) | 4.053 | 1.353 palavras | 3 | pré-treino |
+| V-LIBRASIL (curada) | 30 | 10 sinais | 3 | clipes reservados, sem sobreposição exata; articuladores/domínio conhecidos após pré-treino |
+| V-LIBRASIL (corpus pós-exclusão) | 4.053 | 1.353 palavras | 3 | pré-treino; os 30 reservados já foram excluídos desta contagem |
 | WLASL100 (ASL) | 1.013 | 100 | 64 | pré-treino |
 
 **Os papéis não se misturam, e isso é deliberado.** Um clipe que entra no pré-treino não
 pode aparecer na avaliação — senão o número de generalização deixa de significar o que
-diz. Já barramos um vazamento assim: os 30 clipes do teste de domínio eram os MESMOS
+diz. Já barramos um vazamento assim: os 30 clipes reservados eram os MESMOS
 vídeos que o corpus de pré-treino baixava (`datasets/ingest_pretreino.py` exclui por
 caminho no zip de origem, não por nome de arquivo, porque três sinais têm rótulos
 diferentes entre as bases).
+
+**Reservar os vídeos exatos não reserva o domínio nem os articuladores.** Os mesmos
+três articuladores e o mesmo domínio visual aparecem no corpus V-LIBRASIL usado no
+pré-treino (V03 participa da validação interna para escolher a época). Portanto, os
+30 clipes são um diagnóstico em clipes reservados, **não um teste de domínio ou de
+pessoas inéditas** após esse estágio. O teste real no cenário de balcão depende de
+coleta própria, com pessoas e condições não usadas no desenvolvimento.
+
+**Classes compartilhadas entre bases não são contaminação em transferência
+supervisionada.** Não se excluem automaticamente palavras V-LIBRASIL por existirem
+no MINDS; o isolamento é de amostras/origens e de pessoas de teste, não de vocabulário.
 
 **O MINDS não pode ser usado no pré-treino.** Ele é o conjunto de avaliação; pré-treinar
 nele vazaria a pessoa de teste.
@@ -86,6 +98,23 @@ vídeo → MediaPipe Holistic → landmarks (.npy) → representação → model
 
 **A extração é CPU e não acelera em GPU** — ela fica na máquina local. O treino vai para
 GPU (`treino/notebook_gpu.ipynb`, Colab/Kaggle), onde horas viram minutos.
+
+O [notebook GPU](../computer-vision-model/treino/notebook_gpu.ipynb) encadeia auditoria
+obrigatória (`pretreinar.py --auditar`, sem modelo), pré-treino ResNet contrastivo
+(`--objetivo contrastivo --pessoa-val V03`) e fine-tuning MINDS
+(`--fontes minds --inicializar <checkpoint>`). A flag de auditoria e os sidecars são
+pré-requisitos da execução; sem eles, o fluxo aborta. Baselines são opcionais, em
+diretórios separados; o checkpoint final (todos os MINDS, sem teste independente)
+fica separado dos resultados LOSO. O download privado inclui todos os artefatos,
+inclusive checkpoints e JSON, não apenas relatórios.
+
+São necessários dois pacotes **privados**: `landmarks-minds.tar.gz` com pasta
+`landmarks/` (metadados opcionais no treino normal) e `landmarks-vlibrasil.tar.gz`
+com pasta `landmarks-pretreino/`, incluindo cada `.npy` e seu
+`*.npy.proveniencia.json`. V-LIBRASIL é **CC BY-NC-ND** (não-comercial, sem
+derivações); landmarks não eliminam restrições da fonte. Não publicar dados,
+sidecars, pacotes ou checkpoints derivados; uso em nuvem privada também exige
+respeitar os termos. Não há autorização de uso comercial ou redistribuição aqui.
 
 ### Convenção de nome — é a fonte de verdade
 

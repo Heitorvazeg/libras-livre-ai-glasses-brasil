@@ -269,3 +269,33 @@ de ficar na chance. Se subir, há vazamento entre treino e teste.
 
 ⚠️ **`ast.parse` não substitui rodar o teste.** Foi assim que um teste com `NameError`
 entrou no repositório: a sintaxe estava válida e o nome não existia. Rode o arquivo.
+
+---
+
+## 8. Entrega da Frente A — 2026-09-09
+
+| Item | Implementado | Validação |
+|---|---|---|
+| A1 | Auditoria obrigatória por origem/hash, rejeição de MINDS, diretórios repetidos, fontes não suportadas e sidecars ausentes; `--auditar` sem modelo | subprocesso MINDS aborta; corpus sintético válido passa; duplicatas/reservas falham |
+| A2 | Manifesto ausente/inválido/sem reservas aborta antes da rede; ingestão filtrada preserva reservas anteriores | testes offline com manifesto ausente e ingestões consecutivas |
+| A3 | Sidecars por vídeo e array; tamanho/CRC/SHA-256; herança na extração; migração offline explícita de legados | testes de retomada, corrupção, extração e migração sem alterar arrays |
+| A4 | Inventário e partições no backbone; snapshot de código/configuração/ambiente; modelo final registra dados e checkpoint pai | pré-treino sintético gera checkpoint e JSON com proveniência consistente |
+| A5 | Notebook com pacotes privados separados, auditoria, SupCon explícito, LOSO e modelo final | JSON/sintaxe das 8 células Python conferidos; execução GPU completa não realizada |
+| §5 | Documentos de contexto, investigação e vocabulário corrigidos | clipes reservados não são chamados de domínio/pessoas inéditos após pré-treino |
+
+**Testes executados:** suíte de treino completa (14 entradas, incluindo 11 regressões
+de proveniência), suíte de datasets e PoC (10/10, incluindo MediaPipe). Todos passaram.
+O ambiente executável foi `computer-vision-model/PoC/.venv311/bin/python`; o ambiente
+Python 3.14 selecionado no editor não tem Torch e ainda pode mostrar avisos de imports.
+
+**Pendência de dados, não contornada:** a auditoria do corpus real atual aborta por
+sidecars históricos ausentes. Antes de treinar, registrar o legado com vídeos e índice
+disponíveis e **confirmar a configuração histórica**. Não foram inventados metadados,
+modificados arrays nem iniciados treinos reais. O utilitário de migração é retomável.
+
+**Integrações necessárias fora do mapa original:** a extração recebeu apenas herança
+de metadados; o modo final do treino recebeu proveniência. No teste compartilhado,
+somente a fixture do pré-treino foi adaptada de M para V com sidecars sintéticos;
+asserções e ordem dos testes existentes foram preservadas.
+
+Detalhes operacionais e limites: [protocolo-pretreino.md](protocolo-pretreino.md).
