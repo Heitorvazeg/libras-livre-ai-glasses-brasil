@@ -134,6 +134,13 @@ def treinar_rodada(treino, validacao, teste, rotulos, permutacao, args, disposit
     modelo = modelo.to(dispositivo)
     criterio = nn.CrossEntropyLoss()
     otim = torch.optim.Adam(modelo.parameters(), lr=args.lr, weight_decay=args.wd)
+    # Agendador é opcional e desligado por padrão para não alterar o resultado já
+    # medido da ResNet (93,5%). Ele existe para o treino DO ZERO, onde a taxa fixa
+    # de fine-tuning é inadequada: no começo é lenta demais para sair do nada, e no
+    # fim é alta demais para assentar.
+    agendador = None
+    if getattr(args, "agendador", "nenhum") == "cosseno":
+        agendador = torch.optim.lr_scheduler.CosineAnnealingLR(otim, T_max=args.epocas)
 
     l_treino = _loader(treino, rotulos, permutacao, True, args.batch, args.workers, True, arq)
     l_val = _loader(validacao, rotulos, None, False, args.batch, args.workers, False, arq)
@@ -154,6 +161,8 @@ def treinar_rodada(treino, validacao, teste, rotulos, permutacao, args, disposit
             certos += (saida.argmax(1) == y).sum().item()
             total += y.size(0)
 
+        if agendador is not None:
+            agendador.step()
         val_perda, val_acc, _, _ = _avaliar(modelo, l_val, criterio, dispositivo)
         if val_perda < melhor_perda:
             melhor_perda, melhor_epoca = val_perda, epoca
@@ -176,7 +185,8 @@ def matriz_confusao(preds, reais, n):
     return m
 
 
-def escrever_relatorio(destino: Path, rotulos, accs, nomes_fold, cm, args, segundos, avisos):
+def escrever_relatorio(destino: Path, rotulos, accs, nomes_fold, cm, args, segundos, avisos,
+                       passos_por_rodada: int = 0):
     acc_media = float(np.mean(accs))
     recall = cm.diagonal() / np.maximum(cm.sum(axis=1), 1)
     ordem = np.argsort(recall)
@@ -189,6 +199,10 @@ def escrever_relatorio(destino: Path, rotulos, accs, nomes_fold, cm, args, segun
         "",
         f"Gerado em {datetime.now():%Y-%m-%d %H:%M} · protocolo leave-one-signer-out "
         f"({len(accs)} rodadas) · {segundos / 60:.0f} min de treino.",
+        "",
+        f"Orçamento de treino por rodada: ~{passos_por_rodada} atualizações de peso "
+        f"({args.epocas} épocas × lotes de {args.batch}). Número relevante quando se "
+        "compara fine-tuning com treino do zero: a segunda opção precisa de muito mais.",
         "",
         "## Resultado",
         "",
@@ -252,6 +266,10 @@ def main() -> None:
                          "e no Colab/Kaggle sem edição")
     ap.add_argument("--folds", type=int, default=0,
                     help="limita o nº de rodadas (0 = todas). Use 1 para testar o encanamento.")
+    ap.add_argument("--agendador", default="nenhum", choices=["nenhum", "cosseno"],
+                    help="cosseno decai a taxa de aprendizado ao longo das épocas. "
+                         "Recomendado para treino do zero (GCN sem pré-treino); "
+                         "desnecessário para fine-tuning a partir do ImageNet.")
     ap.add_argument("--inicializar", metavar="CHECKPOINT",
                     help="parte de um backbone de pretreinar.py em vez do ImageNet")
     ap.add_argument("--final", action="store_true",
@@ -326,7 +344,10 @@ def main() -> None:
     segundos = time.perf_counter() - inicio
     cm = matriz_confusao(todos_preds, todos_reais, len(rotulos))
     print(f"\n[treino] ACURÁCIA signer-independent média = {np.mean(accs):.1%}")
-    escrever_relatorio(saida / "relatorio.md", rotulos, accs, nomes, cm, args, segundos, avisos)
+    n_treino = len(particoes[0].treino) * (len(clipes) // max(len(dd.pessoas(clipes)), 1))
+    passos = max(n_treino // args.batch, 1) * args.epocas
+    escrever_relatorio(saida / "relatorio.md", rotulos, accs, nomes, cm, args, segundos, avisos,
+                       passos)
     np.save(saida / "matriz_confusao.npy", cm)
 
 
