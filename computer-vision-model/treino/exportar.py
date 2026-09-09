@@ -27,6 +27,22 @@ clipe (70 a 232 frames) e o redimensionamento para 224 absorve a diferença; aqu
 app precisa entregar exatamente T frames. Se isso muda a acurácia, é medição com
 dado real — não dá para responder neste export. Ver §"Pendências" no README.
 
+O BACKEND DE CONVERSÃO, E POR QUE NÃO É O onnx2tf. Medido neste repositório, com
+pesos aleatórios (`--smoke`), comparando cada etapa contra o PyTorch:
+
+    só a ResNet (modo imagem)     torch->onnx 2,7e-07   onnx->tflite 4,8e-07   ✓
+    só a cabeça Skeleton-DML      torch->onnx 5,8e-06   onnx->tflite 8,3e-01   ✗
+    modelo inteiro (landmarks)                          logits divergem 3,6e-01, top-1 troca
+
+A cabeça isolada está **certa**: a divergência de 0,83 some (vira 5,4e-06) ao
+compensar a transposição — o onnx2tf devolve a imagem em NHWC, que é o layout
+nativo dele. O problema aparece ao **colar as duas metades**: o conversor trata o
+`permute(0,3,1,2)` da cabeça como se fosse a troca de layout padrão e o elimina,
+e a ResNet passa a convoluir nos eixos errados. Nada avisa; o arquivo converte,
+roda e classifica errado. Por isso o padrão é `ai-edge-torch`, que preserva a
+semântica do PyTorch, e o `--backend onnx` fica documentado como alternativa
+válida **só no modo imagem** (onde não há cabeça para colar).
+
 O QUE ESTE ARQUIVO **NÃO** FAZ: quantização int8. Ela exige um dataset
 representativo para calibrar as faixas de ativação, e calibrar com ruído produz um
 modelo que converte, roda, e erra — pior que não ter. `--float16` está disponível
@@ -143,14 +159,32 @@ def entrada_exemplo(modo: str, frames: int, pontos: int) -> torch.Tensor:
 
 
 def converter(modelo_torch: nn.Module, exemplo: torch.Tensor, destino: Path,
-              float16: bool = False):
-    """PyTorch -> TFLite via ai-edge-torch (caminho oficial do Google)."""
+              float16: bool = False, backend: str = "ai-edge") -> str:
+    """PyTorch -> TFLite. Devolve o backend efetivamente usado.
+
+    `ai-edge` é o caminho oficial do Google e o padrão. `onnx` existe como
+    alternativa, mas veja a ressalva de layout na docstring do módulo: ele **não**
+    serve para o modo `landmarks`.
+    """
+    destino.parent.mkdir(parents=True, exist_ok=True)
+    if backend == "ai-edge":
+        _via_ai_edge(modelo_torch, exemplo, destino, float16)
+    elif backend == "onnx":
+        _via_onnx(modelo_torch, exemplo, destino, float16)
+    else:
+        raise SystemExit(f"backend desconhecido: {backend!r}")
+    return backend
+
+
+def _via_ai_edge(modelo_torch, exemplo, destino: Path, float16: bool) -> None:
     try:
         import ai_edge_torch
     except ImportError as e:  # pragma: no cover - depende do ambiente
         raise SystemExit(
-            "ai-edge-torch não instalado. `pip install ai-edge-torch` (ver "
-            "treino/README.md §exportação)." ) from e
+            f"ai-edge-torch indisponível ({e}). Ele exige torch<2.10 — com um torch "
+            "mais novo o pip resolve para a 0.2.0, que depende de torch_xla e quebra "
+            "com 'undefined symbol'. Ver treino/README.md §exportação."
+        ) from e
 
     flags = {}
     if float16:
@@ -160,9 +194,29 @@ def converter(modelo_torch: nn.Module, exemplo: torch.Tensor, destino: Path,
                  "target_spec.supported_types": [tf.float16]}
     edge = ai_edge_torch.convert(modelo_torch, (exemplo,),
                                  _ai_edge_converter_flags=flags or None)
-    destino.parent.mkdir(parents=True, exist_ok=True)
     edge.export(str(destino))
-    return edge
+
+
+def _via_onnx(modelo_torch, exemplo, destino: Path, float16: bool) -> None:
+    """PyTorch -> ONNX -> TFLite (onnx2tf). Só confiável no modo `imagem`."""
+    import tempfile
+
+    import onnx2tf
+
+    with tempfile.TemporaryDirectory() as tmp:
+        onnx_path = Path(tmp) / "modelo.onnx"
+        torch.onnx.export(modelo_torch, (exemplo,), str(onnx_path),
+                          input_names=["entrada"], output_names=["logits"],
+                          opset_version=17, dynamo=False)
+        onnx2tf.convert(input_onnx_file_path=str(onnx_path),
+                        output_folder_path=str(Path(tmp) / "tf"),
+                        keep_ncw_or_nchw_or_ncdhw_input_names=["entrada"],
+                        copy_onnx_input_output_names_to_tflite=True,
+                        non_verbose=True,
+                        output_integer_quantized_tflite=False)
+        sufixo = "float16" if float16 else "float32"
+        gerado = Path(tmp) / "tf" / f"modelo_{sufixo}.tflite"
+        destino.write_bytes(gerado.read_bytes())
 
 
 def conferir_paridade(modelo_torch: nn.Module, destino: Path, modo: str, frames: int,
@@ -172,7 +226,10 @@ def conferir_paridade(modelo_torch: nn.Module, destino: Path, modo: str, frames:
     É a única verificação que prova que a conversão preservou o modelo. Sem ela o
     export "funciona" (gera arquivo, roda no aparelho) e classifica errado.
     """
-    from ai_edge_litert.interpreter import Interpreter
+    try:
+        from ai_edge_litert.interpreter import Interpreter
+    except ImportError:  # pragma: no cover - depende do ambiente
+        from tensorflow.lite import Interpreter
 
     interp = Interpreter(model_path=str(destino))
     interp.allocate_tensors()
@@ -242,6 +299,8 @@ def main() -> None:
                     help="pontos por frame; 49 = 7 de pose + 21 de cada mão")
     ap.add_argument("--float16", action="store_true",
                     help="pesos em float16 (~metade do arquivo, sem calibração)")
+    ap.add_argument("--backend", choices=["ai-edge", "onnx"], default="ai-edge",
+                    help="conversor; 'onnx' só é confiável no --modo imagem (ver docstring)")
     ap.add_argument("--smoke", action="store_true",
                     help="pesos aleatórios: valida o toolchain, não gera entrega")
     args = ap.parse_args()
@@ -251,6 +310,12 @@ def main() -> None:
     if args.modo == "landmarks" and args.frames % rp.FRAMES_POR_CANAL:
         raise SystemExit(f"--frames deve ser múltiplo de {rp.FRAMES_POR_CANAL}, "
                          f"veio {args.frames}")
+    if args.backend == "onnx" and args.modo == "landmarks":
+        raise SystemExit(
+            "--backend onnx com --modo landmarks produz um modelo silenciosamente "
+            "errado: o conversor elimina o permute da cabeça e a ResNet convolui nos "
+            "eixos trocados (medido: logits divergem 3,6e-01). Use --backend ai-edge, "
+            "ou --modo imagem se precisar do onnx. Ver a docstring deste arquivo.")
 
     modelo_torch, rotulos, origem = montar(args.checkpoint if not args.smoke else None,
                                            args.modo)
@@ -258,9 +323,10 @@ def main() -> None:
     print(f"[export] modo={args.modo} entrada={tuple(exemplo.shape)} "
           f"classes={len(rotulos)} float16={args.float16}")
 
-    converter(modelo_torch, exemplo, args.saida, float16=args.float16)
+    backend = converter(modelo_torch, exemplo, args.saida, float16=args.float16,
+                        backend=args.backend)
     tamanho = args.saida.stat().st_size / 1e6
-    print(f"[export] gravado {args.saida} ({tamanho:.1f} MB)")
+    print(f"[export] gravado {args.saida} ({tamanho:.1f} MB, backend={backend})")
 
     paridade = conferir_paridade(modelo_torch, args.saida, args.modo, args.frames,
                                  args.pontos)
@@ -271,8 +337,8 @@ def main() -> None:
             f"[export] ✗ conversão divergiu do PyTorch (tolerância {TOL_LOGITS:.0e}). "
             "O arquivo foi gravado, mas NÃO use: o modelo no aparelho não é o treinado.")
 
-    sidecar = escrever_sidecar(args.saida, rotulos, origem, args.modo,
-                               paridade, vars(args) | {"saida": str(args.saida)})
+    sidecar = escrever_sidecar(args.saida, rotulos, origem, args.modo, paridade,
+                               vars(args) | {"saida": str(args.saida), "backend": backend})
     print(f"[export] rótulos e contrato em {sidecar.name}")
     if args.smoke:
         print("[export] ⚠ --smoke: pesos aleatórios. Toolchain validado, artefato descartável.")
