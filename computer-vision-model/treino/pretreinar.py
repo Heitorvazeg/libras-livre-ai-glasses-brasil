@@ -78,6 +78,19 @@ def carregar_corpora(dirs: list[Path], min_clipes_por_classe: int) -> list[dd.Cl
     return mantidos
 
 
+def separar_por_pessoa(clipes: list[dd.Clipe], pessoa_val: str):
+    """Reserva um articulador inteiro para a validação.
+
+    Divisão aleatória por clipe não serve ao contrastivo: com 3 clipes por classe
+    ela deixa quase nenhum par positivo na validação (medido: 3% dos clipes). E,
+    mais importante, reservar uma PESSOA faz a validação medir exatamente o que o
+    pré-treino promete ensinar — reconhecer o sinal num corpo que não foi visto.
+    """
+    treino = [c for c in clipes if c.pessoa != pessoa_val]
+    val = [c for c in clipes if c.pessoa == pessoa_val]
+    return treino, val
+
+
 def separar(clipes: list[dd.Clipe], fracao_val: float, semente: int):
     """Divisão aleatória. NÃO é por pessoa — de propósito: aqui não se mede
     generalização entre sinalizantes, só se escolhe a época."""
@@ -100,6 +113,18 @@ def salvar_backbone(modelo: nn.Module, caminho: Path, arquitetura: str, meta: di
     print(f"[pretreino] backbone salvo em {caminho} ({len(pesos)} tensores)")
 
 
+def _embutir(modelo, loader, disp):
+    """Embeddings L2-normalizados do backbone (sem a cabeça de projeção)."""
+    vetores, rotulos = [], []
+    for x, y in loader:
+        v = modelo(x.to(disp))
+        vetores.append(nn.functional.normalize(v, dim=1).cpu())
+        rotulos += [int(i) for i in y]
+    if not vetores:
+        return torch.empty(0), []
+    return torch.cat(vetores), rotulos
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--corpus", action="append", required=True, type=Path,
@@ -115,6 +140,9 @@ def main() -> None:
     ap.add_argument("--k-exemplos", type=int, default=2,
                     help="contrastivo: exemplos por classe no lote (>=2 para haver par)")
     ap.add_argument("--temperatura", type=float, default=0.07)
+    ap.add_argument("--pessoa-val",
+                    help="contrastivo: articulador reservado para validação "
+                         "(padrão: o último em ordem alfabética)")
     ap.add_argument("--epocas", type=int, default=15)
     ap.add_argument("--lr", type=float, default=1e-4)
     ap.add_argument("--wd", type=float, default=1e-4)
@@ -138,7 +166,15 @@ def main() -> None:
     if not clipes:
         raise SystemExit("corpus vazio — confira os diretórios passados em --corpus")
     rotulos = dd.rotulos(clipes)
-    treino, val = separar(clipes, args.fracao_val, args.semente)
+    if args.objetivo == "contrastivo":
+        pessoa_val = args.pessoa_val or sorted(dd.pessoas(clipes))[-1]
+        treino, val = separar_por_pessoa(clipes, pessoa_val)
+        if not val:
+            raise SystemExit(f"pessoa de validação {pessoa_val!r} não existe no corpus")
+        print(f"[pretreino] validação = articulador {pessoa_val} inteiro "
+              f"(recuperação entre pessoas), não divisão aleatória")
+    else:
+        treino, val = separar(clipes, args.fracao_val, args.semente)
     print(f"[pretreino] {len(clipes)} clipes | {len(rotulos)} classes | "
           f"{len(dd.pessoas(clipes))} pessoas | treino {len(treino)} / val {len(val)} | "
           f"arquitetura={args.arquitetura} dispositivo={disp}")
@@ -177,8 +213,11 @@ def main() -> None:
                           num_workers=args.workers, drop_last=shuffle and len(ds) > args.batch)
 
     l_treino, l_val = loader(treino, True, True), loader(val, False, False)
+    # Galeria: os clipes de treino SEM augmentação, para a métrica de recuperação.
+    l_galeria = loader(treino, False, False) if args.objetivo == "contrastivo" else None
 
-    melhor, melhores_pesos, melhor_epoca = float("inf"), None, -1
+    melhor = -1.0 if args.objetivo == "contrastivo" else float("inf")
+    melhores_pesos, melhor_epoca = None, -1
     inicio = time.perf_counter()
     for epoca in range(args.epocas):
         modelo.train()
@@ -200,23 +239,34 @@ def main() -> None:
         modelo.eval()
         vperda = vcertos = vtotal = 0
         with torch.no_grad():
-            for x, y in l_val:
-                x, y = x.to(disp), y.to(disp)
-                if cabeca is not None:
-                    vperda += ct.perda_supcon(cabeca(modelo(x)), y,
-                                              args.temperatura).item() * y.size(0)
-                else:
+            if cabeca is not None:
+                # Recuperação: consulta = articulador reservado, galeria = os de
+                # treino. Mede "reconheço este sinal num corpo que não vi?".
+                emb_q, rot_q = _embutir(modelo, l_val, disp)
+                emb_g, rot_g = _embutir(modelo, l_galeria, disp)
+                recuperacao = ct.acuracia_recuperacao(emb_q, rot_q, emb_g, rot_g)
+                metrica, melhor_e_maior = recuperacao, True
+            else:
+                for x, y in l_val:
+                    x, y = x.to(disp), y.to(disp)
                     s = modelo(x)
                     vperda += criterio(s, y).item() * y.size(0)
                     vcertos += (s.argmax(1) == y).sum().item()
-                vtotal += y.size(0)
-        vperda /= max(vtotal, 1)
-        if vperda < melhor:
-            melhor, melhor_epoca = vperda, epoca
+                    vtotal += y.size(0)
+                vperda /= max(vtotal, 1)
+                metrica, melhor_e_maior = vperda, False
+
+        if (metrica > melhor) if melhor_e_maior else (metrica < melhor):
+            melhor, melhor_epoca = metrica, epoca
             melhores_pesos = {k: v.detach().clone() for k, v in modelo.state_dict().items()}
-        print(f"  época {epoca + 1:>2}/{args.epocas}  treino {soma / max(total,1):.3f}"
-              f"/{certos / max(total,1):.1%}  val {vperda:.3f}/{vcertos / max(vtotal,1):.1%}"
-              f"{'  <- melhor' if melhor_epoca == epoca else ''}", flush=True)
+        if cabeca is not None:
+            print(f"  época {epoca + 1:>2}/{args.epocas}  perda {soma / max(total,1):.3f}"
+                  f"  recuperação(pessoa nova) {metrica:.1%}"
+                  f"{'  <- melhor' if melhor_epoca == epoca else ''}", flush=True)
+        else:
+            print(f"  época {epoca + 1:>2}/{args.epocas}  treino {soma / max(total,1):.3f}"
+                  f"/{certos / max(total,1):.1%}  val {vperda:.3f}/{vcertos / max(vtotal,1):.1%}"
+                  f"{'  <- melhor' if melhor_epoca == epoca else ''}", flush=True)
 
     if melhores_pesos is not None:
         modelo.load_state_dict(melhores_pesos)

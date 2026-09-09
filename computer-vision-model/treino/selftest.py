@@ -28,6 +28,7 @@ from unittest.mock import patch
 import numpy as np
 import torch
 
+import contrastivo as ct
 import dados as dd
 import gcn
 import modelo as mm
@@ -328,6 +329,39 @@ def teste_contrastivo() -> None:
     _ok("contrastivo: SupCon, máscara sem NaN e amostrador P×K")
 
 
+def teste_pretreino_contrastivo_ponta_a_ponta() -> None:
+    """Roda pretreinar.py inteiro no modo contrastivo, com dados sintéticos.
+
+    Testar só as funções isoladas não pega o que quebrou de verdade aqui: o
+    amostrador prometendo mais índices do que emite, a validação sem pares
+    positivos e a seleção de época elegendo um lote vazio. Só o caminho completo
+    revela isso.
+    """
+    import subprocess
+    with tempfile.TemporaryDirectory() as tmp:
+        destino = Path(tmp) / "corpus"
+        # imita a V-LIBRASIL: muitas classes, 3 exemplos, um por pessoa
+        _dataset_sintetico(destino, n_pessoas=3, n_classes=12, reps=1, seed=3)
+        saida = Path(tmp) / "saida"
+        r = subprocess.run(
+            [sys.executable, str(Path(__file__).parent / "pretreinar.py"),
+             "--corpus", str(destino), "--objetivo", "contrastivo",
+             "--epocas", "2", "--p-classes", "4", "--k-exemplos", "2",
+             "--threads", "2", "--workers", "0", "--dispositivo", "cpu",
+             "--saida", str(saida)],
+            capture_output=True, text=True, cwd=Path(__file__).parent)
+        assert r.returncode == 0, f"pretreinar.py falhou:\n{r.stdout[-1500:]}\n{r.stderr[-1500:]}"
+        assert "recuperação(pessoa nova)" in r.stdout, \
+            f"validação não usou recuperação entre pessoas:\n{r.stdout[-800:]}"
+        ckpt = saida / "backbone_resnet.pt"
+        assert ckpt.exists(), "backbone não foi salvo"
+        dados = torch.load(ckpt, map_location="cpu", weights_only=False)
+        assert not any(k.startswith("fc.") for k in dados["backbone"]), \
+            "a cabeça de classificação vazou para o backbone"
+        assert dados["meta"]["objetivo"] == "contrastivo"
+    _ok("pré-treino contrastivo roda de ponta a ponta e salva backbone limpo")
+
+
 TESTES = [
     ("Skeleton-DML (representação)", teste_representacao),
     ("espelhamento esquerda/direita", teste_espelho),
@@ -337,7 +371,8 @@ TESTES = [
     ("grafo do esqueleto (ST-GCN)", teste_grafo_conectado),
     ("treino de ponta a ponta com ST-GCN", teste_gcn_ponta_a_ponta),
     ("controle negativo (rótulo aleatório)", teste_controle_negativo),
-    ("pré-treino contrastivo", teste_contrastivo),
+    ("contrastivo: perda e amostrador", teste_contrastivo),
+    ("contrastivo: pré-treino ponta a ponta", teste_pretreino_contrastivo_ponta_a_ponta),
     ("controle negativo ST-GCN", teste_gcn_controle_negativo),
     ("checkpoints GCN e ResNet", teste_checkpoints),
 ]

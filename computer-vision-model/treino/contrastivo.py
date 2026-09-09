@@ -58,7 +58,6 @@ class AmostradorPK(Sampler):
 
     def __init__(self, rotulos: list[str], p: int = 32, k: int = 2, semente: int = 0):
         self.k = k
-        self.p = p
         self.rng = np.random.default_rng(semente)
         self.por_classe: dict[str, list[int]] = {}
         for i, r in enumerate(rotulos):
@@ -71,9 +70,18 @@ class AmostradorPK(Sampler):
             for c in descartadas:
                 del self.por_classe[c]
         self.classes = list(self.por_classe)
-        self.lotes_por_epoca = max(len(self.classes) // p, 1)
+        if not self.classes:
+            raise SystemExit(f"nenhuma classe com >= {k} clipes — o contrastivo não tem "
+                             "nenhum par positivo para aprender")
+        # P não pode exceder o nº de classes: pedir 32 classes quando só existem 2
+        # fazia __len__ prometer 64 índices e __iter__ emitir 4, e o DataLoader com
+        # drop_last=True descartava o lote incompleto — treino sem nenhum passo.
+        self.p = min(p, len(self.classes))
+        self.lotes_por_epoca = max(len(self.classes) // self.p, 1)
 
     def __len__(self) -> int:
+        # Precisa bater exatamente com o que __iter__ emite: o DataLoader
+        # dimensiona o laço por aqui, e a divergência aparece como lote faltando.
         return self.lotes_por_epoca * self.p * self.k
 
     def __iter__(self):
@@ -114,3 +122,27 @@ def perda_supcon(z: torch.Tensor, rotulos: torch.Tensor,
     validos = n_pos > 0
     perda = -contrib.sum(1)[validos] / n_pos[validos]
     return perda.mean()
+
+
+def acuracia_recuperacao(emb_consulta: torch.Tensor, rot_consulta: list[str],
+                         emb_galeria: torch.Tensor, rot_galeria: list[str]) -> float:
+    """Top-1: o vizinho mais próximo na galeria é o MESMO sinal?
+
+    POR QUE ESTA MÉTRICA, E NÃO A PRÓPRIA PERDA, PARA ESCOLHER A ÉPOCA.
+    Usar SupCon na validação não funciona aqui, e o problema é silencioso: numa
+    divisão aleatória de um corpus com 3 clipes por classe, quase nenhum lote de
+    validação contém dois clipes da mesma palavra. Medido no corpus real: 12 de
+    406 clipes (3%) tinham par, e um lote em sete não tinha nenhum — e um lote sem
+    pares devolve perda 0.0, que a seleção de época elegeria como a MELHOR de
+    todas. O checkpoint escolhido seria o de um lote vazio.
+
+    Recuperação não tem esse problema e mede exatamente o que o pré-treino
+    contrastivo deve ensinar: com a consulta vinda de um articulador reservado e a
+    galeria dos articuladores de treino, ela pergunta "reconheço este sinal feito
+    por uma pessoa que não vi treinando?" — que é o requisito do produto.
+    """
+    if emb_consulta.numel() == 0 or emb_galeria.numel() == 0:
+        return 0.0
+    vizinho = (emb_consulta @ emb_galeria.t()).argmax(dim=1)
+    acertos = sum(rot_galeria[int(j)] == r for j, r in zip(vizinho, rot_consulta))
+    return acertos / len(rot_consulta)
