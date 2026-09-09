@@ -109,10 +109,61 @@ para sinais isolados, não a rede de streaming com atenção descrita na arquite
 de produto. Robustez a mudanças de ponto de vista continua não medida — nenhuma
 base pública nossa tem vídeo fora do frontal de estúdio.
 
-**Exportação para TFLite não existe, para nenhuma das duas arquiteturas.** É
-dependência declarada dos planos do app
-([`sign-boundary-detector-plano.md`](../../docs/sign-boundary-detector-plano.md) §5.1),
-e o que for exportado deve ser a **ResNet-18**, pelos números da tabela acima.
+## Exportação para TFLite (`exportar.py`)
+
+O caminho PyTorch → `.tflite` existe e está validado para a **ResNet-18** (o modelo
+do MVP, pelos números da tabela acima). O ST-GCN ainda não tem export.
+
+```bash
+python exportar.py --checkpoint resultados-resnet/modelo_final.pt \
+                   --saida ../models/sinal_classifier.tflite
+python exportar.py --smoke                      # valida o toolchain, sem checkpoint
+python exportar.py --checkpoint ... --quantizacao float16
+```
+
+Requer `pip install "torch<2.10" ai-edge-torch` — com torch mais novo o pip resolve
+`ai-edge-torch` para a 0.2.0, que depende de `torch_xla` e quebra com
+`undefined symbol`.
+
+**O contrato de entrada é `landmarks`, não imagem.** O `.tflite` recebe
+`(1, T, 49, 2)` — os landmarks em unidades de ombro que o app já extrai — e devolve
+os logits: a montagem do Skeleton-DML vai **dentro do grafo**. O modo `--modo imagem`
+existe, mas joga para o app a tarefa de reproduzir transposição, empilhamento de 3
+frames por canal, clip em ±2,0, mapeamento para [0,1] e resize; errar qualquer um
+desses passos não gera erro, só piora a classificação em silêncio.
+
+Medido com `--smoke` (pesos aleatórios, 20 classes), comparando cada saída contra o
+PyTorch no mesmo tensor de entrada:
+
+| `--quantizacao` | Tamanho | Tensores de peso | Maior diferença de logit | Top-1 discordante |
+|---|---|---|---|---|
+| `nenhuma` (padrão) | 45,0 MB | float32 | 1,8e-07 | 0/8 |
+| `float16` | 22,5 MB | 22 em float16 | 4,1e-04 | 0/8 |
+| `dinamica` | 11,3 MB | 22 em int8 | 5,5e-03 | 0/8 |
+
+`dinamica` é int8 **só nos pesos** (ativações em float), por isso não precisa de
+dataset de calibração; a quantização inteira completa precisa, e por isso ficou de
+fora. Os tamanhos batem com a aritmética de 11,2M parâmetros.
+
+⚠️ **Tamanho é fato; efeito na acurácia não foi medido.** `--smoke` usa pesos
+aleatórios. Antes de mandar um modelo quantizado para o aparelho, rode a LOSO com
+ele. Latência no aparelho também segue não medida.
+
+⚠️ **T é fixo no grafo exportado** (padrão 96 frames). No treino T varia por clipe
+(70 a 232) e o resize para 224 absorve; na exportação o app precisa entregar
+exatamente T frames. Se isso mexe na acurácia, é medição com dado real.
+
+Duas armadilhas encontradas e barradas no código, ambas do tipo "converte, roda e
+classifica errado sem avisar":
+
+1. **`--backend onnx` com `--modo landmarks`** é recusado. O `onnx2tf` converte tudo
+   para NHWC e elimina o `permute` da cabeça achando que é troca de layout — a ResNet
+   passa a convoluir nos eixos trocados (medido: logits divergem 3,6e-01, top-1
+   muda). A ResNet sozinha converte bem por ONNX (4,8e-07); o defeito é a cola.
+2. **Flag de quantização ignorada.** Pedir float16 pela chave aninhada
+   `target_spec.supported_types` não surte efeito e devolve int8 dinâmico. Por isso
+   `_conferir_precisao` abre o arquivo gerado e confere os tipos dos tensores contra
+   o que foi pedido.
 
 ### Custo nesta máquina (CPU, 12 núcleos, sem GPU)
 

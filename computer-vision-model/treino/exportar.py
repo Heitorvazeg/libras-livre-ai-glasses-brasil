@@ -43,16 +43,35 @@ roda e classifica errado. Por isso o padrão é `ai-edge-torch`, que preserva a
 semântica do PyTorch, e o `--backend onnx` fica documentado como alternativa
 válida **só no modo imagem** (onde não há cabeça para colar).
 
-O QUE ESTE ARQUIVO **NÃO** FAZ: quantização int8. Ela exige um dataset
-representativo para calibrar as faixas de ativação, e calibrar com ruído produz um
-modelo que converte, roda, e erra — pior que não ter. `--float16` está disponível
-porque não precisa de calibração (é só o tipo dos pesos).
+QUANTIZAÇÃO. Três modos, todos medidos aqui com `--smoke` (ResNet-18, 20 classes):
+
+    --quantizacao nenhuma    45,0 MB   tudo float32              (padrão)
+    --quantizacao float16    22,5 MB   22 tensores em float16
+    --quantizacao dinamica   11,3 MB   22 tensores em int8
+
+`dinamica` é int8 **só nos pesos**, com ativações em float — por isso não precisa
+de dataset de calibração. O que fica de fora é a quantização **inteira completa**
+(ativações também em int8): essa exige um conjunto representativo para calibrar as
+faixas, e calibrar com ruído produz um modelo que converte, roda e erra.
+
+O tamanho medido bate com a aritmética do README (11,2M parâmetros): ~22 MB em
+float16, ~11 MB em int8.
+
+⚠️ Os números de tamanho acima são fatos; o **efeito da quantização na acurácia
+não foi medido** — `--smoke` usa pesos aleatórios, e perda de precisão só se avalia
+com o checkpoint real sobre dado real. Antes de mandar um modelo quantizado para o
+aparelho, rode a LOSO com ele.
+
+O conversor **ignora silenciosamente** flags que não entende: pedir float16 pela
+chave aninhada `target_spec.supported_types` não surte efeito e devolve int8
+dinâmico (reproduzido aqui). Por isso `_conferir_precisao` abre o arquivo gerado e
+confere os tipos dos tensores contra o que foi pedido, em vez de confiar no pedido.
 
 Uso:
     python exportar.py --checkpoint resultados-resnet/modelo_final.pt \
                        --saida ../models/sinal_classifier.tflite
     python exportar.py --smoke            # valida o toolchain sem checkpoint nem dado
-    python exportar.py --checkpoint ... --modo imagem --float16
+    python exportar.py --checkpoint ... --quantizacao float16
 """
 from __future__ import annotations
 
@@ -75,9 +94,11 @@ import proveniencia as pv  # noqa: E402
 
 LADO = 224
 # Máxima divergência tolerada entre PyTorch e TFLite no mesmo tensor de entrada.
-# Ordem de grandeza de ruído de float32 acumulado numa ResNet-18; qualquer coisa
-# acima disso é diferença de grafo, não de aritmética.
-TOL_LOGITS = 2e-3
+# Em float32 é ruído de aritmética acumulada numa ResNet-18: acima disso é
+# diferença de GRAFO, não de precisão. Nos modos quantizados a perda de precisão é
+# esperada e maior, então quem decide é a concordância de top-1 — a folga numérica
+# aqui só existe para ainda pegar grafo trocado.
+TOL_LOGITS = {"nenhuma": 2e-3, "float16": 5e-2, "dinamica": 5e-2}
 
 
 class CabecaSkeletonDML(nn.Module):
@@ -158,8 +179,50 @@ def entrada_exemplo(modo: str, frames: int, pontos: int) -> torch.Tensor:
     return torch.rand(1, 3, LADO, LADO)
 
 
+def _flags_quantizacao(quantizacao: str) -> dict:
+    """Flags do conversor TFLite por modo. Ver §QUANTIZAÇÃO na docstring."""
+    if quantizacao == "nenhuma":
+        return {}
+    import tensorflow as tf
+
+    if quantizacao == "float16":
+        # As DUAS chaves são necessárias: só `target_spec` não surte efeito, e só
+        # `optimizations` cai em int8 dinâmico. Ambas medidas aqui.
+        return {"optimizations": [tf.lite.Optimize.DEFAULT],
+                "target_spec": tf.lite.TargetSpec(supported_types=[tf.float16])}
+    return {"optimizations": [tf.lite.Optimize.DEFAULT]}  # dinamica: int8 nos pesos
+
+
+def _conferir_precisao(destino: Path, quantizacao: str) -> dict:
+    """Confere no ARQUIVO que a precisão pedida foi de fato aplicada.
+
+    Existe porque o conversor ignora em silêncio flag que não entende: pedindo
+    float16 pela chave aninhada, ele devolveu int8 dinâmico sem avisar. Confiar no
+    pedido, aqui, é como confiar que a conversão preservou o modelo sem medir.
+    """
+    esperado = {"nenhuma": "float32", "float16": "float16", "dinamica": "int8"}[quantizacao]
+    try:
+        from ai_edge_litert.interpreter import Interpreter
+    except ImportError:  # pragma: no cover - depende do ambiente
+        from tensorflow.lite import Interpreter
+
+    interp = Interpreter(model_path=str(destino))
+    interp.allocate_tensors()
+    tipos: dict[str, int] = {}
+    for d in interp.get_tensor_details():
+        if len(d["shape"]) and int(np.prod(d["shape"])) > 1000:  # tensores de peso
+            nome = np.dtype(d["dtype"]).name
+            tipos[nome] = tipos.get(nome, 0) + 1
+    if esperado not in tipos:
+        raise SystemExit(
+            f"[export] ✗ pedi quantização {quantizacao!r} (esperava tensores "
+            f"{esperado}), mas o arquivo tem {tipos}. O conversor ignorou a flag — "
+            "não use este arquivo.")
+    return {"tipos_tensores": tipos, "tamanho_mb": round(destino.stat().st_size / 1e6, 1)}
+
+
 def converter(modelo_torch: nn.Module, exemplo: torch.Tensor, destino: Path,
-              float16: bool = False, backend: str = "ai-edge") -> str:
+              quantizacao: str = "nenhuma", backend: str = "ai-edge") -> str:
     """PyTorch -> TFLite. Devolve o backend efetivamente usado.
 
     `ai-edge` é o caminho oficial do Google e o padrão. `onnx` existe como
@@ -168,15 +231,15 @@ def converter(modelo_torch: nn.Module, exemplo: torch.Tensor, destino: Path,
     """
     destino.parent.mkdir(parents=True, exist_ok=True)
     if backend == "ai-edge":
-        _via_ai_edge(modelo_torch, exemplo, destino, float16)
+        _via_ai_edge(modelo_torch, exemplo, destino, quantizacao)
     elif backend == "onnx":
-        _via_onnx(modelo_torch, exemplo, destino, float16)
+        _via_onnx(modelo_torch, exemplo, destino, quantizacao)
     else:
         raise SystemExit(f"backend desconhecido: {backend!r}")
     return backend
 
 
-def _via_ai_edge(modelo_torch, exemplo, destino: Path, float16: bool) -> None:
+def _via_ai_edge(modelo_torch, exemplo, destino: Path, quantizacao: str) -> None:
     try:
         import ai_edge_torch
     except ImportError as e:  # pragma: no cover - depende do ambiente
@@ -186,18 +249,13 @@ def _via_ai_edge(modelo_torch, exemplo, destino: Path, float16: bool) -> None:
             "com 'undefined symbol'. Ver treino/README.md §exportação."
         ) from e
 
-    flags = {}
-    if float16:
-        import tensorflow as tf
-
-        flags = {"optimizations": [tf.lite.Optimize.DEFAULT],
-                 "target_spec.supported_types": [tf.float16]}
+    flags = _flags_quantizacao(quantizacao)
     edge = ai_edge_torch.convert(modelo_torch, (exemplo,),
                                  _ai_edge_converter_flags=flags or None)
     edge.export(str(destino))
 
 
-def _via_onnx(modelo_torch, exemplo, destino: Path, float16: bool) -> None:
+def _via_onnx(modelo_torch, exemplo, destino: Path, quantizacao: str) -> None:
     """PyTorch -> ONNX -> TFLite (onnx2tf). Só confiável no modo `imagem`."""
     import tempfile
 
@@ -214,7 +272,7 @@ def _via_onnx(modelo_torch, exemplo, destino: Path, float16: bool) -> None:
                         copy_onnx_input_output_names_to_tflite=True,
                         non_verbose=True,
                         output_integer_quantized_tflite=False)
-        sufixo = "float16" if float16 else "float32"
+        sufixo = "float16" if quantizacao == "float16" else "float32"
         gerado = Path(tmp) / "tf" / f"modelo_{sufixo}.tflite"
         destino.write_bytes(gerado.read_bytes())
 
@@ -246,10 +304,12 @@ def conferir_paridade(modelo_torch: nn.Module, destino: Path, modo: str, frames:
         piores.append(float(np.max(np.abs(esperado - obtido))))
         discordancias += int(np.argmax(esperado) != np.argmax(obtido))
 
+    # os shapes do interpretador vêm como numpy.int32, que o json não serializa
     return {"amostras": amostras, "max_dif_logit": max(piores),
             "discordancias_top1": discordancias,
-            "shape_entrada": list(ent["shape"]), "dtype_entrada": str(ent["dtype"]),
-            "shape_saida": list(sai["shape"])}
+            "shape_entrada": [int(v) for v in ent["shape"]],
+            "dtype_entrada": np.dtype(ent["dtype"]).name,
+            "shape_saida": [int(v) for v in sai["shape"]]}
 
 
 def escrever_sidecar(destino: Path, rotulos: list[str], origem: dict, modo: str,
@@ -297,8 +357,10 @@ def main() -> None:
                     help="T fixo do grafo no modo landmarks (múltiplo de 3)")
     ap.add_argument("--pontos", type=int, default=49,
                     help="pontos por frame; 49 = 7 de pose + 21 de cada mão")
-    ap.add_argument("--float16", action="store_true",
-                    help="pesos em float16 (~metade do arquivo, sem calibração)")
+    ap.add_argument("--quantizacao", choices=["nenhuma", "float16", "dinamica"],
+                    default="nenhuma",
+                    help="precisão dos pesos: nenhuma=45MB, float16=22,5MB, "
+                         "dinamica=int8 nos pesos=11,3MB (efeito na acurácia NÃO medido)")
     ap.add_argument("--backend", choices=["ai-edge", "onnx"], default="ai-edge",
                     help="conversor; 'onnx' só é confiável no --modo imagem (ver docstring)")
     ap.add_argument("--smoke", action="store_true",
@@ -321,23 +383,26 @@ def main() -> None:
                                            args.modo)
     exemplo = entrada_exemplo(args.modo, args.frames, args.pontos)
     print(f"[export] modo={args.modo} entrada={tuple(exemplo.shape)} "
-          f"classes={len(rotulos)} float16={args.float16}")
+          f"classes={len(rotulos)} quantizacao={args.quantizacao}")
 
-    backend = converter(modelo_torch, exemplo, args.saida, float16=args.float16,
-                        backend=args.backend)
-    tamanho = args.saida.stat().st_size / 1e6
-    print(f"[export] gravado {args.saida} ({tamanho:.1f} MB, backend={backend})")
+    backend = converter(modelo_torch, exemplo, args.saida,
+                        quantizacao=args.quantizacao, backend=args.backend)
+    precisao = _conferir_precisao(args.saida, args.quantizacao)
+    print(f"[export] gravado {args.saida} ({precisao['tamanho_mb']} MB, "
+          f"backend={backend}, tensores={precisao['tipos_tensores']})")
 
     paridade = conferir_paridade(modelo_torch, args.saida, args.modo, args.frames,
                                  args.pontos)
     print(f"[export] paridade PyTorch↔TFLite: max_dif={paridade['max_dif_logit']:.2e} "
           f"top1_discordante={paridade['discordancias_top1']}/{paridade['amostras']}")
-    if paridade["max_dif_logit"] > TOL_LOGITS or paridade["discordancias_top1"]:
+    tol = TOL_LOGITS[args.quantizacao]
+    if paridade["max_dif_logit"] > tol or paridade["discordancias_top1"]:
         raise SystemExit(
-            f"[export] ✗ conversão divergiu do PyTorch (tolerância {TOL_LOGITS:.0e}). "
+            f"[export] ✗ conversão divergiu do PyTorch (tolerância {tol:.0e}). "
             "O arquivo foi gravado, mas NÃO use: o modelo no aparelho não é o treinado.")
 
-    sidecar = escrever_sidecar(args.saida, rotulos, origem, args.modo, paridade,
+    sidecar = escrever_sidecar(args.saida, rotulos, origem, args.modo,
+                               paridade | {"precisao": precisao},
                                vars(args) | {"saida": str(args.saida), "backend": backend})
     print(f"[export] rótulos e contrato em {sidecar.name}")
     if args.smoke:
