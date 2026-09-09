@@ -22,7 +22,7 @@ class Speaker(context: Context) {
 
   // O OnInitListener dispara de forma assíncrona, depois que o construtor retorna —
   // então `tts` já está atribuído quando o callback acessa setLanguage().
-  private val tts =
+  private val tts: TextToSpeech =
       TextToSpeech(context.applicationContext) { status ->
         if (status == TextToSpeech.SUCCESS) {
           val result = tts.setLanguage(Locale("pt", "BR"))
