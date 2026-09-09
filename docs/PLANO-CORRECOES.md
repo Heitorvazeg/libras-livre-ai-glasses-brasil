@@ -221,6 +221,38 @@ clipe inteiro. Não está errado, está **não calibrado**: nunca varremos esse 
 
 ---
 
+### B5. Medir o efeito do z (2 vs 3 coordenadas)
+**Problema:** `treino/dados.py` descarta a terceira coordenada (`arr[:, :, :2]`) desde o
+primeiro commit do pipeline, **sem medição própria e sem comentário**. A justificativa
+existe, mas é de outro modelo: `PoC/config.yaml` registra 64,0% → 68,7% ao desligar o z,
+medido no **DTW 1-NN** com 10 sinais.
+
+**Por que não transfere:** o DTW soma distâncias cruas e não tem defesa contra um canal de
+escala incoerente (o z de mão é relativo ao punho, o de pose ao quadril — referenciais
+diferentes no mesmo vetor). ResNet e GCN têm peso aprendido e podem ponderar ou ignorar o
+canal. A conclusão do DTW não vale para eles, em nenhuma das duas direções: nem "o z
+piora" (não medido nestes modelos), nem "a rede aprende a usar" (também não medido).
+
+**Por que virou prioridade agora:** `docs/extracao-landmarks-plano.md` §3 item 2 decidiu
+que o app vai extrair **3 canais**, explicitamente contra o dado da PoC. Como o modelo é
+construído com `canais_ent=2`, isso não é diferença de acurácia — é **erro de shape** na
+integração. Os dois lados têm de concordar, e a decisão pertence a `treino/`, onde dá
+para medir.
+
+**Fazer:** LOSO com `arr[:, :, :3]` e `canais_ent=3` contra a mesma configuração em 2D,
+nas duas arquiteturas. Uma flag `--com-z`, simétrica a `--sem-imputacao`.
+
+**Pronto quando:** número dos dois lados na mesma régua, com a ressalva de ±1,7 pp, e o
+resultado propagado para `extracao-landmarks-plano.md`.
+
+**Armadilha registrada:** `usar_z` no `PoC/config.yaml` **não é lida pelo treino**. O
+comentário dizia "voltar atrás é só trocar para true", verdade só para a PoC — corrigido
+no mesmo commit que abriu este item.
+
+**Arquivos:** `treino/dados.py`, `treino/treinar.py`, `treino/gcn.py`
+
+---
+
 ## 4. Mapa de arquivos — quem edita o quê
 
 | Arquivo | Frente A (Astra) | Frente B (Claude) |

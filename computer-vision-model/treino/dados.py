@@ -81,6 +81,13 @@ def carregar(lm_dir: Path, fontes: str = "minds", min_frames: int = 3,
             # quase sempre um vídeo em que o MediaPipe não achou o tronco.
             curtos.append(arquivo.name)
             continue
+        # Só x,y. O z existe no .npy e é descartado aqui — decisão HERDADA da
+        # PoC, não medida neste pipeline: os 4-6 pontos de ganho ao desligar o z
+        # (PoC/config.yaml) foram medidos no DTW 1-NN, que soma distâncias cruas
+        # e não tem como se defender de um canal com escala incoerente (z de mão
+        # é relativo ao punho, z de pose ao quadril). ResNet e GCN têm peso
+        # aprendido e podem ponderar o canal; o efeito do z neles continua sem
+        # medição. Ver docs/PLANO-CORRECOES.md (B5).
         seq = arr[:, :, :2].astype(np.float32)
         if imputar:
             seq = imputar_maos(seq, lacuna_maxima)
