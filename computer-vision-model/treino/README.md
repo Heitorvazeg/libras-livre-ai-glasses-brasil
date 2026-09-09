@@ -34,6 +34,25 @@ grande — ver [`../../docs/investigacao-expansao-dataset.md`](../../docs/invest
 | Alves et al. 2024 | MINDS-Libras | LOSO | Skeleton-DML + ResNet-18 | **0,93** |
 | *nossa PoC* | MINDS + V-LIBRASIL | LOSO | DTW 1-NN | *0,70* |
 
+### O que NÓS medimos, e em qual arquitetura
+
+Os 0,93-0,94 acima são da **ResNet-18**, na literatura e reproduzidos aqui. Não são
+do ST-GCN, e a diferença é grande demais para a atribuição errada passar batida:
+
+| Arquitetura | LOSO medido aqui | Parâmetros | Onde |
+|---|---|---|---|
+| **Skeleton-DML + ResNet-18** | **0,934 / 0,935 / 0,918** | 11,2M | `resultados-resnet/relatorio.md` |
+| ST-GCN (orçamento de treino justo) | 0,739 | 0,46M | [`decisao-arquitetura-modelo.md`](../../docs/decisao-arquitetura-modelo.md) |
+| ST-GCN (config de fine-tuning) | 0,446 | 0,46M | subtreinado — não é veredito de arquitetura |
+
+**A ResNet-18 é o modelo do MVP.** O ST-GCN está ~19 pontos atrás e existe para ser
+medido, não como candidato de entrega. Ele economiza 24× em parâmetros — o que
+importaria se o tamanho fosse o gargalo do celular, e não é: 11,2M dão ~11 MB em
+`.tflite` quantizado int8, folgado num aparelho que já roda MediaPipe Holistic em
+tempo real.
+
+⚠️ **Variância entre execuções: ~1,7 ponto.** Diferença menor que ~2 pontos é ruído.
+
 Com ~1.000 clipes, treinar uma recorrente do zero disputa com uma CNN que já vem
 pré-treinada em milhões de imagens. **Skeleton-DML** é o truque que permite usar
 essa CNN: empilha a matriz `pontos × frames` (x e y) como se fosse uma imagem RGB
@@ -52,7 +71,7 @@ justamente a que cabe no celular depois.
 | `representacao.py` | landmarks → imagem Skeleton-DML; augmentação (rotação, zoom, translação, espelhamento) |
 | `dados.py` | carga dos `.npy`, partições leave-one-signer-out |
 | `modelo.py` | ResNet-18 ImageNet com a cabeça trocada; salvar/carregar checkpoint |
-| `gcn.py` | alternativa ST-GCN para clipes isolados, sobre o grafo de 57 pontos |
+| `gcn.py` | alternativa ST-GCN (0,739 — **não é o modelo do MVP**), sobre o grafo de 57 pontos |
 | `treinar.py` | laço LOSO, relatório e checkpoint final |
 | `selftest.py` | valida o pipeline inteiro com dados sintéticos, em segundos |
 
@@ -79,10 +98,16 @@ confundidos), `matriz_confusao.npy` e `modelo_final.pt`.
 ImageNet. Checkpoints novos guardam também a configuração do GCN (largura,
 canais, nós e dropout); os checkpoints antigos do treino continuam aceitos.
 
-O ST-GCN atual consome coordenadas x/y reamostradas para 64 frames: não calcula
-ossos/ângulos e não é causal. É um experimento para sinais isolados, não a rede
-de streaming com atenção descrita na arquitetura de produto. Exportação para
-TFLite e robustez a mudanças de ponto de vista ainda precisam ser validadas.
+O ST-GCN consome coordenadas x/y reamostradas para 64 frames; com `--ossos`,
+acrescenta os vetores de osso aos canais (2 → 4). Não é causal: é um experimento
+para sinais isolados, não a rede de streaming com atenção descrita na arquitetura
+de produto. Robustez a mudanças de ponto de vista continua não medida — nenhuma
+base pública nossa tem vídeo fora do frontal de estúdio.
+
+**Exportação para TFLite não existe, para nenhuma das duas arquiteturas.** É
+dependência declarada dos planos do app
+([`sign-boundary-detector-plano.md`](../../docs/sign-boundary-detector-plano.md) §5.1),
+e o que for exportado deve ser a **ResNet-18**, pelos números da tabela acima.
 
 ### Custo nesta máquina (CPU, 12 núcleos, sem GPU)
 
