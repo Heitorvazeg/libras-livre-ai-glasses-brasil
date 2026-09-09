@@ -487,6 +487,12 @@ def teste_isolamento_proveniencia() -> None:
     _ok("pré-treino: isolamento, cadeia de origem e proveniência de checkpoint")
 
 
+def teste_export_contrato() -> None:
+    from test_export_contrato import executar
+    executar()
+    _ok("export: contrato derivado do checkpoint, CLI e sidecar coerentes")
+
+
 TESTES = [
     ("Skeleton-DML (representação)", teste_representacao),
     ("espelhamento esquerda/direita", teste_espelho),
@@ -504,6 +510,7 @@ TESTES = [
     ("checkpoints GCN e ResNet", teste_checkpoints),
     ("export: cabeça Skeleton-DML", teste_export_cabeca),
     ("isolamento e proveniência", teste_isolamento_proveniencia),
+    ("export: contrato do checkpoint", teste_export_contrato),
 ]
 
 

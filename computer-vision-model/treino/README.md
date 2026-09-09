@@ -126,11 +126,30 @@ Requer `pip install "torch<2.10" ai-edge-torch` — com torch mais novo o pip re
 `undefined symbol`.
 
 **O contrato de entrada é `landmarks`, não imagem.** O `.tflite` recebe
-`(1, T, 49, 2)` — os landmarks em unidades de ombro que o app já extrai — e devolve
+`(1, T, P, 2)`, com **P derivado do checkpoint** (mapa ordenado de pose + 42 pontos
+de mãos; atualmente 15 + 21 + 21 = **57**) — e devolve
 os logits: a montagem do Skeleton-DML vai **dentro do grafo**. O modo `--modo imagem`
 existe, mas joga para o app a tarefa de reproduzir transposição, empilhamento de 3
 frames por canal, clip em ±2,0, mapeamento para [0,1] e resize; errar qualquer um
 desses passos não gera erro, só piora a classificação em silêncio.
+
+`--pontos` é opcional e serve como conferência: se discordar do mapa do checkpoint,
+o export aborta antes de converter. Checkpoints antigos com mapa de sete pontos de
+pose continuam com 49, sem reinterpretá-los pela configuração atual. Sem mapa,
+o export exige `--pontos` explícito e marca o layout como **não verificado**, pois
+contagem não demonstra ordem. Apenas `--smoke` usa o YAML atual como referência.
+
+O JSON registra a pose **em uma lista ordenada**, os índices das mãos, as coordenadas,
+o limite de escala e o contrato temporal. O shape/dtype efetivos do interpretador
+TFLite precisam concordar com esse contrato e a saída precisa ter um logit por rótulo.
+Arquivos só devem ser entregues se o comando terminar com sucesso.
+
+**Exportação 3D ainda não suportada:** checkpoints com `com_z`, `z_recentrado`
+ou limite de z são recusados nos dois modos. A cabeça também rejeita diretamente
+entrada com três coordenadas; não corta z silenciosamente. Os três canais da imagem
+ResNet não permitem deduzir quantas coordenadas havia no treino. Quando a PoC 3D
+for incorporada, será necessário portar sua escala de z e pré-processamento e
+validar novamente a paridade. `normalizacao.usar_z` do DTW não decide isso.
 
 Medido com `--smoke` (pesos aleatórios, 20 classes), comparando cada saída contra o
 PyTorch no mesmo tensor de entrada:
@@ -152,6 +171,21 @@ ele. Latência no aparelho também segue não medida.
 ⚠️ **T é fixo no grafo exportado** (padrão 96 frames). No treino T varia por clipe
 (70 a 232) e o resize para 224 absorve; na exportação o app precisa entregar
 exatamente T frames. Se isso mexe na acurácia, é medição com dado real.
+
+O contrato contém `temporal.dinamico=false`, `reamostragem_embutida=false` e
+`frames_fixos`. O app deve conferir o shape do tensor contra o JSON e recusar
+amostras com T/P/D incompatíveis. **Não há padding, recorte de sinais nem
+reamostragem de clipes embutidos no grafo.** Escolher uma janela de 96 frames não
+equivale a validar segmentação de sinais; a política de adaptação temporal precisa
+ser medida antes do deploy. Normalização e imputação também ficam fora do grafo.
+Veja o [contrato de integração no companion](../../mobile-app-companion/README.md#contrato-do-classificador-tflite).
+
+As regressões em `test_export_contrato.py` exercitam `main()` com checkpoints reais
+e backend **simulado**: defaults, legado 49, conflitos, ordem, z, T e serialização
+do JSON. A exportação da cabeça via `torch.export` e sua paridade NumPy/PyTorch
+são verificadas separadamente. Isso não substitui nova conversão TFLite nem avaliação
+com dados reais. Os números da tabela abaixo pertencem ao smoke dos commits anteriores,
+não a uma nova medição com 57 pontos.
 
 Duas armadilhas encontradas e barradas no código, ambas do tipo "converte, roda e
 classifica errado sem avisar":

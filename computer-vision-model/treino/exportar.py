@@ -119,6 +119,10 @@ class CabecaSkeletonDML(nn.Module):
 
     def forward(self, seq: torch.Tensor) -> torch.Tensor:
         # seq: (N, T, P, 2) -> imagem (N, 3, 224, 224)
+        if seq.ndim != 4 or seq.shape[-1] != 2:
+            raise ValueError("CabecaSkeletonDML exige (N, T, P, 2); exportação 3D não suportada")
+        if seq.shape[1] < self.n or seq.shape[2] < 1:
+            raise ValueError("landmarks sem pontos ou frames suficientes")
         n = self.n
         t_util = (seq.shape[1] // n) * n
         seq = seq[:, :t_util]
@@ -177,6 +181,63 @@ def entrada_exemplo(modo: str, frames: int, pontos: int) -> torch.Tensor:
         # Faixa realista: landmarks em unidades de ombro ficam em [-1,56; +1,84].
         return torch.empty(1, frames, pontos, 2).uniform_(-1.8, 1.8)
     return torch.rand(1, 3, LADO, LADO)
+
+
+def resolver_layout(origem: dict, pontos_cli: int | None) -> dict:
+    """Deriva P e a ordem do checkpoint, nunca da configuração atual do projeto.
+
+    ResNet aceita alturas arbitrárias após resize: os pesos não revelam se o
+    treino usou 49 ou 57 pontos, nem se houve z. Paridade numérica não prova isso.
+    Metadados da extração com três dims NÃO implicam treino 3D; com_z é a opção
+    efetiva do carregador de treino, enquanto normalizacao.usar_z é da PoC DTW.
+    """
+    meta = origem.get("meta", {})
+    prov = meta.get("proveniencia", {})
+    opcoes = [meta.get("args", {}), prov.get("args", {})]
+    if (any(a.get("com_z") or a.get("z_recentrado") for a in opcoes)
+            or meta.get("limite_escala_z") is not None):
+        raise SystemExit("checkpoint usa z/3D; exportador atual é exclusivamente 2D — "
+                         "não é seguro descartar z, mesmo no modo imagem")
+    limite = meta.get("limite_escala", rp.LIMITE)
+    if limite != rp.LIMITE:
+        raise SystemExit(f"limite_escala={limite} do checkpoint diverge do exportador ({rp.LIMITE})")
+    candidatos = [meta.get("pontos"), prov.get("config", {}).get("pose_indices")]
+    fonte = "checkpoint"
+    if origem.get("smoke"):
+        import yaml
+        cfg = yaml.safe_load((AQUI.parent / "PoC" / "config.yaml").read_text(encoding="utf-8"))
+        candidatos = [cfg["pose_indices"]]
+        fonte = "config_smoke"
+    ordens = []
+    for pose in candidatos:
+        if pose is None:
+            continue
+        if (not isinstance(pose, dict) or not pose
+                or any(type(i) is not int or not 0 <= i <= 32 for i in pose.values())
+                or len(set(pose.values())) != len(pose)):
+            raise SystemExit("metadado de pontos inválido: esperado mapa ordenado de índices MediaPipe Pose")
+        ordens.append(list(pose.items()))
+    if ordens and any(o != ordens[0] for o in ordens[1:]):
+        raise SystemExit("ordem de pontos diverge entre meta.pontos e proveniência do checkpoint")
+    if pontos_cli is not None and pontos_cli <= 42:
+        raise SystemExit("--pontos deve incluir pelo menos um ponto de pose e 42 pontos de mãos")
+    if ordens:
+        pontos = len(ordens[0]) + 42
+        if pontos_cli is not None and pontos_cli != pontos:
+            raise SystemExit(f"--pontos={pontos_cli} diverge do checkpoint/configuração: {pontos} pontos")
+        ordem = [{"nome": nome, "indice_mediapipe_pose": i} for nome, i in ordens[0]]
+    elif pontos_cli is not None:
+        pontos, ordem, fonte = pontos_cli, None, "cli_legado_nao_verificado"
+        print("[export] ⚠ checkpoint sem mapa de pose: --pontos declara apenas a contagem; "
+              "ordem deve ser conferida antes de integrar ao app")
+    else:
+        raise SystemExit("checkpoint sem metadado de pontos; forneça --pontos explicitamente "
+                         "para legado ou regenere um checkpoint com mapa de pose")
+    return {"pontos": pontos, "dimensoes": 2, "coordenadas": ["x", "y"],
+            "fonte_layout": fonte, "pose_ordenada": ordem,
+            "maos": [{"lado": "esquerda", "indices": list(range(21))},
+                     {"lado": "direita", "indices": list(range(21))}],
+            "limite_escala": limite}
 
 
 def _flags_quantizacao(quantizacao: str) -> dict:
@@ -321,27 +382,39 @@ def escrever_sidecar(destino: Path, rotulos: list[str], origem: dict, modo: str,
     e falar a palavra errada.
     """
     sidecar = destino.with_suffix(".json")
+    contrato = _contrato(modo, args)
+    if (paridade["shape_entrada"] != contrato["shape"]
+            or paridade["dtype_entrada"] != contrato["dtype"]
+            or paridade["shape_saida"] != [1, len(rotulos)]):
+        raise SystemExit("contrato do sidecar diverge da interface do TFLite; exportação recusada")
     sidecar.write_text(json.dumps({
         "schema": 1, "modelo": destino.name, "sha256": pv.hash_arquivo(destino),
-        "rotulos": rotulos, "modo": modo, "contrato_entrada": _contrato(modo, args),
+        "rotulos": rotulos, "modo": modo, "contrato_entrada": contrato,
         "paridade_pytorch": paridade, "origem": origem,
         "codigo": {"sha256": md.codigo_atual()["fontes_sha256"]}, "args": args,
-    }, ensure_ascii=False, indent=2), encoding="utf-8")
+    }, ensure_ascii=False, indent=2, default=str), encoding="utf-8")
     (destino.parent / f"{destino.stem}.labels.txt").write_text(
         "\n".join(rotulos) + "\n", encoding="utf-8")
     return sidecar
 
 
 def _contrato(modo: str, args: dict) -> dict:
+    layout = args["layout"]
     if modo == "landmarks":
-        return {"shape": [1, args["frames"], args["pontos"], 2], "dtype": "float32",
+        return {"shape": [1, args["frames"], layout["pontos"], 2], "dtype": "float32",
+                "layout_landmarks": layout,
                 "descricao": "landmarks normalizados em unidades de ombro (origem no "
                              "ponto médio dos ombros, escala = distância entre eles), "
                              "ordem [pose | mão esquerda 21 | mão direita 21]; mão "
                              "ausente = zeros. O pré-processamento Skeleton-DML está "
                              "dentro do grafo.",
-                "frames_fixos": args["frames"]}
+                "frames_fixos": args["frames"],
+                "temporal": {"frames": args["frames"], "dinamico": False,
+                             "reamostragem_embutida": False,
+                             "politica_app": "exigir_shape_exato; adaptação temporal a validar com dados reais"},
+                "normalizacao_embutida": False, "imputacao_embutida": False}
     return {"shape": [1, 3, LADO, LADO], "dtype": "float32",
+            "layout_landmarks_preprocessamento": layout,
             "descricao": "imagem Skeleton-DML já montada, em [0,1] (SEM normalização "
                          "ImageNet). O app precisa reproduzir representacao.para_imagem "
                          "e o resize bilinear para 224×224."}
@@ -355,8 +428,9 @@ def main() -> None:
     ap.add_argument("--modo", choices=["landmarks", "imagem"], default="landmarks")
     ap.add_argument("--frames", type=int, default=96,
                     help="T fixo do grafo no modo landmarks (múltiplo de 3)")
-    ap.add_argument("--pontos", type=int, default=49,
-                    help="pontos por frame; 49 = 7 de pose + 21 de cada mão")
+    ap.add_argument("--pontos", type=int, default=None,
+                    help="opcional: confere a contagem derivada do checkpoint (pose + 42); "
+                         "obrigatório para legados sem metadados; nunca substitui um mapa conflitante")
     ap.add_argument("--quantizacao", choices=["nenhuma", "float16", "dinamica"],
                     default="nenhuma",
                     help="precisão dos pesos: nenhuma=45MB, float16=22,5MB, "
@@ -369,7 +443,10 @@ def main() -> None:
 
     if not args.smoke and args.checkpoint is None:
         raise SystemExit("informe --checkpoint (ou --smoke para validar o toolchain)")
-    if args.modo == "landmarks" and args.frames % rp.FRAMES_POR_CANAL:
+    if args.smoke and args.checkpoint is not None:
+        raise SystemExit("--smoke e --checkpoint são mutuamente exclusivos")
+    if args.modo == "landmarks" and (args.frames < rp.FRAMES_POR_CANAL
+                                    or args.frames % rp.FRAMES_POR_CANAL):
         raise SystemExit(f"--frames deve ser múltiplo de {rp.FRAMES_POR_CANAL}, "
                          f"veio {args.frames}")
     if args.backend == "onnx" and args.modo == "landmarks":
@@ -381,6 +458,8 @@ def main() -> None:
 
     modelo_torch, rotulos, origem = montar(args.checkpoint if not args.smoke else None,
                                            args.modo)
+    args.layout = resolver_layout(origem, args.pontos)
+    args.pontos = args.layout["pontos"]
     exemplo = entrada_exemplo(args.modo, args.frames, args.pontos)
     print(f"[export] modo={args.modo} entrada={tuple(exemplo.shape)} "
           f"classes={len(rotulos)} quantizacao={args.quantizacao}")
