@@ -228,6 +228,45 @@ def teste_grafo_conectado() -> None:
     _ok(f"grafo do esqueleto conectado ({v} nós, {len(gcn.arestas())} arestas)")
 
 
+def teste_ossos() -> None:
+    """Ossos: árvore coerente com as arestas, simétrica ao espelho e invariante
+    a translação — as três propriedades pelas quais eles existem."""
+    import numpy as _np
+    pai = gcn.pais()
+    v = gcn.N_POSE + 2 * gcn.N_MAO
+    assert pai.shape == (v,) and pai[0] == 0, (pai.shape, pai[0])
+
+    # Todo osso tem de ser uma aresta real do grafo (a raiz é o caso degenerado).
+    conjunto = {frozenset(e) for e in gcn.arestas()}
+    for filho, p in enumerate(pai):
+        if filho != int(p):
+            assert frozenset((filho, int(p))) in conjunto, \
+                f"osso {filho}<-{p} não corresponde a nenhuma aresta"
+
+    # Simetria: espelhar o esqueleto tem de espelhar os ossos, não embaralhá-los.
+    # Se a árvore fosse enraizada num ombro isto falharia, e falharia em silêncio
+    # — o modelo veria ossos incoerentes só nos clipes espelhados pela augmentação.
+    perm = rp.permutacao_espelho(POSE)
+    rng = _np.random.default_rng(11)
+    seq = rng.normal(size=(7, v, 2)).astype(_np.float32)
+    ossos_do_espelho = gcn.com_ossos(rp.espelhar(seq, perm), pai)[:, :, 2:]
+    espelho_dos_ossos = gcn.com_ossos(seq, pai)[:, perm, 2:] * _np.array([-1.0, 1.0],
+                                                                        dtype=_np.float32)
+    assert _np.allclose(ossos_do_espelho, espelho_dos_ossos, atol=1e-5), \
+        "a árvore de ossos não é simétrica ao espelhamento"
+
+    # Invariância a translação: é a propriedade que justifica o canal extra.
+    deslocado = gcn.com_ossos(seq + _np.float32(0.37), pai)[:, :, 2:]
+    assert _np.allclose(deslocado, gcn.com_ossos(seq, pai)[:, :, 2:], atol=1e-5), \
+        "ossos deveriam ser invariantes a translação"
+
+    saida = gcn.para_sequencia(gcn.com_ossos(seq, pai))
+    assert saida.shape == (4, gcn.T_FIXO, v), saida.shape
+    modelo = gcn.construir(3, canais_ent=4)
+    assert modelo(torch.from_numpy(saida).unsqueeze(0)).shape == (1, 3)
+    _ok("ossos: árvore coerente, simétrica ao espelho e invariante a translação")
+
+
 def teste_gcn_ponta_a_ponta() -> None:
     acc = _rodada_sintetica(rotulo_aleatorio=False, arquitetura="gcn")
     assert acc > 0.60, f"GCN em classes separáveis deveria passar de 60%, veio {acc:.1%}"
@@ -413,6 +452,7 @@ TESTES = [
     ("imputação de mãos ausentes", teste_imputacao_maos),
     ("treino de ponta a ponta", teste_treino_ponta_a_ponta),
     ("grafo do esqueleto (ST-GCN)", teste_grafo_conectado),
+    ("vetores de osso (two-stream)", teste_ossos),
     ("treino de ponta a ponta com ST-GCN", teste_gcn_ponta_a_ponta),
     ("controle negativo (rótulo aleatório)", teste_controle_negativo),
     ("contrastivo: perda e amostrador", teste_contrastivo),

@@ -44,8 +44,10 @@ class DatasetSinais(Dataset):
 
     def __init__(self, clipes: list[dd.Clipe], rotulos: list[str],
                  permutacao: np.ndarray | None, aumentar: bool, semente: int = 0,
-                 arquitetura: str = "resnet"):
+                 arquitetura: str = "resnet", ossos: bool = False):
         self.arquitetura = arquitetura
+        # Árvore calculada uma vez, não por item: é a mesma para todos os clipes.
+        self.pais = gg.pais() if (ossos and arquitetura == "gcn") else None
         self.clipes = clipes
         self.indice = {r: i for i, r in enumerate(rotulos)}
         self.permutacao = permutacao
@@ -66,6 +68,12 @@ class DatasetSinais(Dataset):
 
         if self.arquitetura == "gcn":
             # O GCN consome o esqueleto direto: (canais, tempo, nós).
+            # Os ossos entram DEPOIS da augmentação: rotacionar/espelhar o
+            # esqueleto e derivar os ossos do resultado mantém os dois fluxos
+            # coerentes. Derivar antes daria ossos da pose original colados numa
+            # pose transformada.
+            if self.pais is not None:
+                seq = gg.com_ossos(seq, self.pais)
             t = torch.from_numpy(gg.para_sequencia(seq))
         else:
             img = rp.para_imagem(seq)                      # (P, W, 3) em [0,1]
@@ -76,8 +84,9 @@ class DatasetSinais(Dataset):
 
 
 def _loader(clipes, rotulos, permutacao, aumentar, batch, workers, embaralhar,
-            arquitetura="resnet"):
-    ds = DatasetSinais(clipes, rotulos, permutacao, aumentar, arquitetura=arquitetura)
+            arquitetura="resnet", ossos=False):
+    ds = DatasetSinais(clipes, rotulos, permutacao, aumentar, arquitetura=arquitetura,
+                       ossos=ossos)
     return DataLoader(ds, batch_size=batch, shuffle=embaralhar, num_workers=workers,
                       drop_last=embaralhar and len(ds) > batch)
 
@@ -126,8 +135,11 @@ def aplicar_backbone(modelo, caminho: Path, arquitetura: str) -> int:
 def treinar_rodada(treino, validacao, teste, rotulos, permutacao, args, dispositivo):
     """Treina uma rodada e devolve (acurácia no teste, predições, verdadeiros)."""
     arq = getattr(args, "arquitetura", "resnet")
+    ossos = bool(getattr(args, "ossos", False)) and arq == "gcn"
     construtor = gg.construir if arq == "gcn" else mm.construir
-    modelo = construtor(len(rotulos))
+    # canais_ent tem de acompanhar a representação: 2 (x/y) ou 4 (x/y + osso).
+    # O checkpoint guarda esse config, então recarregar já vem com o valor certo.
+    modelo = construtor(len(rotulos), **({"canais_ent": 4} if ossos else {}))
     if getattr(args, "inicializar", None):
         n = aplicar_backbone(modelo, Path(args.inicializar), arq)
         print(f"      backbone de pré-treino aplicado ({n} tensores)")
@@ -142,9 +154,12 @@ def treinar_rodada(treino, validacao, teste, rotulos, permutacao, args, disposit
     if getattr(args, "agendador", "nenhum") == "cosseno":
         agendador = torch.optim.lr_scheduler.CosineAnnealingLR(otim, T_max=args.epocas)
 
-    l_treino = _loader(treino, rotulos, permutacao, True, args.batch, args.workers, True, arq)
-    l_val = _loader(validacao, rotulos, None, False, args.batch, args.workers, False, arq)
-    l_teste = _loader(teste, rotulos, None, False, args.batch, args.workers, False, arq)
+    l_treino = _loader(treino, rotulos, permutacao, True, args.batch, args.workers, True,
+                       arq, ossos)
+    l_val = _loader(validacao, rotulos, None, False, args.batch, args.workers, False,
+                    arq, ossos)
+    l_teste = _loader(teste, rotulos, None, False, args.batch, args.workers, False,
+                      arq, ossos)
 
     melhor_perda, melhores_pesos, melhor_epoca = float("inf"), None, -1
     for epoca in range(args.epocas):
@@ -219,6 +234,8 @@ def escrever_relatorio(destino: Path, rotulos, accs, nomes_fold, cm, args, segun
          "- Inicializado do ImageNet (sem pré-treino em Libras)."),
         ("- Landmarks SEM imputação de lacunas." if getattr(args, "sem_imputacao", False)
          else "- Lacunas curtas de mão preenchidas por interpolação (<=5 frames)."),
+        *(["- Entrada de 4 canais: coordenadas + vetores de osso (`--ossos`)."]
+          if getattr(args, "ossos", False) and args.arquitetura == "gcn" else []),
         "",
         "## Acurácia por rodada (pessoa deixada de fora)",
         "",
@@ -255,6 +272,10 @@ def main() -> None:
     ap.add_argument("--arquitetura", default="resnet", choices=["resnet", "gcn"],
                     help="resnet: Skeleton-DML + ResNet-18 (imagem). "
                          "gcn: ST-GCN sobre o grafo do esqueleto.")
+    ap.add_argument("--ossos", action="store_true",
+                    help="GCN: acrescenta os vetores de osso aos canais de entrada "
+                         "(2 -> 4). Ignorado com --arquitetura resnet, cuja "
+                         "representação em imagem não tem onde encaixá-los.")
     ap.add_argument("--fontes", default="minds", choices=["minds", "vlibrasil", "todas"])
     ap.add_argument("--sem-imputacao", action="store_true",
                     help="desliga o preenchimento de lacunas curtas de mão — existe para "
@@ -301,10 +322,15 @@ def main() -> None:
     avisos = dd.conferir(clipes, cfg["vocabulario"])
     for a in avisos:
         print(f"[treino] ⚠ {a}")
+    if args.ossos and args.arquitetura != "gcn":
+        print("[treino] ⚠ --ossos só vale para --arquitetura gcn; ignorando.")
+        args.ossos = False
+    extra = {"canais_ent": 4} if args.ossos else {}
     n_par = sum(p.numel() for p in (gg.construir if args.arquitetura == "gcn"
-                                    else mm.construir)(len(rotulos)).parameters())
+                                    else mm.construir)(len(rotulos), **extra).parameters())
     print(f"[treino] {len(clipes)} clipes | {len(dd.pessoas(clipes))} pessoas | "
           f"{len(rotulos)} sinais | arquitetura={args.arquitetura} ({n_par/1e6:.2f}M par.) "
+          f"| canais={'4 (juntas+ossos)' if args.ossos else '2 (juntas)'} "
           f"| dispositivo={dispositivo} threads={args.threads}")
 
     saida = AQUI / args.saida

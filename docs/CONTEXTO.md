@@ -132,6 +132,11 @@ acurácia: **24× menos parâmetros** (importa para o `.tflite` no celular) e â
 como representação nativa (endereçaria a robustez a ângulo de câmera). Ver
 [`decisao-arquitetura-modelo.md`](decisao-arquitetura-modelo.md).
 
+Os ossos deixaram de ser hipótese: `treinar.py --ossos` acrescenta os vetores de osso aos
+canais de entrada do GCN (2 → 4, +612 parâmetros). **Ainda não medido em LOSO** — e mesmo
+quando for, mede acurácia frontal, não robustez a ângulo: essa continua sem base pública
+que permita testá-la.
+
 **Para o MVP: ResNet, decidido.** Para o produto: em aberto.
 
 ### O pré-treino ajuda?

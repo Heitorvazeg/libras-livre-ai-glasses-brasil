@@ -10,8 +10,9 @@ convolução caminha por essas arestas.
 Duas motivações que interessam ao produto, ainda a validar:
   - modelo bem menor que uma ResNet-18, o que importa no `.tflite` do celular;
     - o grafo permite explorar vetores de ossos/ângulos para lidar com mudanças
-        de ponto de vista. Esta versão usa somente coordenadas x/y: não implementa
-        essas features nem garante invariância ao ângulo da câmera.
+        de ponto de vista. Os ossos existem (`com_ossos`, ligados por `--ossos`),
+        mas continuam SEM medição de invariância a ângulo de câmera: nenhuma base
+        pública que temos tem vídeo fora do frontal de estúdio para testar isso.
 
 O modelo atual classifica clipes completos; não é causal e não implementa
 atenção dependente da entrada. A exportação TFLite também permanece pendente.
@@ -81,6 +82,74 @@ def arestas(n_pose: int = N_POSE, n_mao: int = N_MAO) -> list[tuple[int, int]]:
     e.append((PULSO_ESQ, n_pose))              # pulso da pose <-> punho da mão esq
     e.append((PULSO_DIR, n_pose + n_mao))      # idem, direita
     return e
+
+
+def pais(n_pose: int = N_POSE, n_mao: int = N_MAO, raiz: int = 0) -> np.ndarray:
+    """Para cada nó, o nó anterior no caminho mais curto até a raiz (o nariz).
+
+    É a árvore que define os OSSOS: o osso de um nó é o vetor dele até o pai.
+    Derivada por busca em largura sobre `arestas()`, não escrita à mão — se a
+    topologia mudar, a árvore acompanha em vez de ficar errada em silêncio.
+
+    A raiz é o nariz (índice 0) por uma razão que não é estética: o conjunto de
+    arestas é simétrico esquerda/direita e o nariz é ponto fixo do espelhamento,
+    então a árvore também sai simétrica. Enraizar num ombro produziria uma árvore
+    que a augmentação de espelho (`representacao.espelhar`) transformaria em outra
+    árvore, e os ossos do clipe espelhado deixariam de corresponder aos do
+    original.
+    """
+    n_nos = n_pose + 2 * n_mao
+    vizinhos: list[list[int]] = [[] for _ in range(n_nos)]
+    for i, j in arestas(n_pose, n_mao):
+        vizinhos[i].append(j)
+        vizinhos[j].append(i)
+
+    pai = np.full(n_nos, -1, dtype=np.intp)
+    pai[raiz] = raiz  # o osso da raiz é o vetor nulo
+    fila, visto = [raiz], {raiz}
+    while fila:
+        proxima: list[int] = []
+        for v in fila:
+            for w in vizinhos[v]:
+                if w not in visto:
+                    visto.add(w)
+                    pai[w] = v
+                    proxima.append(w)
+        fila = proxima
+    if len(visto) != n_nos:
+        raise ValueError(f"grafo desconexo: {n_nos - len(visto)} nó(s) fora da árvore")
+    return pai
+
+
+def com_ossos(seq: np.ndarray, pai: np.ndarray | None = None) -> np.ndarray:
+    """(T, V, 2) -> (T, V, 4): coordenadas concatenadas com os vetores de osso.
+
+    POR QUE. A coordenada de um nó depende de onde a pessoa está e de como a
+    câmera a enquadra; o osso — a diferença entre o nó e o pai dele — depende só
+    da postura do membro. É a mesma informação que um ângulo articular, sem
+    trigonometria, e é o que a literatura de ST-GCN (Shi et al. 2019, 2s-AGCN)
+    aponta como o ganho mais barato sobre o fluxo de juntas puro.
+
+    Fusão por canal, não por modelo: 2s-AGCN treina duas redes e soma os
+    softmax, o que dobra o custo de treino. Concatenar nos canais custa ~2 mil
+    parâmetros a mais na primeira camada e uma passada só. Com o orçamento de CPU
+    que temos, a versão de duas redes não cabe; se couber depois, este mesmo
+    `com_ossos` serve para alimentar o fluxo separado.
+
+    RESSALVA que vale registrar: quando uma mão não é detectada, o bloco dela vem
+    zerado, e o osso que liga o punho da mão ao pulso da pose vira -pulso (um
+    vetor grande e falso) em vez de zero. `dados.imputar_maos` cobre as lacunas
+    curtas; as longas continuam zeradas e esse artefato existe nelas — como já
+    existia no fluxo de juntas.
+    """
+    if seq.ndim != 3 or seq.shape[2] < 2:
+        raise ValueError(f"esperava (T, V, >=2), veio {seq.shape}")
+    if pai is None:
+        pai = pais()
+    if pai.shape[0] != seq.shape[1]:
+        raise ValueError(f"árvore tem {pai.shape[0]} nós, sequência tem {seq.shape[1]}")
+    xy = seq[:, :, :2]
+    return np.concatenate([xy, xy - xy[:, pai, :]], axis=2).astype(np.float32)
 
 
 def adjacencia(n_nos: int, lista_arestas: list[tuple[int, int]]) -> torch.Tensor:

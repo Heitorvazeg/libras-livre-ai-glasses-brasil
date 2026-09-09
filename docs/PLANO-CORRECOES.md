@@ -172,6 +172,28 @@ ruído de ±1,7 pp.
 
 **Arquivos:** `treino/representacao.py`, `treino/gcn.py`
 
+**Status (2026-09-09): implementado, ainda não medido.** `gcn.pais()` deriva a árvore por
+busca em largura sobre `arestas()` (raiz no nariz) e `gcn.com_ossos()` concatena os
+vetores de osso aos canais: (T,V,2) → (T,V,4). Liga-se com `treinar.py --ossos`.
+
+Três desvios do que o item pedia, cada um com motivo:
+
+1. **Fusão por canal, não duas redes.** O 2s-AGCN treina dois modelos e soma os softmax,
+   o que dobra o custo de treino. Concatenar nos canais custa **+612 parâmetros**
+   (463.898 → 464.510, +0,13%) e uma passada só. Com o orçamento de CPU desta máquina a
+   versão de duas redes não cabe antes do prazo; `com_ossos` já serve para alimentá-la
+   depois, se couber.
+2. **Só GCN, não "as duas arquiteturas".** A representação Skeleton-DML empilha 3 frames
+   nos canais RGB — não há canal livre para os ossos sem redefinir a imagem e invalidar os
+   93,4% já medidos. `--ossos` com `--arquitetura resnet` avisa e é ignorado.
+3. **Raiz no nariz, não num ombro.** O conjunto de arestas é simétrico esquerda/direita e o
+   nariz é ponto fixo do espelhamento, então a árvore sai simétrica. Enraizar num ombro
+   daria uma árvore que a augmentação de espelho transformaria em outra — os clipes
+   espelhados teriam ossos incoerentes, e em silêncio. `teste_ossos` no selftest trava
+   exatamente isso, junto com a coerência osso↔aresta e a invariância a translação.
+
+**Falta:** o LOSO comparativo. Depende da máquina, hoje ocupada com o LOSO do B1.
+
 ---
 
 ### B3. Adjacência adaptativa (2s-AGCN)
