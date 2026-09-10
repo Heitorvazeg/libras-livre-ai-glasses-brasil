@@ -6,12 +6,14 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-// VideoRecorder - Streaming Video + Audio Recording Orchestrator
+// VideoRecorder - Streaming Video Recording Orchestrator
 //
 // Streams compressed HEVC frames from the DAT SDK directly to an MP4 file in the cache
-// directory via VideoCaptureHandler — no video re-encoding. Phone-mic audio is encoded
-// incrementally to AAC and interleaved when available; a device with no usable mic
-// records video-only. The track opens on the first detectable keyframe (falling back to
+// directory via VideoCaptureHandler — no video re-encoding. Video-only: the reconhecimento de
+// sinal roda só sobre landmarks (ver libras/LandmarkPipeline.kt), então esta gravação (usada só
+// pelo botão de captura/preview/share, sem relação com a sessão de diálogo) não precisa de
+// áudio — o mic do celular ficou livre pra virar a fonte da wake word (ver
+// libras/AudioInputHandler.kt). The track opens on the first detectable keyframe (falling back to
 // any frame so recording always starts). The finished file is exposed as a FileProvider
 // Uri for preview/share and is deleted by the caller once previewed.
 
@@ -47,8 +49,8 @@ sealed interface RecordingResult {
 
 class VideoRecorder(
     context: Context,
-    // The owner's scope (e.g. viewModelScope) — drives the elapsed timer and audio watchdog so they
-    // are cancelled with the owner. close() cancels its own jobs but never this shared scope.
+    // The owner's scope (e.g. viewModelScope) — drives the elapsed timer so it's cancelled with
+    // the owner. close() cancels its own job but never this shared scope.
     private val scope: CoroutineScope,
 ) {
 
@@ -57,10 +59,6 @@ class VideoRecorder(
 
   companion object {
     private const val TAG = "VideoRecorder"
-    // How long to wait for phone-mic audio to start flowing after the first keyframe before falling
-    // back to video-only. Real-device audio produces a format well within this; a silent/absent mic
-    // (e.g. an emulator) never does, and without the fallback the muxer would wait forever.
-    private const val AUDIO_READY_TIMEOUT_MS = 1000L
   }
 
   private val videoCaptureHandler = VideoCaptureHandler()
@@ -76,23 +74,11 @@ class VideoRecorder(
   private val _hasStartedWriting = MutableStateFlow(false)
   val hasStartedWriting: StateFlow<Boolean> = _hasStartedWriting.asStateFlow()
 
-  private var audioInputHandler: AudioInputHandler? = null
-  private var includeAudio: Boolean = true
-
-  // @Volatile: published across the caller, frame-delivery, and stop threads — timerJob and
-  // audioWatchdogJob are assigned on the frame thread (writeCompressedFrame) and cancelled on the
-  // caller thread (stopRecording/close); no compound state to guard, only publication visibility.
+  // @Volatile: published across the caller, frame-delivery, and stop threads — timerJob is
+  // assigned on the frame thread (writeCompressedFrame) and cancelled on the caller thread
+  // (stopRecording/close); no compound state to guard, only publication visibility.
   @Volatile private var timerJob: Job? = null
-  @Volatile private var audioWatchdogJob: Job? = null
   @Volatile private var tempFile: File? = null
-
-  fun setAudioInputHandler(handler: AudioInputHandler) {
-    audioInputHandler = handler
-  }
-
-  fun setIncludeAudio(include: Boolean) {
-    includeAudio = include
-  }
 
   fun writeCompressedFrame(
       data: ByteArray,
@@ -106,30 +92,6 @@ class VideoRecorder(
         videoCaptureHandler.writeVideoFrame(data, presentationTimeUs, width, height, isCodecConfig)
     if (justStarted && !_hasStartedWriting.value) {
       _hasStartedWriting.value = true
-      // Start the mic and elapsed timer aligned to the first keyframe so audio and duration line up
-      // with the first decodable video sample. If there's no usable mic, keep recording video-only.
-      if (includeAudio) {
-        val audioStarted = audioInputHandler?.startRecording() ?: false
-        if (!audioStarted) {
-          Log.w(TAG, "Microphone unavailable; recording video only")
-          videoCaptureHandler.markAudioUnavailable()
-        } else {
-          // The mic may initialize yet deliver no PCM (e.g. an emulator's virtual mic), so the AAC
-          // encoder never produces a format and the muxer would wait for the audio track forever.
-          // If audio isn't flowing shortly, fall back to video-only so the file still finalizes.
-          // A no-op if audio already started the muxer.
-          audioWatchdogJob = scope.launch {
-            delay(AUDIO_READY_TIMEOUT_MS)
-            if (_isRecording.value && !videoCaptureHandler.isMuxerStarted()) {
-              Log.w(
-                  TAG,
-                  "Audio not flowing after ${AUDIO_READY_TIMEOUT_MS}ms; recording video only",
-              )
-              videoCaptureHandler.markAudioUnavailable()
-            }
-          }
-        }
-      }
       startTimer()
     }
   }
@@ -147,24 +109,18 @@ class VideoRecorder(
     _recordingElapsedSeconds.value = 0
     _hasStartedWriting.value = false
 
-    // Temp-file creation and the MediaMuxer/AAC-encoder setup are blocking I/O; keep them off the
-    // main thread, mirroring stopRecording's withContext(IO). A frame that races this setup is a
-    // safe no-op — writeVideoFrame returns early while the muxer is still null.
+    // Temp-file creation and the MediaMuxer setup are blocking I/O; keep them off the main
+    // thread, mirroring stopRecording's withContext(IO). A frame that races this setup is a safe
+    // no-op — writeVideoFrame returns early while the muxer is still null.
     withContext(Dispatchers.IO) {
       val file = createTempFile()
       tempFile = file
 
       videoCaptureHandler.resetState()
-      videoCaptureHandler.prepare(file.canonicalPath, includeAudio)
+      videoCaptureHandler.prepare(file.canonicalPath)
       codecConfig?.let { videoCaptureHandler.setInitialCodecConfig(it) }
     }
-
-    if (includeAudio) {
-      audioInputHandler?.pcmDataCallback = { data, offset, size ->
-        videoCaptureHandler.writeAudioPcm(data, offset, size)
-      }
-    }
-    // Mic capture and the elapsed timer start on the first keyframe (see writeCompressedFrame).
+    // The elapsed timer starts on the first keyframe (see writeCompressedFrame).
   }
 
   private fun startTimer() {
@@ -184,15 +140,8 @@ class VideoRecorder(
 
     _isRecording.value = false
     _hasStartedWriting.value = false
-    audioWatchdogJob?.cancel()
-    audioWatchdogJob = null
     timerJob?.cancel()
     timerJob = null
-
-    if (includeAudio) {
-      audioInputHandler?.pcmDataCallback = null
-      audioInputHandler?.stopRecording()
-    }
 
     return withContext(Dispatchers.IO) {
       val hadVideo = videoCaptureHandler.stopRecording()
@@ -223,13 +172,10 @@ class VideoRecorder(
 
   fun close() {
     timerJob?.cancel()
-    audioWatchdogJob?.cancel()
-    // Release an in-progress recording so the muxer/encoder don't leak if the owner is torn down
+    // Release an in-progress recording so the muxer doesn't leak if the owner is torn down
     // mid-recording (e.g. the activity is destroyed).
     if (_isRecording.value) {
       _isRecording.value = false
-      audioInputHandler?.pcmDataCallback = null
-      audioInputHandler?.stopRecording()
       runCatching { videoCaptureHandler.stopRecording() }
       tempFile?.delete()
       tempFile = null
