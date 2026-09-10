@@ -16,7 +16,7 @@
     <string name="home_tip_preview_title" description="Tip title about preview">Start preview</string>
     <string name="home_tip_preview" description="Tip about preview">See the live camera feed from your glasses.</string>
     <string name="home_tip_capture_title" description="Tip title about capture">Capture</string>
-    <string name="home_tip_capture" description="Tip about capture">Take photos and record video with audio.</string>
+    <string name="home_tip_capture" description="Tip about capture">Take photos and record video.</string>
     <string name="error_activity_unavailable" description="Error shown when registration is tapped but no activity is available">Can\'t open right now. Try again.</string>
 
     <!-- Camera Screen -->
@@ -44,17 +44,18 @@
     <string name="record_video" description="Record video content description">Record video</string>
     <string name="stop_recording" description="Stop recording content description">Stop recording</string>
     <string name="capture_photo" description="Capture photo content description">Capture photo</string>
-    <string name="mic_on" description="Microphone on content description">Turn off microphone</string>
-    <string name="mic_off" description="Microphone off content description">Turn on microphone</string>
     <string name="start_session_button" description="Start session button">Start session</string>
     <string name="end_session_button" description="End session button">End session</string>
 
     <!-- Libras Livre: captura e reconhecimento de sinal -->
-    <string name="libras_capture_start" description="Button label to start capturing a Libras sign">Capturar sinal</string>
-    <string name="libras_capture_stop" description="Button label to stop capturing and recognize the sign">Parar e reconhecer</string>
     <string name="libras_capture_hint" description="Hint shown while collecting a sign">Sinalize e toque em parar</string>
     <string name="libras_classifying" description="Status while the sign is being classified">Reconhecendo…</string>
     <string name="libras_recognized_label" description="Label above the recognized word">Sinal reconhecido</string>
+
+    <!-- Libras Livre: orquestração da sessão de diálogo (docs/orquestracao-dialogo-audio-plano.md) -->
+    <string name="dialog_state_label" description="Current dialog-session state, shown for debugging">State: %1$s</string>
+    <string name="dialog_wake_iniciar" description="Fallback button that triggers the INICIAR wake word — deliberately not translated, it stands in for the literal Portuguese wake phrase \'Libras Livre, iniciar\'" translatable="false">Iniciar</string>
+    <string name="dialog_wake_encerrar" description="Fallback button that triggers the ENCERRAR wake word — deliberately not translated, it stands in for the literal Portuguese wake phrase \'Libras Livre, encerrar\'" translatable="false">Encerrar</string>
 
     <!-- Update required -->
     <string name="update_firmware_button_title" description="Open firmware update">Update firmware</string>
@@ -79,6 +80,7 @@
     <string name="error_photo_capture_failed" description="Error shown when a photo capture fails">Couldn\'t capture photo. Try again.</string>
     <string name="error_recording_too_short" description="Error shown when a recording stops before any video is captured">Couldn\'t record. Hold a little longer and try again.</string>
     <string name="error_recording_save_failed" description="Error shown when a recording cannot be finalized">Recording couldn\'t be saved. Try again.</string>
+    <string name="error_record_audio_permission_denied" description="Error shown when the microphone permission needed to listen for the attendant's reply is denied">Microphone permission denied — can\'t listen for the reply.</string>
 
     <!-- Wearables errors -->
     <string name="error_device_update_required" description="Error shown when a connected device needs a firmware update"><xliff:g id="device_name">%1$s</xliff:g> needs an update to work with this app.</string>

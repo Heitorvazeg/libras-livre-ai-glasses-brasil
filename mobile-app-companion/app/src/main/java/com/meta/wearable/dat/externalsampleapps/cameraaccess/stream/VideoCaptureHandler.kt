@@ -6,18 +6,19 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-// VideoCaptureHandler - Streaming Compressed Video + Audio to MP4
+// VideoCaptureHandler - Streaming Compressed Video to MP4
 //
 // Receives compressed HEVC video frames from the DAT SDK and streams them directly
-// to an MP4 file via MediaMuxer. No re-encoding of video is needed. Audio PCM is
-// encoded incrementally to AAC and interleaved with the video track. The track opens on
-// the first detectable keyframe so playback isn't black, falling back to any frame after a
-// short grace period so recording always starts even when keyframes aren't detectable.
+// to an MP4 file via MediaMuxer. No re-encoding of video is needed. Video-only: the reconhecimento
+// de sinal roda só sobre landmarks (ver libras/LandmarkPipeline.kt), então o clipe não precisa de
+// uma trilha de áudio — o mic do celular ficou livre pra virar a fonte da wake word (ver
+// libras/AudioInputHandler.kt). The track opens on the first detectable keyframe so playback
+// isn't black, falling back to any frame after a short grace period so recording always starts
+// even when keyframes aren't detectable.
 
 package com.meta.wearable.dat.externalsampleapps.cameraaccess.stream
 
 import android.media.MediaCodec
-import android.media.MediaCodecInfo
 import android.media.MediaFormat
 import android.media.MediaMuxer
 import android.util.Log
@@ -27,9 +28,6 @@ import java.nio.ByteBuffer
 class VideoCaptureHandler {
   companion object {
     private const val TAG = "VideoCaptureHandler"
-    private const val AAC_BIT_RATE = 128000
-    private const val SAMPLE_RATE = AudioInputHandler.SAMPLE_RATE
-    private const val BYTES_PER_SAMPLE = 2
     // If no detectable keyframe arrives within this many frames, open the video track anyway so
     // recording always starts (some streams, e.g. the emulator camera encoder, don't surface a
     // keyframe we can detect). ~2s at 24-30fps, comfortably longer than the 1s mock GOP.
@@ -42,16 +40,13 @@ class VideoCaptureHandler {
   private class PendingSample(
       val data: ByteArray,
       val info: MediaCodec.BufferInfo,
-      val isVideo: Boolean,
   )
 
   private val muxerLock = Any()
-  private val audioEncoderLock = Any()
 
   // Muxer state — all writes serialized through muxerLock (see prepare/writeVideoFrame/etc.)
   @GuardedBy("muxerLock") private var muxer: MediaMuxer? = null
   @GuardedBy("muxerLock") private var videoTrackIndex = -1
-  @GuardedBy("muxerLock") private var audioTrackIndex = -1
   @GuardedBy("muxerLock") private var muxerStarted = false
   // Latched if a MediaMuxer write throws so the recording aborts instead of crashing the host.
   @GuardedBy("muxerLock") private var muxerFailed = false
@@ -70,21 +65,12 @@ class VideoCaptureHandler {
   // PTS of the last written sample, for the monotonic floor clamp. -1 until the first sample.
   @GuardedBy("muxerLock") private var lastWrittenPtsUs = -1L
 
-  // Audio encoder state — guarded by muxerLock for the reference; the MediaCodec's own
-  // dequeue/queue operations happen on the caller thread under audioEncoderLock.
-  @GuardedBy("muxerLock") private var audioEncoder: MediaCodec? = null
-  @GuardedBy("muxerLock") private var audioOutputFormat: MediaFormat? = null
-  @GuardedBy("muxerLock") private var audioInputTimeUs = 0L
-  @GuardedBy("muxerLock") private var includeAudio = false
-
   // Pending samples buffered before muxer starts.
   @GuardedBy("muxerLock") private val pendingSamples = mutableListOf<PendingSample>()
 
-  fun prepare(outputPath: String, includeAudio: Boolean) {
+  fun prepare(outputPath: String) {
     synchronized(muxerLock) {
-      this.includeAudio = includeAudio
       videoTrackIndex = -1
-      audioTrackIndex = -1
       muxerStarted = false
       muxerFailed = false
       videoCsd = null
@@ -94,33 +80,9 @@ class VideoCaptureHandler {
       lastWrittenPtsUs = -1L
       videoWidth = 0
       videoHeight = 0
-      audioInputTimeUs = 0L
-      audioOutputFormat = null
       pendingSamples.clear()
 
       muxer = MediaMuxer(outputPath, MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4)
-
-      if (includeAudio) {
-        val format =
-            MediaFormat.createAudioFormat(
-                    MediaFormat.MIMETYPE_AUDIO_AAC,
-                    SAMPLE_RATE,
-                    1,
-                )
-                .apply {
-                  setInteger(MediaFormat.KEY_BIT_RATE, AAC_BIT_RATE)
-                  setInteger(
-                      MediaFormat.KEY_AAC_PROFILE,
-                      MediaCodecInfo.CodecProfileLevel.AACObjectLC,
-                  )
-                }
-
-        audioEncoder =
-            MediaCodec.createEncoderByType(MediaFormat.MIMETYPE_AUDIO_AAC).also { encoder ->
-              encoder.configure(format, null, null, MediaCodec.CONFIGURE_FLAG_ENCODE)
-              encoder.start()
-            }
-      }
     }
   }
 
@@ -207,142 +169,36 @@ class VideoCaptureHandler {
       if (muxerStarted) {
         writeSample(videoTrackIndex, data, info)
       } else {
-        pendingSamples.add(PendingSample(data.copyOf(), info, isVideo = true))
+        pendingSamples.add(PendingSample(data.copyOf(), info))
       }
 
       return justStartedVideo
     }
   }
 
-  fun writeAudioPcm(data: ByteArray, offset: Int, size: Int) {
-    // Use audioEncoderLock for the blocking encoder operations to avoid stalling
-    // video writes on muxerLock. Only take muxerLock briefly for the actual muxer
-    // writes inside drainAudioEncoder.
-    synchronized(audioEncoderLock) {
-      val encoder = synchronized(muxerLock) { audioEncoder } ?: return
-
-      var remaining = size
-      var currentOffset = offset
-
-      while (remaining > 0) {
-        val inputIndex = encoder.dequeueInputBuffer(5000)
-        if (inputIndex < 0) {
-          // Encoder is backed up; drop the rest of this chunk. Still advance the audio clock by the
-          // dropped duration so the timeline stays aligned with elapsed capture — otherwise each
-          // drop shifts later audio earlier and it progressively drifts ahead of the video.
-          Log.w(TAG, "No audio encoder input buffer available, dropping $remaining bytes")
-          synchronized(muxerLock) {
-            audioInputTimeUs += (remaining.toLong() * 1_000_000L) / (SAMPLE_RATE * BYTES_PER_SAMPLE)
-          }
-          break
-        }
-        val inputBuffer = encoder.getInputBuffer(inputIndex) ?: break
-        inputBuffer.clear()
-        val bytesToWrite = minOf(remaining, inputBuffer.remaining())
-        inputBuffer.put(data, currentOffset, bytesToWrite)
-
-        val pts: Long
-        synchronized(muxerLock) {
-          pts = audioInputTimeUs
-          audioInputTimeUs +=
-              (bytesToWrite.toLong() * 1_000_000L) / (SAMPLE_RATE * BYTES_PER_SAMPLE)
-        }
-        encoder.queueInputBuffer(inputIndex, 0, bytesToWrite, pts, 0)
-        currentOffset += bytesToWrite
-        remaining -= bytesToWrite
-      }
-
-      synchronized(muxerLock) { drainAudioEncoder(endOfStream = false) }
-    }
-  }
-
-  /**
-   * Switches recording to video-only when the microphone is unavailable — either it never
-   * initialized (no permission, no input device) or it initialized but delivers no PCM (e.g. an
-   * emulator's virtual mic), so the AAC encoder never produces a format and the muxer would wait
-   * for an audio track forever. Drops the audio track and starts the muxer so the video keyframe
-   * isn't held indefinitely. A no-op once the muxer has already started (audio came through in
-   * time).
-   */
-  fun markAudioUnavailable() {
-    synchronized(audioEncoderLock) {
-      synchronized(muxerLock) {
-        if (muxerStarted) return
-        forceVideoOnlyStart()
-      }
-    }
-  }
-
   /** True once the muxer has started writing — i.e. the recording is actually capturing to disk. */
   fun isMuxerStarted(): Boolean = synchronized(muxerLock) { muxerStarted }
 
-  // Caller must hold audioEncoderLock and muxerLock. Releases the audio encoder and starts the
-  // muxer
-  // video-only so any buffered video samples (the keyframe onward) finalize instead of being lost.
-  @GuardedBy("muxerLock")
-  private fun forceVideoOnlyStart() {
-    includeAudio = false
-    audioEncoder?.let { encoder ->
-      try {
-        encoder.stop()
-        encoder.release()
-      } catch (e: Exception) {
-        Log.e(TAG, "Error releasing unused audio encoder: ${e.message}", e)
-      }
-    }
-    audioEncoder = null
-    audioOutputFormat = null
-    pendingSamples.retainAll { it.isVideo }
-    tryStartMuxer()
-  }
-
   fun stopRecording(): Boolean {
-    // Acquire audioEncoderLock first to ensure writeAudioPcm has finished,
-    // then muxerLock for the final muxer operations.
-    synchronized(audioEncoderLock) {
-      synchronized(muxerLock) {
-        // If audio was enabled but never produced a format (a silent/absent mic), the muxer is
-        // still
-        // waiting for the audio track. Finalize video-only so the buffered samples are written
-        // instead of being lost — otherwise the file has no video track.
-        if (!muxerStarted && videoCsd != null && videoStarted) {
-          forceVideoOnlyStart()
-        }
-
-        audioEncoder?.let { encoder ->
-          val eosIndex = encoder.dequeueInputBuffer(10000)
-          if (eosIndex >= 0) {
-            encoder.queueInputBuffer(eosIndex, 0, 0, 0, MediaCodec.BUFFER_FLAG_END_OF_STREAM)
-          }
-          drainAudioEncoder(endOfStream = true)
-          try {
-            encoder.stop()
-            encoder.release()
-          } catch (e: Exception) {
-            Log.e(TAG, "Error cleaning up audio encoder: ${e.message}", e)
-          }
-        }
-        audioEncoder = null
-
-        val hadVideo = videoTrackIndex >= 0 && !muxerFailed
-        if (muxerStarted) {
-          try {
-            muxer?.stop()
-          } catch (e: Exception) {
-            Log.e(TAG, "Error stopping muxer: ${e.message}", e)
-          }
-        }
+    synchronized(muxerLock) {
+      val hadVideo = videoTrackIndex >= 0 && !muxerFailed
+      if (muxerStarted) {
         try {
-          muxer?.release()
+          muxer?.stop()
         } catch (e: Exception) {
-          Log.e(TAG, "Error releasing muxer: ${e.message}", e)
+          Log.e(TAG, "Error stopping muxer: ${e.message}", e)
         }
-        muxer = null
-        muxerStarted = false
-        pendingSamples.clear()
-
-        return hadVideo
       }
+      try {
+        muxer?.release()
+      } catch (e: Exception) {
+        Log.e(TAG, "Error releasing muxer: ${e.message}", e)
+      }
+      muxer = null
+      muxerStarted = false
+      pendingSamples.clear()
+
+      return hadVideo
     }
   }
 
@@ -357,8 +213,6 @@ class VideoCaptureHandler {
       lastWrittenPtsUs = -1L
       videoWidth = 0
       videoHeight = 0
-      audioInputTimeUs = 0L
-      audioOutputFormat = null
     }
   }
 
@@ -385,14 +239,13 @@ class VideoCaptureHandler {
       if (muxerStarted) return
       val mux = muxer ?: return
       val csd = videoCsd ?: return
-      // Only start once the video track is genuinely ready. The audio encoder's format-change can
-      // call this before any video frame; starting then would addTrack a 0x0 video format and
-      // crash.
+      // Only start once the video track is genuinely ready — starting with 0x0 dimensions would
+      // crash addTrack.
       if (!videoStarted || videoWidth <= 0 || videoHeight <= 0) return
 
-      // addTrack only once: this can be called more than once before start() (e.g. the video track
-      // opens while audio is pending, then markAudioUnavailable retries). Re-adding would create a
-      // duplicate, sampleless track and MediaMuxer.stop() would fail to finalize the file.
+      // addTrack only once: this can be called more than once before start() in principle.
+      // Re-adding would create a duplicate, sampleless track and MediaMuxer.stop() would fail to
+      // finalize the file.
       if (videoTrackIndex < 0) {
         val videoFormat =
             MediaFormat.createVideoFormat(MediaFormat.MIMETYPE_VIDEO_HEVC, videoWidth, videoHeight)
@@ -400,58 +253,15 @@ class VideoCaptureHandler {
         videoTrackIndex = mux.addTrack(videoFormat)
       }
 
-      if (includeAudio) {
-        val af = audioOutputFormat ?: return
-        if (audioTrackIndex < 0) audioTrackIndex = mux.addTrack(af)
-      }
-
       mux.start()
       muxerStarted = true
 
       for (sample in pendingSamples) {
-        val trackIndex = if (sample.isVideo) videoTrackIndex else audioTrackIndex
-        writeSample(trackIndex, sample.data, sample.info)
+        writeSample(videoTrackIndex, sample.data, sample.info)
       }
       pendingSamples.clear()
 
-      Log.d(TAG, "Muxer started: video=${videoWidth}x${videoHeight}, audio=$includeAudio")
-    }
-  }
-
-  // See note on tryStartMuxer for why the redundant synchronized block is here.
-  private fun drainAudioEncoder(endOfStream: Boolean) {
-    synchronized(muxerLock) {
-      val encoder = audioEncoder ?: return
-      val bufferInfo = MediaCodec.BufferInfo()
-
-      while (true) {
-        val outputIndex = encoder.dequeueOutputBuffer(bufferInfo, if (endOfStream) 10000 else 0)
-        when {
-          outputIndex == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED -> {
-            audioOutputFormat = encoder.outputFormat
-            tryStartMuxer()
-          }
-          outputIndex >= 0 -> {
-            val outputBuffer = encoder.getOutputBuffer(outputIndex)
-            if (outputBuffer != null && bufferInfo.size > 0) {
-              val info = MediaCodec.BufferInfo()
-              info.set(0, bufferInfo.size, bufferInfo.presentationTimeUs, bufferInfo.flags)
-              val dataCopy = ByteArray(bufferInfo.size)
-              outputBuffer.position(bufferInfo.offset)
-              outputBuffer.get(dataCopy)
-
-              if (muxerStarted && audioTrackIndex >= 0) {
-                writeSample(audioTrackIndex, dataCopy, info)
-              } else {
-                pendingSamples.add(PendingSample(dataCopy, info, isVideo = false))
-              }
-            }
-            encoder.releaseOutputBuffer(outputIndex, false)
-            if (bufferInfo.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM != 0) return
-          }
-          else -> break
-        }
-      }
+      Log.d(TAG, "Muxer started: video=${videoWidth}x${videoHeight}")
     }
   }
 }
