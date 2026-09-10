@@ -24,8 +24,8 @@ diferente, e misturá-los destrói a única métrica honesta que temos.
 | Corpus | Clipes | Classes | Pessoas | Papel | Prefixo |
 |---|---|---|---|---|---|
 | **MINDS-Libras** | 800 | 20 sinais | 8 | **treino supervisionado + avaliação LOSO** | `M` |
-| V-LIBRASIL | 4.053 | 1.353 palavras | 3 (sempre os mesmos) | pré-treino | `V` |
-| WLASL100 (ASL) | 1.013 | 100 | 64 | pré-treino | `W` |
+| V-LIBRASIL auditada | 4.025 (4.053 originais) | 1.353 palavras | 3 (sempre os mesmos) | pré-treino | `V` |
+| WLASL100 (ASL) | 1.013 | 100 | 64 | corpus disponível; pré-treino multi-fonte ainda não habilitado | `W` |
 
 Por que não mesclar, com o motivo específico de cada um:
 
@@ -42,7 +42,15 @@ Por que não mesclar, com o motivo específico de cada um:
   de generalização deixa de significar o que diz.
 
 O carregador de treino reflete isso: `--fontes {minds, vlibrasil, todas}`. **WLASL não é
-opção de treino supervisionado** — só de pré-treino, via `pretreinar.py --corpus`.
+opção de treino supervisionado nem de pré-treino no carregador atual**: a auditoria
+rejeita W explicitamente. Sua incorporação requer um experimento separado.
+
+**Atualização de dados em 10/09:** a proveniência legada foi regularizada e os 28
+registros envolvidos em duplicatas de vídeo ficaram fora de uma cópia separada.
+Usar `landmarks-pretreino-auditado`: 4.025 amostras aprovadas, das quais 4.021 em
+1.349 classes passam o filtro padrão de pelo menos dois clipes. O corpus original
+permanece intacto e reprovado por duplicatas. Evidências e limites em
+[auditoria-pretreino-2026-09-10.md](auditoria-pretreino-2026-09-10.md).
 
 ### Vazamento já barrado uma vez
 
@@ -111,14 +119,13 @@ opcional: sem ela o pré-treino pode estar consumindo o conjunto de avaliação.
 
 ```bash
 python pretreinar.py --arquitetura resnet --objetivo contrastivo \
-    --corpus ../PoC/data/landmarks-pretreino \
-    --corpus ../PoC/data/landmarks-wlasl \
+  --corpus ../PoC/data/landmarks-pretreino-auditado \
     --pessoa-val V03 --epocas 15 --lr 1e-4 --batch 64 \
     --p-classes 32 --k-exemplos 2 --saida <dir>
 ```
 
-`--corpus` **pode ser repetido** — é assim que V-LIBRASIL e WLASL entram juntos sem se
-misturarem ao MINDS.
+`--corpus` **pode ser repetido** para diretórios V-LIBRASIL disjuntos, todos auditados.
+Não acrescentar WLASL ou MINDS: o pré-treino atual rejeita ambas as fontes.
 
 Perda SupCon + amostrador P×K; a cabeça de projeção é descartada depois. A época é
 escolhida por **recuperação top-1**, não por perda de validação: a perda dava 0,0 em lotes

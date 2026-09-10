@@ -342,7 +342,7 @@ de proveniência), suíte de datasets e PoC (10/10, incluindo MediaPipe). Todos 
 O ambiente executável foi `computer-vision-model/PoC/.venv311/bin/python`; o ambiente
 Python 3.14 selecionado no editor não tem Torch e ainda pode mostrar avisos de imports.
 
-**Pendência de dados, não contornada:** a auditoria do corpus real atual aborta por
+**Pendência de dados em 09/09 (resolvida para a cópia auditada em §9):** a auditoria do corpus real abortava por
 sidecars históricos ausentes. Antes de treinar, registrar o legado com vídeos e índice
 disponíveis e **confirmar a configuração histórica**. Não foram inventados metadados,
 modificados arrays nem iniciados treinos reais. O utilitário de migração é retomável.
@@ -353,3 +353,22 @@ somente a fixture do pré-treino foi adaptada de M para V com sidecars sintétic
 asserções e ordem dos testes existentes foram preservadas.
 
 Detalhes operacionais e limites: [protocolo-pretreino.md](protocolo-pretreino.md).
+
+## 9. Fechamento das pendências de dados — 2026-09-10
+
+**Pendências 1 e 2 concluídas; execução de treinamento (3/A5) adiada pelo usuário.**
+
+- Registrados 4.053 pares vídeo/landmark com sidecars: 8.106 registros. Configuração
+  histórica declarada a partir de snapshot Git, com limites de evidência explícitos.
+- SHA-256 dos 8.106 arquivos originais conferidos antes/depois: nenhum byte alterado.
+- A auditoria revelou 14 grupos de vídeos idênticos sob rótulos/articuladores
+  diferentes. O corpus original continua preservado e reprovado por essas duplicatas.
+- Preparada cópia **landmarks-pretreino-auditado**, excluindo todos os 28 membros
+  ambíguos sem escolher rótulos/pessoas. **4.025 amostras aprovadas** pela auditoria.
+- O filtro mínimo de dois clipes por classe deixa 4.021 clipes / 1.349 classes,
+  antes da partição contrastiva. Não houve treino nem medição de ganho de acurácia.
+- Corrigida migração de colisões `avó`/`avô` por tamanho/CRC, sem enfraquecer a
+  auditoria. Testes offline de migração, preparação e isolamento passaram.
+
+Evidências, hashes, exclusões e uso correto da cópia privada:
+[auditoria-pretreino-2026-09-10.md](auditoria-pretreino-2026-09-10.md).

@@ -45,6 +45,13 @@ identifica a versão observada do índice, não prova que ela é a versão mais 
 
 ## Dados antigos, sem reextração
 
+**Estado em 10/09:** os 4.053 pares históricos já foram registrados localmente.
+A auditoria encontrou 14 grupos duplicados (28 registros); o original foi
+preservado e uma cópia `landmarks-pretreino-auditado` com **4.025 amostras** passou.
+Usar essa cópia, não o corpus original reprovado. Ver
+[relatório de regularização](auditoria-pretreino-2026-09-10.md), inclusive os limites
+da declaração histórica e as instruções de empacotamento privado.
+
 Não se deve atribuir automaticamente a configuração atual a arrays históricos.
 O utilitário offline [registrar_legado.py](../computer-vision-model/datasets/registrar_legado.py)
 confere o vídeo ainda disponível contra o índice local e cria os sidecars. Para
@@ -52,7 +59,7 @@ landmarks, exige a configuração usada naquela extração e confirmação expl�
 o registro conserva `config_declarada_para_legado: true`. Isso é uma declaração
 histórica, não prova retrospectiva da execução do extrator.
 
-Exemplo, a partir da raiz, **somente se esse YAML for de fato o histórico**:
+Migração executada a partir da raiz com snapshot histórico verificado (retomável):
 
 ```bash
 python computer-vision-model/datasets/registrar_legado.py \
@@ -60,7 +67,7 @@ python computer-vision-model/datasets/registrar_legado.py \
   --videos computer-vision-model/PoC/data/raw-pretreino \
   --indice computer-vision-model/datasets/.cache/davimedio01_v-librasil.json \
   --landmarks computer-vision-model/PoC/data/landmarks-pretreino \
-  --config-extracao computer-vision-model/PoC/config.yaml \
+  --config-extracao computer-vision-model/datasets/configs/extracao-vlibrasil-2026-09-08.yaml \
   --confirmar-config-legada
 ```
 
@@ -68,13 +75,27 @@ Sem vídeo/índice/configuração histórica confiável, o corpus fica bloqueado
 pré-treino. Não há flag para ignorar a auditoria. A migração pode ser retomada;
 registros existentes incompatíveis nunca são sobrescritos.
 
+Colisões de slug legado só são resolvidas quando tamanho/CRC identificam um
+único membro do índice; empate continua bloqueado. Para reproduzir a preparação
+conservadora **em um destino novo**, sem remover nada da entrada:
+
+```bash
+python computer-vision-model/datasets/preparar_corpus_auditado.py \
+  --entrada computer-vision-model/PoC/data/landmarks-pretreino \
+  --saida computer-vision-model/PoC/data/landmarks-pretreino-auditado --aplicar
+```
+
+Sem `--aplicar`, só calcula o plano. A cópia exclui **todos** os membros de grupos
+duplicados, não escolhe rótulos/pessoas arbitrários. O plano fica em
+`preparacao.json` no destino; a auditoria oficial abaixo continua obrigatória.
+
 ## Auditar e executar
 
 No diretório de treino:
 
 ```bash
-python pretreinar.py --corpus ../PoC/data/landmarks-pretreino --auditar
-python pretreinar.py --corpus ../PoC/data/landmarks-pretreino \
+python pretreinar.py --corpus ../PoC/data/landmarks-pretreino-auditado --auditar
+python pretreinar.py --corpus ../PoC/data/landmarks-pretreino-auditado \
   --objetivo contrastivo --pessoa-val V03 --saida resultados-contrastivo
 python treinar.py --fontes minds --arquitetura resnet \
   --inicializar resultados-contrastivo/backbone_resnet.pt --saida resultados-transferencia

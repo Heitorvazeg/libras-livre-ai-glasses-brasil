@@ -185,6 +185,19 @@ def teste_proveniencia_ingestao(tmp: Path) -> None:
     _ok("proveniência de vídeos reaproveitados, corrupção e preservação das reservas")
 
 
+def teste_migracao_e_copia_auditada() -> None:
+    import unittest
+    from test_registrar_legado import TestColisaoLegada
+    from test_preparar_corpus_auditado import TestPreparacao
+
+    suite = unittest.TestSuite(
+        unittest.defaultTestLoader.loadTestsFromTestCase(cls)
+        for cls in (TestColisaoLegada, TestPreparacao))
+    if not unittest.TextTestRunner(verbosity=2).run(suite).wasSuccessful():
+        raise AssertionError("regressões da regularização de legado falharam")
+    _ok("migração de colisões e cópia auditada sem alterar originais")
+
+
 def main() -> None:
     import tempfile
 
@@ -198,6 +211,7 @@ def main() -> None:
     with tempfile.TemporaryDirectory() as tmp:
         teste_manifesto(Path(tmp))
         teste_proveniencia_ingestao(Path(tmp))
+    teste_migracao_e_copia_auditada()
     print("[selftest] tudo OK — a receita de ingestão está coerente com o repositório.")
 
 
