@@ -85,4 +85,7 @@ dependencies {
   androidTestImplementation(libs.androidx.ui.test.junit4)
   androidTestImplementation(libs.androidx.test.uiautomator)
   androidTestImplementation(libs.androidx.test.rules)
+  // Libras Livre: testes de paridade numérica (LandmarkNormalizer/HandGapImputer contra
+  // computer-vision-model/treino) — puro JVM, sem Android, não precisa de emulador.
+  testImplementation(libs.junit)
 }
