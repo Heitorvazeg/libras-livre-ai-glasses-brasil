@@ -119,13 +119,53 @@ Os 3 canais RGB são 3 frames consecutivos; mexer neles mudaria o significado da
 representação. A imagem fica 50% mais larga e o redimensionamento para 224×224 absorve,
 exatamente como já absorve clipes de durações diferentes.
 
-## Como rodar
+## Onde rodar
 
-1. Abrir o notebook no Colab, **GPU ligada**.
+O notebook detecta o ambiente e se adapta (`EM_COLAB` / `EM_KAGGLE`). A diferença que
+importa é **onde os resultados sobrevivem**:
+
+| | Execução em background | Resultados sobrevivem à queda de conexão |
+|---|---|---|
+| **Kaggle** | sim (*Save & Run All*) | sim — viram output da versão |
+| Colab grátis | não | só se `EXP` estiver no Drive (o notebook faz isso) |
+| Colab Pro | sim | idem |
+
+**Kaggle é a recomendação** para quem não consegue ficar conectado: o notebook roda na
+infra deles, você fecha o navegador e volta depois. É grátis, com cota semanal de GPU
+(~30 h — confira na sua conta) folgada para as ~15 h que este projeto precisa.
+
+### Passo a passo no Kaggle
+
+1. **Verificar o telefone** em Settings → Phone Verification. É pré-requisito para GPU
+   **e para internet** no notebook; sem isso os passos abaixo não funcionam.
+2. **Subir o pacote como dataset privado:** Datasets → New Dataset → arraste
+   `landmarks-minds.tar.gz` → deixe **Private**. O título tem de gerar o slug
+   **`libras-landmarks`**, porque é o caminho que o notebook procura
+   (`/kaggle/input/libras-landmarks`).
+3. **Importar o notebook:** baixe o `.ipynb` do GitHub (botão *Raw* / *Download*) e use
+   Create → New Notebook → File → Import Notebook.
+4. **Anexar o dataset:** painel da direita → Input → Add Input → seu dataset privado.
+5. **Ligar GPU e internet:** painel da direita → Notebook options → Accelerator: **GPU**
+   (T4 ou P100) e Internet: **On**. A internet é obrigatória — a primeira célula clona
+   este repositório do GitHub. Se estiver desligada, o notebook aborta com essa dica.
+6. **Rodar:** *Save Version → Save & Run All (Commit)* executa tudo em background.
+7. **Pegar os resultados:** aba **Output** da versão.
+
+⚠️ *Save & Run All* roda o notebook **inteiro**, incluindo a célula opcional do ST-GCN
+(mais de 1h30). Se quiser só o experimento principal, esvazie `GCN_VARIANTES` e
+`RESNET_EXTRA` antes de commitar, ou rode interativo e pare depois da comparação.
+
+### No Colab
+
+1. Abrir o notebook, **GPU ligada** (Ambiente de execução → Alterar tipo).
 2. A célula de ambiente clona `poc/tres-coordenadas` — a branch precisa estar **no
    GitHub**, senão o clone falha.
-3. Subir `landmarks-minds.tar.gz` (só esse; esta PoC não pré-treina).
-4. Rodar as três variantes (~minutos cada em T4) e a célula de comparação.
+3. A célula de preparação **monta o Drive antes de treinar** e grava `EXP` lá dentro.
+   Isso é deliberado: copiar no fim só protege quem chegou ao fim, e o mount é
+   interativo — se ficasse depois da rodada longa, pediria autorização exatamente na
+   hora em que você já poderia ter caído.
+4. Subir `landmarks-minds.tar.gz` (só esse; esta PoC não pré-treina).
+5. Rodar as três variantes (~minutos cada em T4) e a célula de comparação.
 5. Célula opcional (§5 do notebook) responde mais duas perguntas — ver abaixo.
 
 ## Célula opcional: ST-GCN e a imputação pareada
