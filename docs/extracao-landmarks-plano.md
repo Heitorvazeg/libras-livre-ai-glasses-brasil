@@ -11,6 +11,40 @@
 
 ---
 
+## 0. Revisão de 2026-09-10 — Fases 1/2 feitas, 2 canais (não 3), GCN em 95,6%
+
+1. **Fases 1 e 2 implementadas e commitadas**: `libras/LandmarkNormalizer.kt`
+   (normalização por ombros) e `libras/HandGapImputer.kt` (imputação online de
+   lacunas de mão, portagem causal de `treino/dados.py:imputar_maos`) —
+   ambos com testes JVM (`app/src/test/`, sem emulador). Ver §6.
+2. **2 canais (x, y), não 3 — reverte a decisão do §3 item 2.** O modelo em
+   treino usa `canais_ent=2` (`treino/gcn.py`) e `arr[:, :, :2]`
+   (`treino/dados.py`) **de verdade**, não é uma aposta em z como a versão
+   original deste documento registrava. `LandmarkNormalizer` não calcula
+   nem carrega z em lugar nenhum. Isso também **remove** a dependência
+   externa que a Fase 4 (§6) registrava ("se o treino migrar pra 3
+   canais...") — não tem migração nenhuma a esperar, porque 2 canais já é
+   o que existe.
+3. **A acurácia do GCN medida é 95,6%, não 44,6%.** O resultado antigo
+   (§2.6, §3 item 1) vinha de um bug que efetivamente só populava ~21
+   pontos do vetor de 57, não de limitação do modelo em si. O GCN deixa de
+   ser "o alvo apesar do resultado atual" — é a escolha validada.
+4. **Fase 0 (§6) está fora do escopo de quem implementou isto** — mexe em
+   documentação/código de `computer-vision-model/`, pasta em que outra
+   pessoa está trabalhando. Não foi feita, e não deveria ser feita por
+   quem só mexe em `mobile-app-companion/`.
+5. **`SignBoundaryDetector` (Fase 4) foi implementado** — ver
+   `docs/sign-boundary-detector-plano.md` (revisado na mesma data, §0
+   daquele documento). A integração descrita no §6 Fase 4 abaixo está
+   **feita**, com uma ressalva: o classificador ligado hoje é
+   `PlaceholderSignClassifier` (`.tflite` real ainda não existe — mesma
+   dependência bloqueante já registrada aqui e lá), e `TemporalResampler.kt`
+   (Fase 3, reamostragem pra 64 frames) **não foi implementado** — o
+   placeholder não precisa de tensor de tamanho fixo, só o classificador
+   real vai precisar (ver §6 Fase 3/4 revisadas).
+
+---
+
 ## 1. Objetivo
 
 Dois problemas, uma causa raiz comum (o repo tem duas versões conflitantes de
@@ -62,11 +96,14 @@ componentes isoladas do grafo.
 
 ### 2.3 Canais e tempo
 
-- **Hoje: 2 canais (x, y), sem z.** `treino/dados.py` carrega o `.npy` (que
-  tem 3 dims) e descarta a terceira na leitura: `arr[:, :, :2]`.
-  `treino/gcn.py` constrói o modelo com `canais_ent=2` por padrão.
-- **Este plano usa 3 canais (x, y, z)** — decisão explícita (§3, item 2),
-  contra o que está medido hoje (ver a ressalva ali).
+- **2 canais (x, y), sem z — [REVISADO, §0 item 2] confirmado como a
+  implementação final, não mais uma decisão em aberto.** `treino/dados.py`
+  carrega o `.npy` (que tem 3 dims) e descarta a terceira na leitura:
+  `arr[:, :, :2]`. `treino/gcn.py` constrói o modelo com `canais_ent=2` por
+  padrão. A versão original deste documento registrava uma decisão
+  consciente de usar 3 canais mesmo assim (aposta em z ajudar o GCN, ver
+  §3 item 2 original) — revertida: `LandmarkNormalizer.kt` implementa só
+  x,y.
 - **Tempo reamostrado pra 64 frames fixos** (`T_FIXO`), por interpolação
   linear, **não causal** — o modelo classifica o clipe inteiro de uma vez, só
   depois de completo. Isso casa bem com o `SignBoundaryDetector`: ele entrega
@@ -107,7 +144,13 @@ Dois modelos já foram treinados e avaliados nesse protocolo (leave-one-signer-o
 | Modelo | Acurácia medida | Parâmetros | Formato de entrada |
 |---|---|---|---|
 | Skeleton-DML + ResNet-18 (`resultados-resnet/relatorio.md`) | **93,4%** (bate com a literatura) | ~11M | imagem 224×224×3 (`treino/representacao.py`) |
-| **GCN** (`resultados-gcn/relatorio.md`) | **44,6%** | ~0,4M | grafo (2, 64, 57) — o que este documento assume |
+| **GCN** (`resultados-gcn/relatorio.md`) | ~~44,6%~~ **95,6%** [REVISADO, §0 item 3] | ~0,4M | grafo (2, 64, 57) — o que este documento assume |
+
+**[REVISADO, §0 item 3]** O número de 44,6% abaixo vinha de um bug que
+populava só ~21 dos 57 pontos do vetor, não de limitação do GCN — corrigido,
+o resultado real é 95,6%, acima da ResNet. O parágrafo original ("GCN é o
+alvo apesar do resultado atual") fica registrado por transparência, não
+vale mais:
 
 GCN é o alvo deste plano **apesar** do resultado atual (decisão registrada em
 §3, item 1) — o conserto do modelo (por que 44,6% e não ~93%, igual ResNet)
@@ -116,26 +159,27 @@ extração/pré-processamento mobile.
 
 ## 3. Decisões tomadas
 
-1. **GCN é o alvo pro `.tflite`, mesmo com 44,6% de acurácia medida hoje.**
-   Motivo: é o único candidato pequeno o bastante pro celular (~0,4M
-   parâmetros vs. ~11M da ResNet-18, que teria viabilidade de rodar em
-   `.tflite` não avaliada). O conserto da acurácia (bug de treino,
-   hiperparâmetro, mais épocas — não investigado) é trabalho de
-   `computer-vision-model/treino/`, tratado aqui como dependência externa
-   bloqueante pra Fase de integração real (§7), não como algo a resolver
-   neste plano.
+1. **[REVISADO, §0 item 3] GCN é o alvo pro `.tflite` — 95,6% de acurácia
+   medida, não mais 44,6%.** Motivo original ainda vale (é o único candidato
+   pequeno o bastante pro celular: ~0,4M parâmetros vs. ~11M da ResNet-18),
+   mas deixou de ser "apesar do resultado atual": o resultado baixo vinha de
+   um bug que populava só ~21 dos 57 pontos, não de limitação do modelo —
+   corrigido, o GCN bate a ResNet (93,4%). A exportação pra `.tflite`
+   continua sendo trabalho de `computer-vision-model/treino/`, tratada aqui
+   como dependência externa bloqueante só pra ter um classificador REAL
+   (`docs/sign-boundary-detector-plano.md` §5.4) — não bloqueia mais fechar
+   a orquestração (ver item 2 do §0 daquele documento).
 
-2. **Usar x, y, z (3 canais), não só x, y — decisão consciente contra um dado
-   medido.** `PoC/config.yaml` documenta, medido em 430 clipes: desligar o z
-   melhorou a acurácia do baseline DTW em ~4-6 pontos (64,0% → 68,7%),
-   porque o z da mão é relativo ao punho e o z da pose é relativo ao quadril
-   — referenciais diferentes somados no mesmo vetor viravam ruído pro DTW.
-   **Essa medição foi no DTW, não no GCN** — um modelo com peso aprendido por
-   aresta pode, em tese, aprender a calibrar essa diferença de referencial de
-   um jeito que uma métrica de distância fixa não consegue. Não está
-   validado que o GCN se beneficia do z; também não está validado que ele
-   sofre o mesmo problema do DTW. Fica registrado como aposta explícita, a
-   confirmar quando houver `.tflite` de verdade pra comparar (ver §8).
+2. **[REVISADO, §0 item 2] Usar só x, y (2 canais) — a aposta em z do
+   parágrafo original foi revertida.** `PoC/config.yaml` documenta, medido
+   em 430 clipes: desligar o z melhorou a acurácia do baseline DTW em ~4-6
+   pontos (64,0% → 68,7%). O parágrafo original especulava que o GCN
+   poderia se beneficiar do z mesmo assim (peso aprendido por aresta vs.
+   métrica de distância fixa do DTW) e registrava isso como aposta a
+   confirmar. Não foi confirmada nem refutada por medição — a decisão final
+   foi simplesmente alinhar com o que já está em produção no treino
+   (`canais_ent=2`, `arr[:, :, :2]`), sem introduzir uma divergência entre
+   o que o app monta e o que o modelo realmente espera.
 
 3. **57 pontos = 42 mãos (as DUAS) + 4 tronco + 4 braços + 7 face —
    `computer-vision-model/src/` (1 mão só) está morto e não é a referência.**
@@ -173,37 +217,50 @@ FrameLandmarks (pose[33] + leftHand[21]? + rightHand[21]?)
 ① Subconjunto de pose → 15 pontos, na ordem de pose_indices (§2.1)
         │  novo: hoje esse subconjunto só existe no servidor (frame_normalizado)
         ▼
-② Conversão pra pixel (x·W, y·H, z·W) usando width/height do frame
-        │  já disponíveis no payload hoje (LandmarkApi.kt já manda width/height)
+② Conversão pra pixel (x·W, y·H) usando width/height do frame — [REVISADO,
+        │  §0 item 2] sem z·W, ver §2.3
         ▼
 ③ Normalização: origem = meio dos ombros, escala = distância entre ombros (x,y)
-        │  aplica aos 57 pontos, incluindo z (§3, item 2)
+        │  aplica aos 57 pontos — só x,y (§0 item 2, era "incluindo z")
         ▼
-④ Vetor de 57 pontos por frame: [pose(15) | mão_esq(21) | mão_dir(21)]
+④ Vetor de 57 pontos por frame x 2 canais: [pose(15) | mão_esq(21) | mão_dir(21)]
         │  mão ausente → zeros (convenção já usada hoje)
         ▼
-⑤ Imputação de lacunas curtas de mão (§2.5) — NOVO, não existe em lugar nenhum hoje
+⑤ Imputação de lacunas curtas de mão (§2.5)
         ▼
 ⑥ (SignBoundaryDetector consome a sequência daqui pra medir deslocamento —
-        já documentado em sign-boundary-detector-plano.md §4.1)
+        docs/sign-boundary-detector-plano.md §4.1 — FEITO, §0 item 5)
         │
         │  quando o SignBoundaryDetector fecha um segmento (boundary):
         ▼
 ⑦ Reamostragem pra 64 frames fixos (interpolação linear, por ponto e canal)
+        │  NÃO IMPLEMENTADO (§0 item 5) — só necessário pro classificador
+        │  REAL; PlaceholderSignClassifier aceita qualquer tamanho de segmento
         ▼
-⑧ Tensor (3, 64, 57) → SignClassifier.classify() → `.tflite`
+⑧ Tensor (2, 64, 57) → SignClassifier.classify() → `.tflite`
 ```
+
+**[REVISADO, §0]** Status de cada passo: ①-⑥ implementados e em uso
+(`LandmarkNormalizer.kt`, `HandGapImputer.kt`,
+`SignBoundaryDetector.kt` — este na branch/plano irmão); ⑦
+(`TemporalResampler.kt`) não implementado, não bloqueia o fluxo hoje porque
+o classificador ligado é o placeholder (§5.2 de
+`docs/sign-boundary-detector-plano.md`) — só passa a ser necessário quando
+o `.tflite` real (que exige tensor de tamanho fixo) for integrado.
 
 ### 4.1 Onde isso vive
 
-`libras/LandmarkNormalizer.kt` (novo) — cobre ①-⑤, chamado pelo
+`libras/LandmarkNormalizer.kt` **(feito)** — cobre ①-④, chamado pelo
 `LandmarkPipeline.kt` no mesmo ponto onde os frames já são extraídos, antes
 de `SignBoundaryDetector.onFrame()` e antes de acumular pro classificador.
 Único dono da normalização — nem `SignBoundaryDetector` nem `SignClassifier`
 reimplementam esse cálculo (§3, item 5).
 
+`libras/HandGapImputer.kt` **(feito)** — cobre ⑤, mesmo ponto de integração.
+
 `libras/TemporalResampler.kt` (novo, ou função dentro de `SignClassifier.kt`)
 — cobre ⑦, chamado só quando um segmento fecha (não frame a frame).
+**Ainda não implementado** — ver nota de status acima.
 
 ### 4.2 Ambiguidades a resolver durante a implementação, não neste documento
 
@@ -239,6 +296,10 @@ simples (§7, Fases 0-2), não misturados com o desenho do pipeline mobile:
 ## 6. Plano de implementação faseado
 
 ### Fase 0 — Corrigir documentação e remover código morto (baixo risco)
+**[REVISADO, §0 item 4] Fora do escopo de quem implementa em
+`mobile-app-companion/` — mexe só em `computer-vision-model/`, pasta de
+outra pessoa. Não feita, registrada aqui só pra quem trabalhar naquela
+pasta puder retomar.**
 - [ ] Deprecar/remover `computer-vision-model/src/` e
   `scripts/01_extract_landmarks.py`, `02_train.py`, `03_export_tflite.py`
   (todos dependem do scaffold morto) — decisão de deletar vs. arquivar em
@@ -252,51 +313,73 @@ simples (§7, Fases 0-2), não misturados com o desenho do pipeline mobile:
 - **Critério de sucesso**: nenhum documento do repo descreve landmark
   extraction de um jeito que diverge do `PoC/extract.py`/`treino/`.
 
-### Fase 1 — `LandmarkNormalizer.kt` isolado
-- [ ] Implementar ①-④ (§4): subconjunto de pose, conversão pra pixel,
-  normalização por ombros, montagem do vetor de 57 pontos.
-- [ ] Teste comparando saída contra `extract.py` rodado no mesmo frame
-  (mesmo vídeo, mesmo timestamp) — paridade numérica, não só estrutural.
-- **Critério de sucesso**: diferença desprezível (definir tolerância) entre
-  a normalização em Kotlin e a em Python pro mesmo frame de entrada.
+### Fase 1 — `LandmarkNormalizer.kt` isolado — **[FEITA, §0 item 1]**
+- [x] Implementar ①-④ (§4): subconjunto de pose, conversão pra pixel,
+  normalização por ombros, montagem do vetor de 57 pontos x 2 canais.
+- [x] Teste (`LandmarkNormalizerTest`, `app/src/test/`) — **ressalva**: é
+  fórmula-contra-valores-calculados-à-mão, não paridade cross-language
+  executando `extract.py` de verdade (este ambiente não tem
+  numpy/mediapipe instalados). Rodar `extract.py` num frame real e
+  comparar byte a byte continua sendo o próximo passo de validação
+  recomendado antes de confiar nisto em produção.
+- **Critério de sucesso**: parcialmente atingido — a fórmula e o
+  mapeamento de índices estão verificados; paridade numérica cross-language
+  de verdade continua pendente.
 
-### Fase 2 — Imputação de lacunas (§2.5)
-- [ ] Portar `imputar_maos` pra Kotlin — mas **online**: `treino/dados.py`
-  interpola sabendo o clipe inteiro (pode olhar pra frente); no app, a
-  lacuna só pode ser fechada quando a mão reaparece, então a imputação tem
-  que ser aplicada em retrospecto sobre o buffer já acumulado, não em tempo
-  real frame a frame. Mesma diferença online/causal já registrada em
-  `sign-boundary-detector-plano.md` §6 — vale a pena reler antes de
-  implementar.
-- **Critério de sucesso**: sequência processada bate com a versão offline
-  (Python) pro mesmo clipe gravado.
+### Fase 2 — Imputação de lacunas (§2.5) — **[FEITA, §0 item 1]**
+- [x] Portar `imputar_maos` pra Kotlin (`HandGapImputer.kt`) — **online**:
+  `treino/dados.py` interpola sabendo o clipe inteiro (pode olhar pra
+  frente); no app, a lacuna só é fechada quando a mão reaparece, aplicada
+  em retrospecto sobre o buffer já acumulado. Mesma diferença online/causal
+  já registrada em `sign-boundary-detector-plano.md` §6.
+- [x] Teste (`HandGapImputerTest`) — porta o fixture exato de
+  `treino/selftest.py::teste_imputacao_maos` (lacuna curta preenchida,
+  longa preservada, pose intacta).
+- **Critério de sucesso**: atingido pro fixture sintético portado; não
+  validado contra um clipe real gravado (mesma ressalva de dado real da
+  Fase 1).
 
-### Fase 3 — `TemporalResampler.kt`
+### Fase 3 — `TemporalResampler.kt` — **não implementada**
 - [ ] Implementar a reamostragem linear pra 64 frames (equivalente a
   `treino/gcn.py:para_sequencia`).
+- **Por que não foi feita agora**: só é necessária pra alimentar um
+  classificador que exige tensor de tamanho fixo — o `.tflite` real, que
+  não existe (§5.4 item 1 de `sign-boundary-detector-plano.md`). O
+  `PlaceholderSignClassifier` ligado hoje aceita segmentos de qualquer
+  tamanho, então fechar a Fase 4 (abaixo) não dependeu disto.
 - **Critério de sucesso**: mesma saída (tolerância numérica) que a versão
-  Python pro mesmo segmento de entrada.
+  Python pro mesmo segmento de entrada — continua válido pra quando for
+  implementada.
 
-### Fase 4 — Integração com `SignBoundaryDetector` e `SignClassifier`
-- [ ] Ligar `LandmarkNormalizer` como fonte dos dados que
-  `SignBoundaryDetector` usa pra medir deslocamento (§3, item 5) — hoje
-  aquele documento assume normalização, mas não especifica de onde ela vem.
-- [ ] Ligar `TemporalResampler` + o tensor `(3, 64, 57)` como entrada do
-  `SignClassifier` (`sign-boundary-detector-plano.md` §5.2) — **bloqueado
-  pela exportação do `.tflite`** (mesma dependência já registrada lá).
-- [ ] **Bloqueado por decisão externa**: se o treino migrar pra 3 canais
-  (§3, item 2), `treino/dados.py` (`carregar()`, hoje `arr[:,:,:2]`) e
-  `treino/gcn.py` (`canais_ent=2` por padrão) precisam mudar em conjunto —
-  não é trabalho deste plano, mas sem isso o `.tflite` exportado é
-  incompatível com o tensor de 3 canais que este pipeline vai produzir.
-- **Critério de sucesso**: um sinal capturado ponta a ponta (câmera →
-  landmarks → normalização → boundary → reamostragem → tensor) bate
-  numericamente com o mesmo clipe processado pelo pipeline Python.
+### Fase 4 — Integração com `SignBoundaryDetector` e `SignClassifier` — **[FEITA, §0 item 5, com ressalva]**
+- [x] Ligar `LandmarkNormalizer` como fonte dos dados que
+  `SignBoundaryDetector` usa pra medir deslocamento — `LandmarkPipeline.kt`
+  chama `LandmarkNormalizer.normalize()` e alimenta o resultado tanto pro
+  `HandGapImputer` (acumula o segmento) quanto pro `SignBoundaryDetector`
+  (mede deslocamento), na mesma chamada.
+- [x] Ligar `SignClassifier` — hoje `PlaceholderSignClassifier`, recebendo
+  `List<Array<FloatArray>>` (a saída do `HandGapImputer`) diretamente, sem
+  passar por `TemporalResampler` (ver Fase 3).
+- [ ] **Ainda bloqueado**: trocar `PlaceholderSignClassifier` por um
+  `TfliteSignClassifier` de verdade — depende da exportação do `.tflite`
+  (fora deste repo/branch) e, quando isso acontecer, também da Fase 3
+  (`TemporalResampler`), que o tensor de tamanho fixo do `.tflite` vai
+  exigir.
+- ~~Bloqueado por decisão externa: se o treino migrar pra 3 canais~~ — **não
+  se aplica mais** (§0 item 2): o pipeline já usa 2 canais, o mesmo que o
+  treino já usa hoje. Não tem migração nenhuma a esperar.
+- **Critério de sucesso**: parcialmente atingido — o ciclo boundary→
+  classificar(placeholder)→acumular→falar roda de ponta a ponta (ver
+  `docs/sign-boundary-detector-plano.md` Fase 3a); bater numericamente com
+  o pipeline Python só é verificável quando houver `.tflite` real e
+  `TemporalResampler` pra comparar.
 
 ## 7. Decisões e riscos em aberto
 
-1. **z ajuda ou atrapalha o GCN?** Não validado (§3, item 2) — só dá pra
-   medir com o `.tflite` treinado nos dois formatos.
+1. ~~z ajuda ou atrapalha o GCN?~~ **[RESOLVIDO/MOOT, §0 item 2]** Não
+   estamos usando z de jeito nenhum — a pergunta deixou de fazer sentido
+   pra este pipeline. Fica só como nota histórica: se algum dia alguém
+   quiser reabrir a aposta em z, esta era a pergunta original.
 2. **MediaPipe Holistic pode estar disponível pro Android agora** —
    pesquisa recente indica que "Holistic Landmark Detection" está listado
    como suportado em Android na documentação atual do MediaPipe Tasks, o que
@@ -304,23 +387,28 @@ simples (§7, Fases 0-2), não misturados com o desenho do pipeline mobile:
    treino) de uma vez. **Não verificado contra a versão exata do SDK fixada
    no projeto** (`com.google.mediapipe:tasks-vision:0.10.14`,
    `app/build.gradle.kts`) — precisa confirmar API/classe disponível antes
-   de decidir trocar `LandmarkExtractor.kt`.
-3. **Correção de acurácia do GCN (44,6% → esperado ~93%)** — dependência
-   externa bloqueante pra Fase 4, mas fora do escopo deste documento (é
-   trabalho de `computer-vision-model/treino/`, não de extração/mobile).
+   de decidir trocar `LandmarkExtractor.kt`. Ainda em aberto, sem mudança.
+3. ~~Correção de acurácia do GCN (44,6% → esperado ~93%)~~ **[RESOLVIDO,
+   §0 item 3]** — medida em 95,6%, acima da ResNet. Não é mais uma
+   dependência bloqueante pra fechar a orquestração (só pra ter o
+   classificador REAL, que segue dependendo da exportação `.tflite`).
 4. **Deletar vs. arquivar o scaffold morto** (`src/`, `scripts/01-03`) —
-   ação destrutiva, decisão de produto/repo mais que técnica.
+   ação destrutiva, decisão de produto/repo mais que técnica. **Fora do
+   escopo de quem implementou esta revisão** (§0 item 4, mesmo motivo da
+   Fase 0) — quem mexer em `computer-vision-model/` decide.
 5. **Formato exato do tensor de entrada/saída do `.tflite`** só será
    conhecido quando a exportação acontecer (mesma dependência já registrada
    em `sign-boundary-detector-plano.md` §5.1/§5.4) — o desenho aqui assume
-   `(3, 64, 57)` seguindo `gcn.py`, mas o processo de exportação pode expor
-   detalhes (nome dos tensores, quantização) que mudam a interface exata do
-   `SignClassifier`.
+   `(2, 64, 57)` **[REVISADO, §0 item 2 — era (3, 64, 57)]** seguindo
+   `gcn.py`, mas o processo de exportação pode expor detalhes (nome dos
+   tensores, quantização) que mudam a interface exata do `SignClassifier`.
+   Ainda em aberto — depende da exportação, não feita.
 
 ## 8. Referências
 
 - `computer-vision-model/treino/gcn.py` — estrutura do grafo, `T_FIXO=64`,
-  `canais_ent`, resultado medido (`resultados-gcn/relatorio.md`, 44,6%).
+  `canais_ent`, resultado medido (`resultados-gcn/relatorio.md`, 95,6% —
+  ver §0 item 3, corrige o 44,6% registrado na versão original deste doc).
 - `computer-vision-model/treino/dados.py` — carga dos `.npy`, imputação de
   lacunas de mão, descarte do z na leitura atual.
 - `computer-vision-model/treino/resultados-resnet/relatorio.md` — 93,4%,
@@ -335,6 +423,7 @@ simples (§7, Fases 0-2), não misturados com o desenho do pipeline mobile:
   pra versão online (§6, Fase 2).
 - `docs/sign-boundary-detector-plano.md` — consumidor direto deste pipeline
   (`SignBoundaryDetector` mede deslocamento sobre a saída normalizada;
-  `SignClassifier` consome o tensor reamostrado).
+  `SignClassifier` consome os frames acumulados) — implementado, ver §0
+  item 5 deste documento e §0 daquele.
 - `docs/orquestracao-dialogo-audio-plano.md` — consome o resultado final
   (sinais reconhecidos), sem depender de nenhum detalhe deste documento.

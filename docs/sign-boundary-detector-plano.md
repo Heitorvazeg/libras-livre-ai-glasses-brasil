@@ -423,36 +423,45 @@ resolvidos por quem tiver acesso a eles.
   enfrentar em produção. Esta fase calibra a ordem de grandeza dos
   parâmetros, não os valores finais.
 
-### Fase 2 — `SignBoundaryDetector` isolado
-- [ ] Implementar o algoritmo completo do §4 (deslocamento mãos+braços sobre
+### Fase 2 — `SignBoundaryDetector` isolado — **[FEITA, 2026-09-10]**
+- [x] Implementar o algoritmo completo do §4 (deslocamento mãos+braços sobre
   a saída de `LandmarkNormalizer`, estado SINALIZANDO⇄PARADO, tolerância a
   oclusão) — parâmetros do §4.4 como constantes **não calibradas** (Fase
-  0/1 bloqueadas, ver acima).
-- [ ] Teste unitário (JVM puro, sem emulador — mesmo padrão de
-  `HandGapImputerTest`/`LandmarkNormalizerTest`): sequências sintéticas de
-  deslocamento simulando sinal→pausa→sinal, oclusão curta vs. longa,
-  conferindo que os boundaries saem nos pontos esperados dado os parâmetros
-  atuais — não é validação empírica (isso é Fase 0/1), é conferir que a
-  máquina de estados do §4.2/§4.3 está implementada certo.
-- **Critério de sucesso** (o que dá pra validar sem device): boundaries
-  corretos pra sequências sintéticas com transição clara. Validar contra
-  sinalização real (falsos cortes, cortes tardios) continua pendente de
-  device — critério original mantido pra quando isso for possível.
+  0/1 bloqueadas, ver acima) — `SignBoundaryDetector.kt`.
+- [x] Teste unitário (`SignBoundaryDetectorTest`, JVM puro, sem emulador —
+  mesmo padrão de `HandGapImputerTest`/`LandmarkNormalizerTest`): 7 casos —
+  pausa sustentada dispara boundary, movimento contínuo não dispara cedo,
+  oclusão total sustentada dispara, oclusão de uma mão só não conta como
+  oclusão total, segmento curto demais não dispara, `DURACAO_MAXIMA_MS`
+  força boundary mesmo sem pausa, `forcarFechamento()` só dispara
+  SINALIZANDO. Confirma a máquina de estados do §4.2/§4.3 — **não** é
+  validação empírica (isso segue sendo Fase 0/1, bloqueada).
+- **Critério de sucesso**: atingido pro que dá pra validar sem device
+  (boundaries corretos em sequências sintéticas). Validar contra
+  sinalização real continua pendente de device.
 
-### Fase 3a — Fecha a orquestração com `SignClassifier` placeholder [NOVO]
-- [ ] Implementar a interface `SignClassifier` (§5.2) + a
-  implementação-placeholder.
-- [ ] Ligar `SignBoundaryDetector` a `SignClassifier`: a cada boundary,
-  classifica o segmento.
-- [ ] Reestruturar `LandmarkPipeline`/`DialogOrchestrator` pro modelo de
-  buffer de palavras (§5.3) — substitui o `stopCollectingAndClassify()`
-  de sessão única.
-- [ ] Cobrir o caso de borda do §5.3 (sessão fecha com segmento em aberto)
-  com um teste.
-- **Critério de sucesso**: o ciclo sessão→boundary→classificar(placeholder)→
-  acumular→"encerrar"→frase→TTS roda de ponta a ponta (pode ser testado com
-  `MockDeviceKit`/segmentos sintéticos, não precisa de sinalização real nem
-  do `.tflite`) — é isto que "fecha a orquestração" sem o modelo.
+### Fase 3a — Fecha a orquestração com `SignClassifier` placeholder — **[FEITA, 2026-09-10]**
+- [x] Implementar a interface `SignClassifier` (§5.2) + `PlaceholderSignClassifier`.
+- [x] Ligar `SignBoundaryDetector` a `SignClassifier`: a cada boundary,
+  `LandmarkPipeline.classificarSegmentoAtual()` classifica o segmento
+  acumulado pelo `HandGapImputer` desde o boundary anterior.
+- [x] Reestruturado `LandmarkPipeline` (`startSession()`/`endSession()`
+  substituem `startCollecting()`/`stopCollectingAndClassify()`) e
+  `DialogOrchestrator` (buffer `palavrasReconhecidas`, junta com espaço ao
+  "encerrar" — §5.3) pro modelo de sessão com vários sinais.
+- [x] Caso de borda do §5.3 (sessão fecha com segmento em aberto): `LandmarkPipeline.endSession()`
+  é `suspend`, chama `SignBoundaryDetector.forcarFechamento()` e aguarda
+  (`Job.joinAll()`) todas as classificações em voo — inclusive a forçada —
+  antes de devolver o controle; `DialogOrchestrator.endSignSession()` só
+  junta e fala a frase depois disso.
+- **Efeito colateral necessário**: `libras/LandmarkApi.kt` foi removido
+  (nada mais o chamava — `SignClassifier` assumiu o papel, §5.2), junto com
+  `BuildConfig.LIBRAS_API_BASE_URL` e `res/xml/network_security_config.xml`
+  (existiam só pra essa chamada de rede).
+- **Critério de sucesso**: atingido — o ciclo sessão→boundary→
+  classificar(placeholder)→acumular→"encerrar"→frase→TTS compila e os
+  testes unitários cobrem a máquina de estados; testar com
+  `MockDeviceKit`/sinalização real ao vivo continua pendente de device.
 
 ### Fase 3b — Troca pro modelo real (bloqueada — fora deste repo/branch)
 - [ ] **Pré-requisito, fora deste repo/branch**: exportar o modelo GCN de
@@ -460,12 +469,17 @@ resolvidos por quem tiver acesso a eles.
   existe. Bloqueia só esta sub-fase, não a 3a.
 - [ ] Implementar `TfliteSignClassifier` (§5.2) carregando o `.tflite` via
   TensorFlow Lite `Interpreter`, trocando a implementação-placeholder da
-  Fase 3a.
+  Fase 3a — depende também de `TemporalResampler` (Fase 3 de
+  `docs/extracao-landmarks-plano.md`, também não implementada), já que um
+  `.tflite` treinado espera um tensor de tamanho fixo (64 frames).
 - [ ] Testar com sinalização contínua real (vários sinais em sequência) —
   confirmar que cada um é classificado corretamente e perto do momento em
   que terminou.
-- [ ] Rodar como um modo alternável (flag) inicialmente, comparando com a
-  versão de referência (ex.: `LandmarkApi`/DTW) antes de trocar o padrão.
+- [ ] Rodar como um modo alternável (flag) inicialmente. **A versão de
+  referência pra comparar (`LandmarkApi`/DTW) foi removida nesta revisão**
+  (§ "efeito colateral necessário" da Fase 3a) — se a comparação lado a
+  lado ainda for útil, é preciso reintroduzir um cliente da API só pra
+  esse propósito de debug, não reaproveitar código de produção.
 - **Critério de sucesso**: uma sequência de 3+ sinais reconhecidos
   corretamente, sem tocar a tela, cada classificação acontecendo perto do
   momento em que o sinal correspondente terminou.
