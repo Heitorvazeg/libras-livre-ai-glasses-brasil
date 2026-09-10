@@ -9,7 +9,9 @@
  *        decoder original; este é um segundo decoder só para inferência)
  *     -> android.media.Image (YUV) -> MediaPipe Pose+Hands (LandmarkExtractor)
  *     -> acumula os frames do sinal enquanto o usuário está "capturando"
- *     -> POST /classify (LandmarkApi) -> palavra -> TextToSpeech (Speaker)
+ *     -> POST /classify (LandmarkApi) -> palavra -> onRecognized (quem fala é o
+ *        DialogOrchestrator, via Speaker.speakAndAwait — ver
+ *        docs/orquestracao-dialogo-audio-plano.md §6.5)
  *
  * A SEGMENTAÇÃO (onde um sinal começa/termina) é manual nesta fase: o usuário
  * toca "capturar", sinaliza, toca "parar" — igual ao record.py da PoC. Detecção
@@ -48,8 +50,11 @@ class LandmarkPipeline(
     private val context: Context,
     private val scope: CoroutineScope,
     private val api: LandmarkApi,
-    private val speaker: Speaker,
     private val onState: (LibrasState.() -> LibrasState) -> Unit,
+    // Quem fala o resultado (e quando) é decisão do DialogOrchestrator, não deste pipeline — ver
+    // docs/orquestracao-dialogo-audio-plano.md §6.5.
+    private val onRecognized: (sinal: String) -> Unit,
+    private val onRecognitionFailed: () -> Unit = {},
 ) {
 
   companion object {
@@ -121,11 +126,12 @@ class LandmarkPipeline(
       resultado
           .onSuccess { r ->
             onState { copy(isClassifying = false, lastResult = r, error = null) }
-            speaker.speak(r.sinal)
+            onRecognized(r.sinal)
           }
           .onFailure { e ->
             Log.e(TAG, "Falha na classificação", e)
             onState { copy(isClassifying = false, error = e.message ?: "Falha ao classificar") }
+            onRecognitionFailed()
           }
     }
   }

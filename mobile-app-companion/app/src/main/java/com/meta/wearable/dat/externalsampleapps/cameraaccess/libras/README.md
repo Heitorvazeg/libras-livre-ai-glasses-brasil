@@ -12,7 +12,7 @@ frames HEVC (CameraViewModel.handleVideoFrame)
       → android.media.Image → MediaPipe Pose+Hands (LandmarkExtractor)
       → acumula os frames do sinal enquanto "capturando"
       → POST /classify (LandmarkApi, landmarks crus)  → palavra
-      → TextToSpeech (Speaker)
+      → onRecognized(palavra)  → DialogOrchestrator fala via Speaker.speakAndAwait
 ```
 
 | Arquivo | Papel |
@@ -21,10 +21,16 @@ frames HEVC (CameraViewModel.handleVideoFrame)
 | `LandmarkExtractor.kt` | MediaPipe Pose+Hands → `FrameLandmarks` (pontos crus 0..1) |
 | `LandmarkApi.kt` | cliente HTTP de `POST /classify` (HttpURLConnection + org.json) |
 | `Speaker.kt` | TextToSpeech pt-BR |
+| `DialogOrchestrator.kt` | dono da sessão de diálogo (①→⑦) — decide quando capturar, falar, escutar |
+| `WakeWordDetector.kt` | gatilho da sessão — hoje só os botões de fallback (`ManualWakeWordDetector`) |
+| `AudioSessionManager.kt` | troca A2DP↔HFP pra escutar a resposta do atendente pelo mic dos óculos |
+| `SttEngine.kt` | transcrição da resposta do atendente |
 
 O estado (capturando / reconhecendo / resultado / erro) fica em
-`CameraUiState.libras` e é desenhado por `LibrasBanner` e `LibrasCaptureRow` em
-`ui/CameraScreen.kt`. A captura é acionada por `CameraViewModel.toggleSignCapture()`.
+`CameraUiState.libras` e é desenhado por `LibrasBanner` em `ui/CameraScreen.kt`. A
+captura é acionada pelo `DialogOrchestrator` (via `LandmarkPipeline.startCollecting()`/
+`stopCollectingAndClassify()`), disparado pelos botões "Iniciar"/"Encerrar"
+(`DialogControlRow`) — ver `docs/orquestracao-dialogo-audio-plano.md`.
 
 ## Decisão central: o app manda landmarks **crus**, o servidor normaliza
 
@@ -72,8 +78,8 @@ HTTP puro já está liberado para esses hosts em
 1. Suba a API (passo 2) e confirme `clipes_referencia > 0`.
 2. Rode o app no emulador. Menu de debug → **MockDeviceKit** → parear Ray-Ban Meta
    e escolher **Video file** como *camera source*, apontando para um vídeo de Libras.
-3. **Start session → Preview**. Com o preview ao vivo, toque **Capturar sinal**,
-   deixe o sinal acontecer, toque **Parar e reconhecer**.
+3. **Start session → Preview**. Com o preview ao vivo, toque **Iniciar** (abre a
+   sessão de captura), deixe o sinal acontecer, toque **Encerrar**.
 4. O banner mostra o sinal reconhecido e o TTS fala. Erros aparecem no banner.
 
 ## Ressalvas de paridade (a validar com dado real)
@@ -85,8 +91,10 @@ HTTP puro já está liberado para esses hosts em
 - **Esquerda/direita das mãos:** vêm da *handedness* do MediaPipe ("Left"/"Right").
 - **Rotação do feed:** assumida como 0. Se o vídeo dos óculos vier girado, ajustar a
   rotação no `LandmarkExtractor` (ImageProcessingOptions).
-- **Segmentação manual:** o usuário marca início/fim do sinal. Detecção automática de
-  pausa é trabalho futuro — começar manual tira essa variável da validação.
+- **Segmentação por wake word/botão:** a sessão inteira (não cada sinal) é marcada por
+  "Iniciar"/"Encerrar". Onde cada sinal começa/termina dentro da sessão é trabalho do
+  `SignBoundaryDetector` (`docs/sign-boundary-detector-plano.md`), ainda não integrado
+  aqui — por enquanto uma sessão classifica tudo que foi capturado como um só sinal.
 
 Este é um **andaime de validação da integração**, não a arquitetura final: o objetivo
 do projeto é on-device/offline. Ver `README.md` da raiz.
