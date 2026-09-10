@@ -138,10 +138,10 @@ infra deles, você fecha o navegador e volta depois. É grátis, com cota semana
 
 1. **Verificar o telefone** em Settings → Phone Verification. É pré-requisito para GPU
    **e para internet** no notebook; sem isso os passos abaixo não funcionam.
-2. **Subir o pacote como dataset privado:** Datasets → New Dataset → arraste
-   `landmarks-minds.tar.gz` → deixe **Private**. O título tem de gerar o slug
-   **`libras-landmarks`**, porque é o caminho que o notebook procura
-   (`/kaggle/input/libras-landmarks`).
+2. **Disponibilizar os landmarks como dataset privado:** aceite a pasta `landmarks/`
+   já extraída, com os `.npy` diretamente dentro, ou suba `landmarks-minds.tar.gz`
+   em Datasets → New Dataset → **Private**. O nome/slug é livre: por exemplo,
+   `libras_landmarks/landmarks/` funciona, **sem recompactar ou reenviar**.
 3. **Importar o notebook:** baixe o `.ipynb` do GitHub (botão *Raw* / *Download*) e use
    Create → New Notebook → File → Import Notebook.
 4. **Anexar o dataset:** painel da direita → Input → Add Input → seu dataset privado.
@@ -150,6 +150,18 @@ infra deles, você fecha o navegador e volta depois. É grátis, com cota semana
    este repositório do GitHub. Se estiver desligada, o notebook aborta com essa dica.
 6. **Rodar:** *Save Version → Save & Run All (Commit)* executa tudo em background.
 7. **Pegar os resultados:** aba **Output** da versão.
+
+A célula 6 procura a pasta ou pacote em `/kaggle/input`, inclusive em subpastas.
+Se houver vários candidatos, ela pede `ORIGEM_MINDS` com o caminho completo da
+entrada escolhida, em vez de selecionar arbitrariamente ou juntar dados.
+Valida nomes MINDS, arrays finitos `(T, 57, 3)` não vazios e sidecars opcionais;
+copia sem alterar o Input e não sobrescreve um destino preenchido. Clipes com
+menos de três frames continuam sujeitos ao descarte normal do treino.
+
+**Correções no notebook exigem reimportar o arquivo atualizado da branch
+`poc/tres-coordenadas` ou atualizar suas células no Kaggle.** Atualizar somente o
+clone Git não substitui as células abertas. Esse carregador é exclusivo da PoC;
+o notebook de pré-treino mantém a auditoria/proveniência obrigatória V-LIBRASIL.
 
 ⚠️ *Save & Run All* roda o notebook **inteiro**, incluindo a célula opcional do ST-GCN
 (mais de 1h30). Se quiser só o experimento principal, esvazie `GCN_VARIANTES` e
