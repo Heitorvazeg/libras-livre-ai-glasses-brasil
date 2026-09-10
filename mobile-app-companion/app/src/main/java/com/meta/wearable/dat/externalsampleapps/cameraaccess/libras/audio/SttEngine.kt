@@ -18,7 +18,7 @@
 // deve ter trocado pra HFP (acquireListening) antes de start() — é essa troca que faz a captura
 // vir do mic dos óculos em vez do mic do celular.
 
-package com.meta.wearable.dat.externalsampleapps.cameraaccess.libras
+package com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.audio
 
 import android.content.Context
 import android.content.Intent

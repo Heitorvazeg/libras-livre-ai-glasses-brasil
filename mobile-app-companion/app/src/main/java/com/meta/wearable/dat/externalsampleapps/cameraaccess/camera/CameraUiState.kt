@@ -17,8 +17,8 @@ import android.graphics.Bitmap
 import android.net.Uri
 import com.meta.wearable.dat.camera.types.StreamState
 import com.meta.wearable.dat.core.session.DeviceSessionState
-import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.DialogState
-import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.LibrasState
+import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.dialogo.DialogState
+import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.reconhecimento.LibrasState
 
 /** A capture awaiting preview/share — a still photo or a recorded video file. */
 sealed interface CapturePreview {

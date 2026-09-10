@@ -18,7 +18,7 @@
 // depois do callback de addOnCommunicationDeviceChangedListener, com um timeout de segurança pra
 // não travar se o SCO nunca conectar (ex.: óculos sem HFP pareado).
 
-package com.meta.wearable.dat.externalsampleapps.cameraaccess.libras
+package com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.audio
 
 import android.content.Context
 import android.media.AudioDeviceInfo

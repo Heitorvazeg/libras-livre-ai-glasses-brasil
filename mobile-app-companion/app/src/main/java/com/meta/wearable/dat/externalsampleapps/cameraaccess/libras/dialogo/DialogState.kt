@@ -15,7 +15,7 @@
 // reconhecimento (LandmarkPipeline / futuro SignBoundaryDetector — docs/sign-boundary-detector-plano.md),
 // não deste enum.
 
-package com.meta.wearable.dat.externalsampleapps.cameraaccess.libras
+package com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.dialogo
 
 enum class DialogState {
   /** ① Esperando "Libras Livre, iniciar" pra abrir uma nova sessão de sinais. */
