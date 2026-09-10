@@ -44,10 +44,14 @@ class DatasetSinais(Dataset):
 
     def __init__(self, clipes: list[dd.Clipe], rotulos: list[str],
                  permutacao: np.ndarray | None, aumentar: bool, semente: int = 0,
-                 arquitetura: str = "resnet", ossos: bool = False):
+                 arquitetura: str = "resnet", ossos: bool = False,
+                 movimento: bool = False, rodada: int = 0):
         self.arquitetura = arquitetura
+        self.rodada = rodada
+        self.epoca = 0
         # Árvore calculada uma vez, não por item: é a mesma para todos os clipes.
         self.pais = gg.pais() if (ossos and arquitetura == "gcn") else None
+        self.movimento = movimento and arquitetura == "gcn"
         self.clipes = clipes
         self.indice = {r: i for i, r in enumerate(rotulos)}
         self.permutacao = permutacao
@@ -61,9 +65,15 @@ class DatasetSinais(Dataset):
         clipe = self.clipes[i]
         seq = clipe.seq
         if self.aumentar:
-            # Semente por (época, índice) via torch: cada worker recebe um estado
-            # diferente, e a augmentação não repete igual toda época.
-            rng = np.random.default_rng(abs(hash((self.semente, i, torch.initial_seed()))) % 2**32)
+            # Semente EXPLÍCITA por (semente, rodada, época, índice). A versão
+            # anterior usava torch.initial_seed(), que depende do estado global —
+            # e o estado global já foi consumido pela construção do modelo, cuja
+            # quantidade de parâmetros muda entre variantes. Resultado: "mesma
+            # semente" dava augmentação diferente para cada variante, e a
+            # comparação pareada que eu prometi não existia. Também não incluía a
+            # época, então com workers=0 o mesmo clipe repetia a mesma augmentação
+            # a treino inteiro.
+            rng = np.random.default_rng([self.semente, self.rodada, self.epoca, i])
             seq = rp.aumentar(seq, rng, self.permutacao)
 
         if self.arquitetura == "gcn":
@@ -72,8 +82,18 @@ class DatasetSinais(Dataset):
             # esqueleto e derivar os ossos do resultado mantém os dois fluxos
             # coerentes. Derivar antes daria ossos da pose original colados numa
             # pose transformada.
+            valido = None
+            if self.movimento:
+                # Máscara ANTES dos ossos, a partir das coordenadas cruas: só há
+                # velocidade entre duas observações reais. Ver gg.com_movimento.
+                valido = np.ones(seq.shape[:2], dtype=bool)
+                for (a, b), ausente in zip(dd.BLOCOS_MAO, dd.maos_ausentes(seq)):
+                    valido[:, a:b] = ~ausente[:, None]
             if self.pais is not None:
                 seq = gg.com_ossos(seq, self.pais)
+            if self.movimento:
+                # Depois dos ossos: assim a velocidade cobre juntas E ossos.
+                seq = gg.com_movimento(seq, valido)
             t = torch.from_numpy(gg.para_sequencia(seq))
         else:
             img = rp.para_imagem(seq)                      # (P, W, 3) em [0,1]
@@ -84,11 +104,20 @@ class DatasetSinais(Dataset):
 
 
 def _loader(clipes, rotulos, permutacao, aumentar, batch, workers, embaralhar,
-            arquitetura="resnet", ossos=False):
-    ds = DatasetSinais(clipes, rotulos, permutacao, aumentar, arquitetura=arquitetura,
-                       ossos=ossos)
+            arquitetura="resnet", ossos=False, movimento=False,
+            semente=0, rodada=0):
+    ds = DatasetSinais(clipes, rotulos, permutacao, aumentar, semente=semente,
+                       arquitetura=arquitetura, ossos=ossos, movimento=movimento,
+                       rodada=rodada)
+    # Gerador PRÓPRIO, não o RNG global. O global é consumido pela construção do
+    # modelo, e variantes com contagens de parâmetros diferentes o deixam em
+    # estados diferentes — a ordem dos lotes deixaria de ser comparável entre
+    # elas. Aqui a ordem depende só de (semente, rodada).
+    g = torch.Generator()
+    g.manual_seed(int(semente) * 1000 + rodada)
     return DataLoader(ds, batch_size=batch, shuffle=embaralhar, num_workers=workers,
-                      drop_last=embaralhar and len(ds) > batch)
+                      drop_last=embaralhar and len(ds) > batch,
+                      generator=g if embaralhar else None)
 
 
 def _avaliar(modelo, loader, criterio, dispositivo):
@@ -133,14 +162,24 @@ def aplicar_backbone(modelo, caminho: Path, arquitetura: str) -> int:
 
 
 def canais_gcn(args) -> dict:
-    """Canais de entrada do ST-GCN, derivados das flags de representação.
+    """Config do ST-GCN derivada das flags de representação.
 
     Um lugar só: espalhar essa conta faria a construção do modelo e a contagem
     de parâmetros divergirem em silêncio, e o erro só apareceria como shape
     mismatch no meio do treino.
+
+    Cada transformação DOBRA os canais, e elas compõem na ordem em que o dataset
+    as aplica: coordenadas -> ossos -> movimento. Com x,y: 2 -> 4 -> 8. Com
+    x,y,z: 3 -> 6 -> 12.
     """
-    base = 3 if getattr(args, "com_z", False) else 2
-    return {"canais_ent": base * 2 if getattr(args, "ossos", False) else base}
+    c = 3 if getattr(args, "com_z", False) else 2
+    if getattr(args, "ossos", False):
+        c *= 2
+    if getattr(args, "movimento", False):
+        c *= 2
+    return {"canais_ent": c,
+            "adjacencia_adaptativa": bool(getattr(args, "adjacencia_adaptativa", False)),
+            "kernel_t": int(getattr(args, "kernel_temporal", 9))}
 
 
 def semear(args, rodada: int) -> None:
@@ -192,15 +231,20 @@ def treinar_rodada(treino, validacao, teste, rotulos, permutacao, args, disposit
     if getattr(args, "agendador", "nenhum") == "cosseno":
         agendador = torch.optim.lr_scheduler.CosineAnnealingLR(otim, T_max=args.epocas)
 
+    mov = bool(getattr(args, "movimento", False)) and arq == "gcn"
+    sem = int(getattr(args, "semente", None) or 0)
     l_treino = _loader(treino, rotulos, permutacao, True, args.batch, args.workers, True,
-                       arq, ossos)
+                       arq, ossos, mov, sem, rodada)
     l_val = _loader(validacao, rotulos, None, False, args.batch, args.workers, False,
-                    arq, ossos)
+                    arq, ossos, mov, sem, rodada)
     l_teste = _loader(teste, rotulos, None, False, args.batch, args.workers, False,
-                      arq, ossos)
+                      arq, ossos, mov, sem, rodada)
 
     melhor_perda, melhores_pesos, melhor_epoca = float("inf"), None, -1
     for epoca in range(args.epocas):
+        # A augmentação depende da época explicitamente; sem isto o mesmo clipe
+        # recebe a mesma transformação em todas as épocas quando workers=0.
+        l_treino.dataset.epoca = epoca
         modelo.train()
         soma, certos, total = 0.0, 0, 0
         for x, y in l_treino:
@@ -274,8 +318,11 @@ def escrever_relatorio(destino: Path, rotulos, accs, nomes_fold, cm, args, segun
          else "- Lacunas curtas de mão preenchidas por interpolação (<=5 frames)."),
         (f"- Coordenadas: x, y, z{' (z recentrado no punho)' if args.z_recentrado else ''}."
          if getattr(args, "com_z", False) else "- Coordenadas: x, y (z descartado)."),
-        *(["- Entrada com vetores de osso (`--ossos`)."]
-          if getattr(args, "ossos", False) and args.arquitetura == "gcn" else []),
+        *([f"- ST-GCN: {'ossos, ' if args.ossos else ''}"
+           f"{'movimento, ' if args.movimento else ''}"
+           f"{'adjacência adaptativa, ' if args.adjacencia_adaptativa else ''}"
+           f"kernel temporal {args.kernel_temporal}."]
+          if args.arquitetura == "gcn" else []),
         "",
         "## Acurácia por rodada (pessoa deixada de fora)",
         "",
@@ -317,6 +364,16 @@ def main() -> None:
                          "(dobra: 2->4, ou 3->6 com --com-z). Ignorado com "
                          "--arquitetura resnet, cuja representação em imagem não "
                          "tem onde encaixá-los.")
+    ap.add_argument("--movimento", action="store_true",
+                    help="GCN: acrescenta a variação temporal dos canais (dobra). "
+                         "Compõe com --ossos: x,y -> 4 -> 8 canais.")
+    ap.add_argument("--adjacencia-adaptativa", action="store_true",
+                    help="GCN: matriz de adjacência aprendida somada à anatômica, "
+                         "permitindo ligações que a anatomia não tem (mão<->rosto). "
+                         "Inicia em zero, então parte do modelo atual.")
+    ap.add_argument("--kernel-temporal", type=int, default=9,
+                    help="GCN: tamanho do kernel da convolução temporal. É onde estão "
+                         "~80%% dos parâmetros — reduzir encolhe muito o modelo.")
     ap.add_argument("--com-z", action="store_true",
                     help="usa a terceira coordenada dos landmarks. O .npy sempre tem "
                          "3 dims — não precisa reextrair. Ver PLANO-CORRECOES.md (B5).")
@@ -385,8 +442,10 @@ def main() -> None:
                                     else mm.construir)(len(rotulos), **extra).parameters())
     print(f"[treino] {len(clipes)} clipes | {len(dd.pessoas(clipes))} pessoas | "
           f"{len(rotulos)} sinais | arquitetura={args.arquitetura} ({n_par/1e6:.2f}M par.) "
-          f"| coords={'xyz' + ('*' if args.z_recentrado else '') if args.com_z else 'xy'}"
-          f"{'+ossos' if args.ossos else ''} "
+          f"| repr={'xyz' + ('*' if args.z_recentrado else '') if args.com_z else 'xy'}"
+          f"{'+ossos' if args.ossos else ''}{'+mov' if args.movimento else ''}"
+          f"{'+adapt' if args.adjacencia_adaptativa else ''}"
+          f"{'' if args.kernel_temporal == 9 else f'+k{args.kernel_temporal}'} "
           f"| dispositivo={dispositivo} threads={args.threads}")
 
     saida = AQUI / args.saida
@@ -422,20 +481,39 @@ def main() -> None:
     if args.folds:
         particoes = particoes[: args.folds]
 
+    # Uma rodada por vez, gravada assim que fecha. Uma execução LOSO do ST-GCN leva
+    # ~55 min; oito rodadas passam de 7 h. Guardar tudo só no fim significa que uma
+    # sessão morta na rodada 7 perde as sete — e sessão de nuvem morre por limite de
+    # tempo, não por erro nosso. Com o parcial em disco, reexecutar retoma de onde
+    # parou em vez de recomeçar.
+    parciais = saida / "rodadas"
+    parciais.mkdir(parents=True, exist_ok=True)
+
     accs, nomes, todos_preds, todos_reais = [], [], [], []
     for i, part in enumerate(particoes, 1):
-        treino = [c for c in clipes if c.pessoa in part.treino]
-        validacao = [c for c in clipes if c.pessoa == part.validacao]
-        teste = [c for c in clipes if c.pessoa == part.teste]
-        print(f"\n[treino] rodada {i}/{len(particoes)} — teste={part.teste} "
-              f"val={part.validacao} treino={len(treino)} clipes")
-        acc, preds, reais, melhor, _ = treinar_rodada(treino, validacao, teste, rotulos,
-                                                      permutacao, args, dispositivo, i)
-        print(f"   -> acurácia em {part.teste}: {acc:.1%} (melhor época {melhor + 1})")
-        accs.append(acc)
-        nomes.append(part.teste)
-        todos_preds += preds
-        todos_reais += reais
+        arquivo = parciais / f"{i:02d}-{part.teste}.json"
+        if arquivo.is_file():
+            r = json.loads(arquivo.read_text(encoding="utf-8"))
+            print(f"[treino] rodada {i}/{len(particoes)} — {part.teste} já feita "
+                  f"({r['acuracia']:.1%}), reaproveitando")
+        else:
+            treino = [c for c in clipes if c.pessoa in part.treino]
+            validacao = [c for c in clipes if c.pessoa == part.validacao]
+            teste = [c for c in clipes if c.pessoa == part.teste]
+            print(f"\n[treino] rodada {i}/{len(particoes)} — teste={part.teste} "
+                  f"val={part.validacao} treino={len(treino)} clipes")
+            acc, preds, reais, melhor, _ = treinar_rodada(treino, validacao, teste, rotulos,
+                                                          permutacao, args, dispositivo, i)
+            print(f"   -> acurácia em {part.teste}: {acc:.1%} (melhor época {melhor + 1})")
+            r = {"rodada": i, "teste": part.teste, "validacao": part.validacao,
+                 "acuracia": acc, "melhor_epoca": melhor + 1,
+                 "predicoes": preds, "verdadeiros": reais,
+                 "rotulos": rotulos, "args": vars(args)}
+            arquivo.write_text(json.dumps(r, ensure_ascii=False), encoding="utf-8")
+        accs.append(r["acuracia"])
+        nomes.append(r["teste"])
+        todos_preds += r["predicoes"]
+        todos_reais += r["verdadeiros"]
 
     segundos = time.perf_counter() - inicio
     cm = matriz_confusao(todos_preds, todos_reais, len(rotulos))

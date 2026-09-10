@@ -151,7 +151,54 @@ Flags que mudam a representação:
 | `--sem-imputacao` | desliga a imputação | comparação |
 | `--com-z` | acrescenta a terceira coordenada | **em teste** (§5) |
 | `--z-recentrado` | com `--com-z`: devolve o z da mão ao punho | **em teste** (§5) |
-| `--ossos` | GCN: soma vetores de osso aos canais | sem número |
+| `--ossos` | GCN: soma vetores de osso aos canais (dobra) | **+18,9 pp, 8/8 folds** |
+| `--movimento` | GCN: soma a variação temporal dos canais (dobra) | em teste |
+| `--adjacencia-adaptativa` | GCN: matriz aprendida somada à anatômica | em teste |
+| `--kernel-temporal N` | GCN: kernel da convolução temporal (padrão 9) | em teste |
+| `--semente N` | fixa inicialização, embaralhamento e augmentação | **obrigatório ao comparar** |
+
+As três primeiras **compõem e dobram os canais** na ordem em que o dataset aplica:
+coordenadas → ossos → movimento. Com x,y: 2 → 4 → 8. Com x,y,z: 3 → 6 → 12. A conta vive
+só em `treinar.canais_gcn()`; espalhá-la faria a construção do modelo e a contagem de
+parâmetros divergirem em silêncio.
+
+### Onde estão os parâmetros do ST-GCN
+
+~80% deles estão nas **convoluções temporais**, não no grafo. Consequências práticas:
+
+| Mudança | Custo |
+|---|---|
+| qualquer canal a mais (z, ossos, movimento) | +306 a +3.060 (≤0,7%) |
+| adjacência adaptativa | +6.498 |
+| kernel temporal 9 → 5 | **−163.840** (−35%) |
+
+Por isso features de entrada são praticamente de graça e o kernel é o único item que
+**encolhe** o modelo — e ele nunca foi calibrado.
+
+### Comparação pareada: o que `--semente` garante e o que não garante
+
+`--semente` fixa três coisas que antes vazavam: a inicialização do modelo, a ordem dos
+lotes e a augmentação (por semente, rodada, época e índice).
+
+**A ordem dos lotes usa um gerador próprio do DataLoader, não o RNG global.** Isso não é
+detalhe: o RNG global é consumido pela construção do modelo, e variantes com contagens de
+parâmetros diferentes o deixam em estados diferentes. Antes da correção, "mesma semente"
+produzia ordem de lotes diferente para cada variante — a comparação pareada que a flag
+prometia não existia. Verificado: cinco variantes com canais e kernels distintos agora
+produzem lote idêntico.
+
+⚠️ **Semente igual não torna a escolha do melhor entre N variantes livre de viés.** O
+vencedor de uma varredura ganha em parte por mérito e em parte por sorte, e o número dele
+é otimista. Confirmar exige **rerodar controle E candidato numa semente nova** — só o
+vencedor testaria sensibilidade à semente, não superioridade. Estimativa realmente livre
+do viés de seleção exigiria avaliação externa ou validação aninhada, que não temos.
+
+### Artefatos por rodada, e retomada
+
+Cada rodada LOSO grava `rodadas/NN-<pessoa>.json` (acurácia, época escolhida, predições e
+verdadeiros por clipe) assim que fecha. Uma execução LOSO do ST-GCN leva ~55 min; oito
+rodadas passam de 7 h, e sessão de nuvem morre por limite de tempo. Com o parcial em
+disco, reexecutar o mesmo comando **retoma de onde parou** em vez de recomeçar.
 
 ### 3.4 Modelo de entrega
 

@@ -312,6 +312,91 @@ def teste_terceira_coordenada() -> None:
     _ok("terceira coordenada: imagem, grafo, ossos e recentramento do z")
 
 
+def teste_movimento_e_adjacencia() -> None:
+    """Movimento, adjacência adaptativa e kernel temporal — as três variantes novas."""
+    import numpy as _np
+    v = gcn.N_POSE + 2 * gcn.N_MAO
+    rng = _np.random.default_rng(17)
+    seq = rng.normal(scale=0.6, size=(9, v, 2)).astype(_np.float32)
+
+    # Movimento: dobra canais, primeiro frame zerado, e é a diferença de fato.
+    mov = gcn.com_movimento(seq)
+    assert mov.shape == (9, v, 4), mov.shape
+    assert _np.allclose(mov[:, :, :2], seq), "movimento alterou os canais originais"
+    assert _np.allclose(mov[0, :, 2:], 0.0), "o primeiro frame deveria ter variação zero"
+    assert _np.allclose(mov[3, :, 2:], seq[3] - seq[2], atol=1e-6)
+
+    # Invariância a translação: mover a pessoa não muda a velocidade dela.
+    assert _np.allclose(gcn.com_movimento(seq + _np.float32(0.9))[:, :, 2:],
+                        mov[:, :, 2:], atol=1e-6), \
+        "movimento deveria ser invariante a translação"
+
+    # Compõe com ossos, na ordem que o dataset usa: 2 -> 4 -> 8.
+    comp = gcn.com_movimento(gcn.com_ossos(seq, gcn.pais()))
+    assert comp.shape == (9, v, 8), comp.shape
+    m = gcn.construir(3, canais_ent=8)
+    assert m(torch.from_numpy(gcn.para_sequencia(comp)).unsqueeze(0)).shape == (1, 3)
+
+    # Adjacência adaptativa inicia em ZERO: o modelo tem de começar idêntico ao
+    # sem ela. Se inicializasse aleatória, "ligar a flag" mudaria o resultado por
+    # ruído de inicialização e a comparação pareada perderia o sentido.
+    torch.manual_seed(4)
+    sem = gcn.construir(5)
+    torch.manual_seed(4)
+    com = gcn.construir(5, adjacencia_adaptativa=True)
+    assert com.adaptativa is not None and sem.adaptativa is None
+    assert torch.allclose(com.adaptativa, torch.zeros_like(com.adaptativa))
+    x = torch.randn(2, 2, gcn.T_FIXO, v)
+    sem.eval(); com.eval()
+    with torch.no_grad():
+        assert torch.allclose(sem(x), com(x), atol=1e-6), \
+            "com adaptativa zerada, a saída deveria ser idêntica"
+
+    # Kernel temporal: onde estão ~80% dos parâmetros. Reduzir tem de encolher.
+    n9 = sum(p.numel() for p in gcn.construir(20).parameters())
+    n5 = sum(p.numel() for p in gcn.construir(20, kernel_t=5).parameters())
+    assert n5 < n9 * 0.7, f"kernel 5 deveria encolher bem o modelo: {n9} -> {n5}"
+    assert gcn.construir(3, kernel_t=5)(torch.randn(1, 2, gcn.T_FIXO, v)).shape == (1, 3)
+
+    # O config viaja no checkpoint — senão recarregar reconstrói outra arquitetura.
+    cfg = gcn.construir(3, canais_ent=8, adjacencia_adaptativa=True, kernel_t=5).config
+    assert cfg["canais_ent"] == 8 and cfg["adjacencia_adaptativa"] and cfg["kernel_t"] == 5
+
+    # Kernel par quebra a soma residual, e só no primeiro lote — depois de alocar
+    # GPU e carregar dados. Tem de recusar na construção.
+    for k in (0, 2, 4, -1):
+        try:
+            gcn.construir(3, largura=8, kernel_t=k)
+            raise AssertionError(f"kernel_t={k} deveria ter sido recusado")
+        except ValueError:
+            pass
+
+    # Movimento SEM máscara inventa velocidade onde a mão só sumiu da detecção.
+    # Medido no dataset real: 3.011 transições nos punhos, salto mediano 1,32
+    # contra 0,0116 de deslocamento normal. Uma mão PARADA que some e volta não
+    # pode gerar velocidade.
+    parada = _np.ones((20, v, 2), dtype=_np.float32)
+    parada[5:15, dd.BLOCOS_MAO[0][0]:dd.BLOCOS_MAO[0][1], :] = 0.0
+    val = _np.ones(parada.shape[:2], dtype=bool)
+    for (a, b), aus in zip(dd.BLOCOS_MAO, dd.maos_ausentes(parada)):
+        val[:, a:b] = ~aus[:, None]
+    assert _np.abs(gcn.com_movimento(parada)[:, :, 2:]).max() > 0.5, \
+        "o teste precisa reproduzir o artefato antes de provar que a máscara o corrige"
+    assert _np.abs(gcn.com_movimento(parada, val)[:, :, 2:]).max() == 0.0, \
+        "com máscara, mão parada não pode ter velocidade"
+
+    # O z do osso pulso(pose)->punho(mão) mede troca de referencial, não anatomia:
+    # com --z-recentrado o punho vira z=0 e o pulso segue no referencial do corpo.
+    s3 = _np.full((4, v, 3), 0.5, dtype=_np.float32)
+    s3[:, :, 2] = 1.0
+    o = gcn.com_ossos(dd.recentrar_z(s3))
+    assert o[0, gcn.N_POSE, 5] == 0.0 and o[0, gcn.N_POSE + gcn.N_MAO, 5] == 0.0, \
+        "o z das ligações pose<->mão deveria ser zerado"
+    assert _np.allclose(o[:, :, :2], gcn.com_ossos(dd.recentrar_z(s3))[:, :, :2]), \
+        "x e y dos ossos não podem ter mudado"
+    _ok("movimento mascarado, adjacência adaptativa, kernel e z das ligações")
+
+
 def teste_gcn_ponta_a_ponta() -> None:
     acc = _rodada_sintetica(rotulo_aleatorio=False, arquitetura="gcn")
     assert acc > 0.60, f"GCN em classes separáveis deveria passar de 60%, veio {acc:.1%}"
@@ -499,6 +584,7 @@ TESTES = [
     ("grafo do esqueleto (ST-GCN)", teste_grafo_conectado),
     ("vetores de osso (two-stream)", teste_ossos),
     ("terceira coordenada (x,y,z)", teste_terceira_coordenada),
+    ("movimento, adjacência adaptativa, kernel", teste_movimento_e_adjacencia),
     ("treino de ponta a ponta com ST-GCN", teste_gcn_ponta_a_ponta),
     ("controle negativo (rótulo aleatório)", teste_controle_negativo),
     ("contrastivo: perda e amostrador", teste_contrastivo),
