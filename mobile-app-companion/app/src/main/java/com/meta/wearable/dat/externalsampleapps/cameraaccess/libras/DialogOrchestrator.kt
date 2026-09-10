@@ -17,6 +17,11 @@
 // responsabilidade do pipeline de reconhecimento (docs/sign-boundary-detector-plano.md), fora do
 // escopo deste arquivo — aqui uma sessão ainda mapeia 1:1 pra uma única chamada de classificação,
 // igual ao fluxo manual anterior, até aquele plano ser implementado.
+//
+// "Libras Livre, iniciar"/"encerrar" agora também ligam/desligam a câmera+stream dos óculos (não
+// só a sessão lógica de captura), via os callbacks ensureCameraActive/deactivateCamera injetados
+// pelo CameraViewModel (que é quem sabe startSession/startStreaming/stopStreaming) — mesma lógica
+// de "nenhum componente decide sozinho", aplicada agora também ao hardware da câmera.
 
 package com.meta.wearable.dat.externalsampleapps.cameraaccess.libras
 
@@ -33,6 +38,13 @@ class DialogOrchestrator(
     private val speaker: Speaker,
     private val audioSessionManager: AudioSessionManager,
     private val sttEngine: SttEngine,
+    // Liga a câmera/stream dos óculos sob demanda (①→②) e espera até estar pronta pra capturar,
+    // ou false se não conseguiu (sessão/stream não subiu a tempo — ver CameraViewModel). Injetado
+    // porque só o CameraViewModel sabe operar o DeviceSession/Stream do DAT (ver header).
+    private val ensureCameraActive: suspend () -> Boolean,
+    // Desliga o stream (câmera+display) — chamado assim que uma sessão de sinais fecha (②→③),
+    // já que a captura de vídeo não é mais necessária dali em diante no ciclo.
+    private val deactivateCamera: () -> Unit,
     // Handoff pro pipeline texto->glosa->avatar (docs/vlibras-webview-plano.md) — ainda não
     // implementado nesta branch, por isso é só um callback injetado (ver §6.5 do plano).
     private val onAvatarText: (String) -> Unit,
@@ -62,10 +74,22 @@ class DialogOrchestrator(
 
   private var wakeWordDetector: WakeWordDetector? = null
 
-  /** Liga a fonte de wake words (hoje, [ManualWakeWordDetector]) — chamar uma vez, na criação. */
+  /** Liga a fonte de wake words (hoje, [SpeechRecognizerWakeWordDetector]) — chamar uma vez, na
+   * criação. */
   fun attachWakeWordDetector(detector: WakeWordDetector) {
     wakeWordDetector = detector
     if (_state.value in WAKE_WORD_ACTIVE_STATES) detector.start()
+  }
+
+  /**
+   * Tenta (re)ligar o detector real depois que RECORD_AUDIO é concedido em tempo de execução (ver
+   * CameraViewModel.enableWakeWordListening) — sem isso, [SpeechRecognizerWakeWordDetector.start]
+   * silenciosamente não faz nada até a próxima chamada de [attachWakeWordDetector]/[setState], que
+   * pode nunca vir se o estado atual já é um dos ativos. No-op se o estado atual não é um dos que
+   * espera wake word.
+   */
+  fun resumeWakeWordDetectorIfActive() {
+    if (_state.value in WAKE_WORD_ACTIVE_STATES) wakeWordDetector?.start()
   }
 
   /** Chamado pelo [WakeWordDetector] ativo (motor real ou botão) quando uma frase é ouvida. */
@@ -91,21 +115,51 @@ class DialogOrchestrator(
     }
   }
 
-  /** Chamado pelo LandmarkPipeline quando a classificação falha — retoma a captura na sessão. */
+  /**
+   * Chamado pelo LandmarkPipeline quando a classificação falha — retoma a captura na sessão.
+   * Precisa religar a câmera: [endSignSession] já desligou o stream ao fechar a sessão anterior.
+   */
   fun onSignRecognitionFailed() {
     if (_state.value != DialogState.FALANDO) return
-    setState(DialogState.CAPTURANDO_SINAIS)
-    landmarkPipeline.startCollecting()
+    scope.launch {
+      if (!ensureCameraActive()) {
+        Log.w(TAG, "Câmera não religou pra nova tentativa — volta pra AGUARDANDO_SINAL")
+        setState(DialogState.AGUARDANDO_SINAL)
+        return@launch
+      }
+      setState(DialogState.CAPTURANDO_SINAIS)
+      landmarkPipeline.startCollecting()
+    }
   }
 
+  // Evita que uma segunda "Libras Livre, iniciar" (a wake word continua ativa em ①) dispare uma
+  // segunda chamada de ensureCameraActive() enquanto a primeira ainda está subindo a câmera.
+  private var startingSignSession = false
+
   private fun beginSignSession() {
-    setState(DialogState.CAPTURANDO_SINAIS)
-    landmarkPipeline.startCollecting()
+    if (startingSignSession) return
+    startingSignSession = true
+    scope.launch {
+      try {
+        if (!ensureCameraActive()) {
+          Log.w(TAG, "Câmera/stream não ficou pronta a tempo — 'Libras Livre, iniciar' ignorado")
+          return@launch
+        }
+        setState(DialogState.CAPTURANDO_SINAIS)
+        landmarkPipeline.startCollecting()
+      } finally {
+        startingSignSession = false
+      }
+    }
   }
 
   private fun endSignSession() {
     setState(DialogState.FALANDO)
     landmarkPipeline.stopCollectingAndClassify()
+    // A câmera não é mais necessária dali em diante no ciclo (fala, escuta e transcrição são só
+    // áudio) — desliga já aqui; a próxima "iniciar" (beginSignSession/onSignRecognitionFailed)
+    // religa sob demanda.
+    deactivateCamera()
     // onSignRecognized/onSignRecognitionFailed chegam depois, de forma assíncrona.
   }
 

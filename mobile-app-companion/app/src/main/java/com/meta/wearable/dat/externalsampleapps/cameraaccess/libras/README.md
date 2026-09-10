@@ -21,16 +21,21 @@ frames HEVC (CameraViewModel.handleVideoFrame)
 | `LandmarkExtractor.kt` | MediaPipe Pose+Hands → `FrameLandmarks` (pontos crus 0..1) |
 | `LandmarkApi.kt` | cliente HTTP de `POST /classify` (HttpURLConnection + org.json) |
 | `Speaker.kt` | TextToSpeech pt-BR |
-| `DialogOrchestrator.kt` | dono da sessão de diálogo (①→⑦) — decide quando capturar, falar, escutar |
-| `WakeWordDetector.kt` | gatilho da sessão — hoje só os botões de fallback (`ManualWakeWordDetector`) |
+| `DialogOrchestrator.kt` | dono da sessão de diálogo (①→⑦) — decide quando capturar, falar, escutar, e liga/desliga a câmera+stream via callbacks do `CameraViewModel` |
+| `WakeWordDetector.kt` | interface do gatilho da sessão (`WakeWord`, `INICIAR`/`ENCERRAR`) |
+| `SpeechRecognizerWakeWordDetector.kt` | motor real — escuta contínua no mic do celular via `SpeechRecognizer` (mesma API do `SttEngine`) |
 | `AudioSessionManager.kt` | troca A2DP↔HFP pra escutar a resposta do atendente pelo mic dos óculos |
 | `SttEngine.kt` | transcrição da resposta do atendente |
 
 O estado (capturando / reconhecendo / resultado / erro) fica em
 `CameraUiState.libras` e é desenhado por `LibrasBanner` em `ui/CameraScreen.kt`. A
 captura é acionada pelo `DialogOrchestrator` (via `LandmarkPipeline.startCollecting()`/
-`stopCollectingAndClassify()`), disparado pelos botões "Iniciar"/"Encerrar"
-(`DialogControlRow`) — ver `docs/orquestracao-dialogo-audio-plano.md`.
+`stopCollectingAndClassify()`), disparada por "Libras Livre, iniciar"/"encerrar" —
+detectadas continuamente por `SpeechRecognizerWakeWordDetector` (mic do celular), com
+os botões "Iniciar"/"Encerrar" (`DialogControlRow`) como fallback caso o motor real
+esteja sem permissão ou falhe. As mesmas duas frases também ligam/desligam a
+câmera+stream dos óculos (`CameraViewModel.ensureCameraActiveForLibras`/
+`deactivateCameraForLibras`) — ver `docs/orquestracao-dialogo-audio-plano.md`.
 
 ## Decisão central: o app manda landmarks **crus**, o servidor normaliza
 

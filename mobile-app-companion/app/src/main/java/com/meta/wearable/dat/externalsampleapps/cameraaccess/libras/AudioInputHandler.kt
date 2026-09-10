@@ -24,9 +24,11 @@
 // mas não elimina — a concorrência real só se confirma em hardware (§4 item 3, §7 Fase 0 do
 // plano).
 //
-// Nenhum motor de detecção está plugado nesta classe ainda — hoje o WakeWordDetector ativo é o
-// ManualWakeWordDetector (botões), e nada instancia esta classe. Ela fica pronta pra quando um
-// motor de verdade (Porcupine, TFLite — §8 do plano) for escolhido.
+// Nenhum motor de detecção está plugado nesta classe ainda — o motor real hoje
+// (SpeechRecognizerWakeWordDetector.kt) usa a API de mais alto nível android.speech.SpeechRecognizer
+// direto, que já gerencia a própria captura de mic internamente (mesma razão dada em SttEngine.kt
+// pra não existir uma classe de captura crua ali). Esta classe fica pronta pra quando um motor que
+// consome PCM cru (Porcupine, TFLite — §8 do plano) for escolhido no lugar.
 
 package com.meta.wearable.dat.externalsampleapps.cameraaccess.libras
 

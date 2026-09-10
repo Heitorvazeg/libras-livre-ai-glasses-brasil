@@ -142,7 +142,32 @@ produto/arquitetura, com o motivo:
    de nenhuma chamada a `setCommunicationDevice` pra isso, só evitar que o
    HFP esteja ativo no momento de falar.
 
-6. **A geração do avatar reaproveita o plano já existente**
+6. **[NOVO] Wake word liga/desliga a câmera+stream dos óculos, não só a sessão lógica.**
+   "Libras Livre, iniciar" em ① agora também garante câmera+stream ativos antes de abrir a
+   captura (chama `startSession()`/`startStreaming()` via `CameraViewModel.ensureCameraActiveForLibras`,
+   esperando o resultado); "Libras Livre, encerrar" em ② desliga o stream
+   (`deactivateCameraForLibras`) assim que a sessão de sinais fecha, já que os estados seguintes
+   (③-⑦) são só áudio. A `DeviceSession` (conexão Bluetooth com os óculos) não é encerrada a cada
+   ciclo — só o stream — pra a próxima "iniciar" não pagar o custo de reconexão inteiro. Motivo:
+   o caso de uso institucional (§1 de `docs/libras-livre-arquitetura.md`) tem os óculos ligados o
+   dia todo entre atendimentos — manter a câmera transmitindo continuamente entre uma sessão de
+   sinais e a próxima gastaria bateria/rádio à toa, o mesmo raciocínio já aplicado à wake word
+   (item 1 acima).
+
+7. **[NOVO] Motor de wake word escolhido (fecha a decisão em aberto do §8, item 1): `SpeechRecognizer`
+   contínuo, não Porcupine nem TFLite próprio.** `SpeechRecognizerWakeWordDetector` (mic do celular)
+   reaproveita a mesma API já usada em `SttEngine` — zero dependência nova, sem conta/licença
+   externa, sem dataset de áudio pra coletar. Trade-off aceito conscientemente: não é
+   keyword-spotting de verdade (mais custoso, historicamente depende de rede em muitos aparelhos —
+   ver `PoC/api/README.md` sobre o objetivo on-device/offline do projeto) e a concorrência com o
+   `SttEngine` durante ⑤ (dois `SpeechRecognizer` ativos ao mesmo tempo, mics diferentes) segue tão
+   não-validada em hardware real quanto estava antes (Fase 0 do §7 continua pendente). Fica atrás
+   da mesma interface `WakeWordDetector`, então pode ser substituído por Porcupine/TFLite depois
+   sem tocar no `DialogOrchestrator`. Os botões de fallback (`DialogControlRow`) continuam
+   funcionando incondicionalmente — chamam `DialogOrchestrator.onWakeWord` direto, não passam pelo
+   motor real.
+
+8. **A geração do avatar reaproveita o plano já existente**
    (`docs/vlibras-webview-plano.md`, branch
    `feat/Empacota-player-vlibras-em-webview-nativa`): texto → API
    `vlibras-translator-api` → glosa → `vlibras-player-webjs` numa WebView. Este
@@ -325,7 +350,8 @@ validar cada camada isolada antes de integrar.
   diferentes tamanhos de frase.
 
 ### Fase 3 — `WakeWordDetector` (mic do celular, isolado, duas frases)
-- [ ] Escolher o motor (ver §8).
+- [x] Escolher o motor (ver §8): `SpeechRecognizer` contínuo
+  (`SpeechRecognizerWakeWordDetector.kt`).
 - [ ] Treinar/configurar as **duas** frases ("Libras Livre, iniciar" /
   "Libras Livre, encerrar") — dobra o trabalho de dataset/calibração em
   relação a uma frase só.
@@ -337,10 +363,11 @@ validar cada camada isolada antes de integrar.
   foreground, antes de integrar ao `StreamingService`.
 
 ### Fase 4 — `DialogOrchestrator`
-- [ ] Implementar o `DialogState` e as transições ①→⑦ completas.
-- [ ] Trocar o gatilho hoje manual (`LibrasCaptureRow`) pelas duas wake words
+- [x] Implementar o `DialogState` e as transições ①→⑦ completas.
+- [x] Trocar o gatilho hoje manual (`LibrasCaptureRow`) pelas duas wake words
   — manter o botão manual como fallback/debug é uma opção a avaliar, não uma
-  obrigação deste plano.
+  obrigação deste plano. (Decisão — ver §8, item 3: manter, chamando
+  `DialogOrchestrator.onWakeWord` direto, sem depender do motor real.)
 - [ ] Integrar com o pipeline de reconhecimento
   (`docs/sign-boundary-detector-plano.md`) pra saber o que falar em ③ — essa
   integração depende daquele plano estar pronto; a implementação do
@@ -378,7 +405,12 @@ validar cada camada isolada antes de integrar.
 Não bloqueiam o início da Fase 0-2, mas precisam ser fechadas antes da Fase 3
 em diante:
 
-1. **Motor de wake word.** Duas rotas discutidas:
+1. **[DECIDIDO — ver §4, item 7] Motor de wake word.** Optou-se por uma terceira via, não
+   listada nas duas rotas abaixo: `SpeechRecognizer` contínuo (reaproveitando a API do
+   `SttEngine`), pra destravar a funcionalidade sem comprometer com custo/licença/dataset antes da
+   validação em hardware (Fase 0, ainda pendente). Porcupine e o modelo TFLite próprio continuam
+   opções válidas de upgrade, atrás da mesma interface `WakeWordDetector` — registradas aqui por
+   completude:
    - **Picovoice Porcupine** — motor on-device pronto, SDK Android, treino de
      frase customizada via console deles (suporta frases de várias
      palavras, não só uma sílaba curta). Caminho mais rápido; precisa
@@ -396,9 +428,10 @@ em diante:
    on-device (ex. Vosk) vs. `SpeechRecognizer` do Android (mais simples, mas
    historicamente dependente de rede em muitos aparelhos).
 
-3. **Manter ou não o botão manual como fallback.** Útil para debug/teste sem
-   depender do wake word funcionando, mas é uma decisão de UX a validar com
-   uso real.
+3. **[DECIDIDO] Manter ou não o botão manual como fallback.** Mantido: os botões
+   (`DialogControlRow`) chamam `DialogOrchestrator.onWakeWord` diretamente, sem depender do motor
+   real — útil pra debug/teste e como contorno se a wake word real falhar em campo. Validar com
+   uso real se essa dupla via (voz + toque) ainda faz sentido continua uma questão de UX em aberto.
 
 ---
 

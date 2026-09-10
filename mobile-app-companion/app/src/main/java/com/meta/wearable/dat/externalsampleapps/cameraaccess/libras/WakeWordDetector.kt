@@ -8,19 +8,18 @@
 
 // WakeWordDetector - Fonte de eventos de wake word pro DialogOrchestrator
 //
-// Ver docs/orquestracao-dialogo-audio-plano.md §4.2, §6.3. Duas frases simétricas ("Libras
+// Ver docs/orquestracao-dialogo-audio-plano.md §4.2, §6.3, §8. Duas frases simétricas ("Libras
 // Livre, iniciar" / "Libras Livre, encerrar") delimitam sessões — o que cada uma significa
 // depende do DialogState atual, decidido inteiramente pelo DialogOrchestrator (nunca por esta
 // interface). Ativa em ①②④⑤, pausada em ③⑥⑦ (start()/pause() chamados pelo orquestrador).
 //
-// ManualWakeWordDetector é a ÚNICA implementação hoje: dois botões na UI (ver
-// ui/CameraScreen.kt, DialogControlRow) disparam os eventos diretamente. Um motor de escuta
-// contínua de verdade (Porcupine, TFLite — §8 do plano) ficaria por trás desta mesma interface,
-// tratado como upgrade — os botões continuam servindo de fallback caso ele falhe ou não esteja
-// disponível no aparelho. Não implementamos esse motor agora porque a concorrência entre ele e o
-// HFP ativo do estado ESCUTANDO_ATENDENTE (⑤) não foi validada em hardware real (§4.3, §7 Fase 0
-// do plano) — AudioInputHandler.kt já deixa pronta a captura de PCM contínuo do mic do celular
-// pra quando essa validação acontecer, mas nada aqui a consome ainda.
+// SpeechRecognizerWakeWordDetector (SpeechRecognizerWakeWordDetector.kt) é a implementação real,
+// escuta contínua no mic do celular — ver header daquele arquivo pro motivo da escolha e as
+// limitações conhecidas. Os botões "Iniciar"/"Encerrar" da UI (ui/CameraScreen.kt,
+// DialogControlRow) continuam funcionando como fallback: eles chamam
+// CameraViewModel.onWakeWordButton, que invoca DialogOrchestrator.onWakeWord diretamente — não
+// passam por esta interface, então funcionam mesmo se o motor real falhar, estiver pausado ou sem
+// permissão de microfone.
 
 package com.meta.wearable.dat.externalsampleapps.cameraaccess.libras
 
@@ -39,33 +38,4 @@ interface WakeWordDetector {
 
   /** Libera recursos — chamado só no teardown do dono (ex.: onCleared do ViewModel). */
   fun stop()
-}
-
-/**
- * Implementação por toque: dois botões na UI chamam [trigger] diretamente. Serve hoje como a
- * única fonte de wake word (ver header) — os eventos só chegam ao [onWakeWord] enquanto
- * [start] foi chamado por último (isto é, enquanto o orquestrador considera a wake word ativa).
- */
-class ManualWakeWordDetector(
-    private val onWakeWord: (WakeWord) -> Unit,
-) : WakeWordDetector {
-
-  @Volatile private var active = false
-
-  override fun start() {
-    active = true
-  }
-
-  override fun pause() {
-    active = false
-  }
-
-  override fun stop() {
-    active = false
-  }
-
-  /** Chamado pelos botões "Iniciar"/"Encerrar" da UI (ver DialogControlRow). */
-  fun trigger(word: WakeWord) {
-    if (active) onWakeWord(word)
-  }
 }
