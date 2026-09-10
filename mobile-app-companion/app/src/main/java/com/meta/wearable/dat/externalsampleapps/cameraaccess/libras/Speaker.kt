@@ -9,8 +9,11 @@ package com.meta.wearable.dat.externalsampleapps.cameraaccess.libras
 
 import android.content.Context
 import android.speech.tts.TextToSpeech
+import android.speech.tts.UtteranceProgressListener
 import android.util.Log
 import java.util.Locale
+import kotlin.coroutines.resume
+import kotlinx.coroutines.suspendCancellableCoroutine
 
 class Speaker(context: Context) {
 
@@ -40,6 +43,41 @@ class Speaker(context: Context) {
       return
     }
     tts.speak(text, TextToSpeech.QUEUE_FLUSH, null, "libras-$text")
+  }
+
+  /**
+   * Como [speak], mas suspende até o TTS terminar de falar (`onDone`/`onError`) — usado pelo
+   * DialogOrchestrator pra sequenciar a transição ③→④ sem `delay()` arbitrário (ver
+   * docs/orquestracao-dialogo-audio-plano.md §6.2).
+   */
+  suspend fun speakAndAwait(text: String) {
+    if (!ready) {
+      Log.w(TAG, "TTS ainda não está pronto — ignorando \"$text\"")
+      return
+    }
+    val utteranceId = "libras-${System.nanoTime()}"
+    suspendCancellableCoroutine<Unit> { cont ->
+      tts.setOnUtteranceProgressListener(
+          object : UtteranceProgressListener() {
+            override fun onStart(id: String?) {}
+
+            override fun onDone(id: String?) {
+              if (id == utteranceId && cont.isActive) cont.resume(Unit)
+            }
+
+            @Deprecated("Deprecated in Java")
+            override fun onError(id: String?) {
+              if (id == utteranceId && cont.isActive) cont.resume(Unit)
+            }
+
+            override fun onError(id: String?, errorCode: Int) {
+              if (id == utteranceId && cont.isActive) cont.resume(Unit)
+            }
+          }
+      )
+      cont.invokeOnCancellation { tts.stop() }
+      tts.speak(text, TextToSpeech.QUEUE_FLUSH, null, utteranceId)
+    }
   }
 
   fun shutdown() {

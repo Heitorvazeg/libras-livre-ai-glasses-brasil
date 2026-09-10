@@ -81,15 +81,17 @@ class MainActivity : ComponentActivity() {
   }
 
   private var audioPermissionContinuation: CancellableContinuation<Boolean>? = null
-  // Phone microphone permission, requested in context when recording with sound-in-video on.
+  // Phone microphone permission, requested in context right before listening for the attendant's
+  // reply (DialogState.AGUARDANDO_RESPOSTA -> ESCUTANDO_ATENDENTE — ver
+  // libras/DialogOrchestrator.kt, CameraViewModel.onWakeWordButton).
   private val recordAudioPermissionLauncher =
       registerForActivityResult(RequestPermission()) { granted ->
         audioPermissionContinuation?.resume(granted)
         audioPermissionContinuation = null
       }
 
-  // Requests RECORD_AUDIO for sound-in-video. Returns true if granted (already or just now); false
-  // if denied, so recording can proceed video-only instead of being blocked.
+  // Requests RECORD_AUDIO. Returns true if granted (already or just now); false if denied, so the
+  // caller can skip listening instead of crashing.
   suspend fun requestRecordAudioPermission(): Boolean {
     if (
         ContextCompat.checkSelfPermission(this, RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
