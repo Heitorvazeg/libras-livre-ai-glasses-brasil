@@ -790,7 +790,7 @@ private fun LibrasBanner(
         )
         Spacer(modifier = Modifier.height(2.dp))
         Text(
-            text = libras.lastResult.sinal,
+            text = libras.lastResult,
             color = Color.White,
             fontSize = 26.sp,
             fontWeight = FontWeight.Bold,

@@ -1,26 +1,25 @@
 /*
  * Libras Livre — pipeline de reconhecimento no app (o "onde a IA entra").
  *
- * Liga o vídeo dos óculos ao classificador da PoC via API, reusando peças que já
- * existem no app. O caminho de um sinal:
+ * Liga o vídeo dos óculos ao classificador local, reusando peças que já existem no app. O
+ * caminho de um sinal:
  *
  *   frames HEVC (handleVideoFrame)
  *     -> HevcDecoder DEDICADO renderiza para um ImageReader (o preview segue no
  *        decoder original; este é um segundo decoder só para inferência)
  *     -> android.media.Image (YUV) -> MediaPipe Pose+Hands (LandmarkExtractor)
- *     -> acumula os frames do sinal enquanto o usuário está "capturando"
- *     -> POST /classify (LandmarkApi) -> palavra -> onRecognized (quem fala é o
- *        DialogOrchestrator, via Speaker.speakAndAwait — ver
- *        docs/orquestracao-dialogo-audio-plano.md §6.5)
+ *     -> LandmarkNormalizer (normaliza por ombros — 57 pontos x 2 canais)
+ *     -> HandGapImputer (acumula o segmento em curso, preenche lacunas curtas de mão)
+ *     -> SignBoundaryDetector (decide onde cada sinal começa/termina)
+ *     -> a cada boundary: SignClassifier.classify() -> onRecognized(palavra)
  *
- * A SEGMENTAÇÃO (onde um sinal começa/termina) é manual nesta fase: o usuário
- * toca "capturar", sinaliza, toca "parar" — igual ao record.py da PoC. Detecção
- * automática de pausa é trabalho futuro; começar manual tira essa variável da
- * validação da integração.
+ * A SEGMENTAÇÃO de cada sinal individual é automática (SignBoundaryDetector — ver
+ * docs/sign-boundary-detector-plano.md). startSession()/endSession() delimitam a SESSÃO
+ * inteira (pode ter vários sinais), disparados pela wake word via DialogOrchestrator — não
+ * mais um sinal por vez.
  *
- * Custo: o MediaPipe (caro) só roda ENQUANTO se captura um sinal. Fora disso o
- * ImageReader é drenado sem inferência, então o overhead em repouso é só o do
- * segundo decode.
+ * Custo: o MediaPipe (caro) só roda ENQUANTO a sessão está aberta. Fora disso o ImageReader
+ * é drenado sem inferência, então o overhead em repouso é só o do segundo decode.
  */
 package com.meta.wearable.dat.externalsampleapps.cameraaccess.libras
 
@@ -34,6 +33,8 @@ import android.util.Log
 import com.meta.wearable.dat.externalsampleapps.cameraaccess.stream.HevcDecoder
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.joinAll
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -42,17 +43,18 @@ data class LibrasState(
     val modelsReady: Boolean = false,
     val isCollecting: Boolean = false,
     val isClassifying: Boolean = false,
-    val lastResult: ClassifyResult? = null,
+    val lastResult: String? = null,
     val error: String? = null,
 )
 
 class LandmarkPipeline(
     private val context: Context,
     private val scope: CoroutineScope,
-    private val api: LandmarkApi,
+    private val classifier: SignClassifier,
     private val onState: (LibrasState.() -> LibrasState) -> Unit,
-    // Quem fala o resultado (e quando) é decisão do DialogOrchestrator, não deste pipeline — ver
-    // docs/orquestracao-dialogo-audio-plano.md §6.5.
+    // Quem fala o resultado (e quando) é decisão do DialogOrchestrator, não deste pipeline —
+    // ver docs/orquestracao-dialogo-audio-plano.md §6.5. Dispara UMA VEZ POR SINAL (boundary)
+    // agora, não mais uma vez por sessão inteira — ver docs/sign-boundary-detector-plano.md §5.3.
     private val onRecognized: (sinal: String) -> Unit,
     private val onRecognitionFailed: () -> Unit = {},
 ) {
@@ -72,8 +74,15 @@ class LandmarkPipeline(
   private var frameH = 0
 
   @Volatile private var collecting = false
-  private val collected = ArrayList<FrameLandmarks>()
-  private val collectLock = Any()
+
+  // Guarda handGapImputer/boundaryDetector/classificacoesEmVoo — escritos pela thread do
+  // ImageReader (onFrame) e lidos/trocados por startSession()/endSession() (chamados da
+  // coroutine do DialogOrchestrator). Reentrante: onBoundary (chamado de dentro de onFrame,
+  // já sob o lock) pode chamar classificarSegmentoAtual(), que toma o lock de novo.
+  private val sessionLock = Any()
+  private var handGapImputer = HandGapImputer()
+  private var boundaryDetector: SignBoundaryDetector? = null
+  private val classificacoesEmVoo = mutableListOf<Job>()
 
   // Modo VIDEO do MediaPipe exige timestamps estritamente crescentes por detector,
   // inclusive ENTRE capturas — por isso um relógio monotônico que nunca reinicia.
@@ -89,44 +98,52 @@ class LandmarkPipeline(
     decoder?.decodeFrame(bytes, presentationTimeUs)
   }
 
-  /** Começa a acumular frames de um sinal. */
-  fun startCollecting() {
+  /** Abre uma sessão: passa a acumular sinais (um ou mais) até [endSession]. */
+  fun startSession() {
     if (extractor == null) {
       onState { copy(error = "Modelos do MediaPipe não carregaram — veja libras/README.md (assets).") }
       return
     }
-    synchronized(collectLock) { collected.clear() }
+    synchronized(sessionLock) {
+      handGapImputer = HandGapImputer()
+      boundaryDetector = SignBoundaryDetector(onBoundary = ::classificarSegmentoAtual)
+    }
     collecting = true
     onState { copy(isCollecting = true, error = null, lastResult = null) }
   }
 
-  /** Para de acumular e classifica o sinal capturado via API. */
-  fun stopCollectingAndClassify() {
-    if (!collecting) return
+  /**
+   * Fecha a sessão. Se havia um sinal em curso (segmento em aberto, sem boundary ainda),
+   * força a classificação dele antes de retornar — não perde silenciosamente o último sinal
+   * (docs/sign-boundary-detector-plano.md §5.3). Suspende até TODAS as classificações
+   * disparadas durante a sessão (a forçada aqui, e quaisquer outras ainda em voo) terminarem
+   * — é assim que quem chama sabe que já pode ler a lista completa de sinais reconhecidos.
+   */
+  suspend fun endSession() {
     collecting = false
-    val frames: List<FrameLandmarks>
-    synchronized(collectLock) { frames = ArrayList(collected) }
+    synchronized(sessionLock) { boundaryDetector?.forcarFechamento() }
     onState { copy(isCollecting = false) }
+    val pendentes = synchronized(sessionLock) { classificacoesEmVoo.toList() }
+    pendentes.joinAll()
+  }
 
+  private fun classificarSegmentoAtual() {
+    val frames: List<Array<FloatArray>>
+    synchronized(sessionLock) {
+      frames = handGapImputer.snapshot()
+      handGapImputer = HandGapImputer() // o próximo segmento da sessão começa vazio
+    }
     if (frames.size < MIN_FRAMES_PARA_CLASSIFICAR) {
-      onState {
-        copy(error = "Clipe curto demais (${frames.size} frames com pose). Enquadre o tronco e as " +
-            "mãos e capture de novo.")
-      }
+      Log.d(TAG, "Segmento com ${frames.size} frames — curto demais, ignorado")
       return
     }
-
-    val w = frameW
-    val h = frameH
     onState { copy(isClassifying = true, error = null) }
-    scope.launch {
-      val resultado = withContext(Dispatchers.IO) {
-        runCatching { api.classify(w, h, frames) }
-      }
+    val job = scope.launch {
+      val resultado = withContext(Dispatchers.Default) { runCatching { classifier.classify(frames) } }
       resultado
-          .onSuccess { r ->
-            onState { copy(isClassifying = false, lastResult = r, error = null) }
-            onRecognized(r.sinal)
+          .onSuccess { sinal ->
+            onState { copy(isClassifying = false, lastResult = sinal, error = null) }
+            onRecognized(sinal)
           }
           .onFailure { e ->
             Log.e(TAG, "Falha na classificação", e)
@@ -134,6 +151,8 @@ class LandmarkPipeline(
             onRecognitionFailed()
           }
     }
+    synchronized(sessionLock) { classificacoesEmVoo.add(job) }
+    job.invokeOnCompletion { synchronized(sessionLock) { classificacoesEmVoo.remove(job) } }
   }
 
   /** Libera decoder, ImageReader, thread e modelos. Chamar ao parar o stream. */
@@ -184,16 +203,23 @@ class LandmarkPipeline(
     val reader = ImageReader.newInstance(width, height, ImageFormat.YUV_420_888, MAX_IMAGES)
     reader.setOnImageAvailableListener({ r ->
       // acquireLatestImage descarta frames intermediários se a inferência não acompanhar
-      // o frame rate — subamostragem natural; o DTW lida com sequências de tamanho variável.
+      // o frame rate — subamostragem natural; o classificador lida com sequências de
+      // tamanho variável.
       val image = r.acquireLatestImage() ?: return@setOnImageAvailableListener
       try {
         if (collecting) {
           val ts = nextTimestampMs()
           val fl = extractor?.extract(image, ts)
-          if (fl != null) synchronized(collectLock) { collected.add(fl) }
+          val normalizado = fl?.let { LandmarkNormalizer.normalize(it, frameW, frameH) }
+          if (normalizado != null) {
+            synchronized(sessionLock) {
+              handGapImputer.offer(normalizado)
+              boundaryDetector?.onFrame(normalizado, ts)
+            }
+          }
         }
       } catch (e: Throwable) {
-        Log.e(TAG, "Erro extraindo landmarks do frame", e)
+        Log.e(TAG, "Erro extraindo/normalizando landmarks do frame", e)
       } finally {
         image.close()
       }

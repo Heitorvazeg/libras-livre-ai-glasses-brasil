@@ -62,6 +62,12 @@ class DialogOrchestrator(
 
   private var wakeWordDetector: WakeWordDetector? = null
 
+  // Palavras reconhecidas na sessão de sinais em curso — uma por boundary (ver
+  // docs/sign-boundary-detector-plano.md §5.3). Junta com espaço ao "encerrar": placeholder
+  // explícito no lugar da tabela combinacoesConhecidas real, que não existe implementada em
+  // lugar nenhum do repo ainda (mobile-app-companion/README.md, item de checklist em aberto).
+  private val palavrasReconhecidas = mutableListOf<String>()
+
   /** Liga a fonte de wake words (hoje, [ManualWakeWordDetector]) — chamar uma vez, na criação. */
   fun attachWakeWordDetector(detector: WakeWordDetector) {
     wakeWordDetector = detector
@@ -82,31 +88,46 @@ class DialogOrchestrator(
     }
   }
 
-  /** Chamado pelo LandmarkPipeline quando a classificação da sessão termina com sucesso. */
+  /**
+   * Chamado pelo LandmarkPipeline a cada sinal reconhecido dentro da sessão em curso — um por
+   * boundary do SignBoundaryDetector, não mais uma vez por sessão inteira (§5.3). Só acumula;
+   * quem decide quando falar é [endSignSession].
+   */
   fun onSignRecognized(text: String) {
-    if (_state.value != DialogState.FALANDO) return
-    scope.launch {
-      speaker.speakAndAwait(text)
-      setState(DialogState.AGUARDANDO_RESPOSTA)
-    }
+    if (text.isNotBlank()) palavrasReconhecidas.add(text)
   }
 
-  /** Chamado pelo LandmarkPipeline quando a classificação falha — retoma a captura na sessão. */
+  /**
+   * Chamado pelo LandmarkPipeline quando um segmento não é reconhecido. Um sinal perdido não
+   * aborta a sessão inteira — só não entra na frase final; a sessão segue capturando o
+   * próximo sinal normalmente (LandmarkPipeline já reinicia o buffer sozinho por boundary).
+   */
   fun onSignRecognitionFailed() {
-    if (_state.value != DialogState.FALANDO) return
-    setState(DialogState.CAPTURANDO_SINAIS)
-    landmarkPipeline.startCollecting()
+    Log.w(TAG, "Um segmento da sessão não foi reconhecido — seguindo o resto da sessão")
   }
 
   private fun beginSignSession() {
+    palavrasReconhecidas.clear()
     setState(DialogState.CAPTURANDO_SINAIS)
-    landmarkPipeline.startCollecting()
+    landmarkPipeline.startSession()
   }
 
   private fun endSignSession() {
+    // Pausa a wake word já aqui, no instante em que "encerrar" foi ouvido — mesmo que ainda
+    // falte esperar a classificação de um sinal em aberto (abaixo).
     setState(DialogState.FALANDO)
-    landmarkPipeline.stopCollectingAndClassify()
-    // onSignRecognized/onSignRecognitionFailed chegam depois, de forma assíncrona.
+    scope.launch {
+      // Suspende até LandmarkPipeline terminar: força classificar um segmento em aberto, se
+      // houver, e espera qualquer classificação já em voo — só depois disso a lista de
+      // palavras está completa (§5.3).
+      landmarkPipeline.endSession()
+      val frase = palavrasReconhecidas.joinToString(" ")
+      palavrasReconhecidas.clear()
+      if (frase.isNotBlank()) {
+        speaker.speakAndAwait(frase)
+      }
+      setState(DialogState.AGUARDANDO_RESPOSTA)
+    }
   }
 
   private fun beginListening() {

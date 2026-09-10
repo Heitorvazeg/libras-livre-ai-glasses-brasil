@@ -34,15 +34,6 @@ android {
     // in Wearables Developer Center
     manifestPlaceholders["mwdat_application_id"] = ""
     manifestPlaceholders["mwdat_client_token"] = ""
-
-    // Libras Livre: URL base da API de validação (PoC/api). Padrão = host do EMULADOR Android
-    // (10.0.2.2 aponta para a máquina que roda o servidor). Para device físico, troque pelo IP
-    // LAN da máquina passando -PlibrasApiBaseUrl=http://192.168.x.x:8000 no build.
-    buildConfigField(
-        "String",
-        "LIBRAS_API_BASE_URL",
-        "\"${project.findProperty("librasApiBaseUrl") ?: "http://10.0.2.2:8000"}\"",
-    )
   }
 
   buildTypes {

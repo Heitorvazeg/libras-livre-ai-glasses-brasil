@@ -41,15 +41,14 @@ import com.meta.wearable.dat.core.session.DeviceSession
 import com.meta.wearable.dat.core.session.DeviceSessionState
 import com.meta.wearable.dat.core.types.Permission
 import com.meta.wearable.dat.core.types.PermissionStatus
-import com.meta.wearable.dat.externalsampleapps.cameraaccess.BuildConfig
 import com.meta.wearable.dat.externalsampleapps.cameraaccess.R
 import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.AndroidSpeechRecognizerSttEngine
 import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.AudioSessionManager
 import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.DialogOrchestrator
 import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.DialogState
-import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.LandmarkApi
 import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.LandmarkPipeline
 import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.ManualWakeWordDetector
+import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.PlaceholderSignClassifier
 import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.Speaker
 import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.SttEngine
 import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.WakeWord
@@ -109,7 +108,7 @@ class CameraViewModel(
       LandmarkPipeline(
           context = application,
           scope = viewModelScope,
-          api = LandmarkApi(BuildConfig.LIBRAS_API_BASE_URL),
+          classifier = PlaceholderSignClassifier(),
           onState = { transform -> _uiState.update { it.copy(libras = it.libras.transform()) } },
           onRecognized = { text -> dialogOrchestrator.onSignRecognized(text) },
           onRecognitionFailed = { dialogOrchestrator.onSignRecognitionFailed() },
