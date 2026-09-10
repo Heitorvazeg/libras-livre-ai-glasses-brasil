@@ -25,7 +25,7 @@
  *   6. Mão ausente vira o vetor zero — equivalente a "a mão está na origem", a
  *      mesma convenção que extract.py usa (bloco de zeros, sem normalizar).
  */
-package com.meta.wearable.dat.externalsampleapps.cameraaccess.libras
+package com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.reconhecimento
 
 import kotlin.math.sqrt
 
@@ -42,6 +42,11 @@ object LandmarkNormalizer {
   // acima), usados só pra origem/escala (normalizacao.ref_a/ref_b no config.yaml).
   private const val REF_OMBRO_ESQ = 11
   private const val REF_OMBRO_DIR = 12
+
+  // Maior índice realmente lido de `pose` (ombros + POSE_SUBSET, que vai até 24 —
+  // quadril_dir). Guarda o bounds-check de normalize() contra estourar índice — checar só
+  // REF_OMBRO_ESQ/DIR não bastava, porque POSE_SUBSET lê índices maiores que eles.
+  private val INDICE_MAXIMO_NECESSARIO = maxOf(REF_OMBRO_ESQ, REF_OMBRO_DIR, POSE_SUBSET.max())
 
   private const val MIN_VISIBILIDADE = 0.5f
   private const val ESCALA_MINIMA = 1e-6f
@@ -67,7 +72,7 @@ object LandmarkNormalizer {
    */
   fun normalize(frame: FrameLandmarks, width: Int, height: Int): Array<FloatArray>? {
     val pose = frame.pose
-    if (pose.size <= maxOf(REF_OMBRO_ESQ, REF_OMBRO_DIR)) return null
+    if (pose.size <= INDICE_MAXIMO_NECESSARIO) return null
 
     val ombroEsq = pose[REF_OMBRO_ESQ]
     val ombroDir = pose[REF_OMBRO_DIR]

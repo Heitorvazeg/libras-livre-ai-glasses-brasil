@@ -4,7 +4,7 @@
  * é conferir que a máquina de estados está implementada conforme o §4.2/§4.3, com
  * parâmetros controlados (não os defaults não calibrados).
  */
-package com.meta.wearable.dat.externalsampleapps.cameraaccess.libras
+package com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.reconhecimento
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse

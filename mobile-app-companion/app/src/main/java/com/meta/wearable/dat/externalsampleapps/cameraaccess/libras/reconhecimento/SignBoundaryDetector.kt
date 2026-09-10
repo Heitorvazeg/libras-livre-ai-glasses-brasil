@@ -17,7 +17,7 @@
  * PoC no checkout — ver §0/§7 do plano). Os defaults abaixo são os "pontos de partida
  * sugeridos" do §4.4, não valores medidos — calibrar é trabalho futuro, não deste commit.
  */
-package com.meta.wearable.dat.externalsampleapps.cameraaccess.libras
+package com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.reconhecimento
 
 import kotlin.math.sqrt
 

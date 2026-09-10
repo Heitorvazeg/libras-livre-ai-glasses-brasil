@@ -22,7 +22,7 @@
 // do plano) — AudioInputHandler.kt já deixa pronta a captura de PCM contínuo do mic do celular
 // pra quando essa validação acontecer, mas nada aqui a consome ainda.
 
-package com.meta.wearable.dat.externalsampleapps.cameraaccess.libras
+package com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.audio
 
 /** As duas wake words que delimitam sessões (docs/orquestracao-dialogo-audio-plano.md §4.2). */
 enum class WakeWord {

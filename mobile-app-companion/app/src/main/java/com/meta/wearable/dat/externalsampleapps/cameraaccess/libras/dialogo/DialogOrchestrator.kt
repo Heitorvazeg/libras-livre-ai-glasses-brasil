@@ -14,13 +14,20 @@
 // significa por conta própria, tudo passa por aqui ("só existe um dono do áudio por vez", §5).
 //
 // A costura sinal->frase (como uma sequência de sinais reconhecidos vira uma frase falável) é
-// responsabilidade do pipeline de reconhecimento (docs/sign-boundary-detector-plano.md), fora do
-// escopo deste arquivo — aqui uma sessão ainda mapeia 1:1 pra uma única chamada de classificação,
-// igual ao fluxo manual anterior, até aquele plano ser implementado.
+// responsabilidade DESTA classe: palavrasReconhecidas acumula uma palavra por boundary do
+// SignBoundaryDetector (via onSignRecognized), e endSignSession() junta com espaço ao
+// "encerrar" — placeholder explícito no lugar da tabela combinacoesConhecidas real (ver
+// docs/sign-boundary-detector-plano.md §5.3).
 
-package com.meta.wearable.dat.externalsampleapps.cameraaccess.libras
+package com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.dialogo
 
 import android.util.Log
+import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.audio.AudioSessionManager
+import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.audio.Speaker
+import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.audio.SttEngine
+import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.audio.WakeWord
+import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.audio.WakeWordDetector
+import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.reconhecimento.LandmarkPipeline
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow

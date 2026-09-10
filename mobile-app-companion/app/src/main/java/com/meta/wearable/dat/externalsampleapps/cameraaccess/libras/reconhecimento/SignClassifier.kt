@@ -13,7 +13,7 @@
  * Substitui o papel que libras/LandmarkApi.kt tinha nesse fluxo (removido — nada mais chama
  * a API de classificação por sinal).
  */
-package com.meta.wearable.dat.externalsampleapps.cameraaccess.libras
+package com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.reconhecimento
 
 interface SignClassifier {
   /** Classifica um segmento. Lança em caso de falha (LandmarkPipeline já trata via runCatching). */

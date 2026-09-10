@@ -17,19 +17,29 @@ frames HEVC (CameraViewModel.handleVideoFrame)
       → DialogOrchestrator acumula as palavras da sessão e fala a frase ao "encerrar"
 ```
 
+Organizado em 3 subpacotes, por domínio (não por tipo de arquivo):
+
+| Subpacote | Papel |
+|---|---|
+| `reconhecimento/` | pipeline de visão: extração → normalização → imputação → boundary → classificação |
+| `dialogo/` | máquina de estados da sessão (①→⑦) |
+| `audio/` | wake word, TTS, STT, troca A2DP↔HFP |
+
 | Arquivo | Papel |
 |---|---|
-| `LandmarkPipeline.kt` | orquestra decoder→ImageReader→extração→normalização→boundary→classificação |
-| `LandmarkExtractor.kt` | MediaPipe Pose+Hands → `FrameLandmarks` (pontos crus 0..1) |
-| `LandmarkNormalizer.kt` | normalização por ombros (origem/escala) — 57 pontos, 2 canais (x,y) |
-| `HandGapImputer.kt` | preenche lacunas curtas de mão não detectada (portagem online de `treino/dados.py:imputar_maos`) |
-| `SignBoundaryDetector.kt` | heurística de deslocamento — decide onde cada sinal começa/termina dentro da sessão |
-| `SignClassifier.kt` | interface do classificador local + `PlaceholderSignClassifier` (o `.tflite` real ainda não existe) |
-| `Speaker.kt` | TextToSpeech pt-BR |
-| `DialogOrchestrator.kt` | dono da sessão de diálogo (①→⑦) — decide quando capturar, falar, escutar; acumula as palavras da sessão numa frase |
-| `WakeWordDetector.kt` | gatilho da sessão — hoje só os botões de fallback (`ManualWakeWordDetector`) |
-| `AudioSessionManager.kt` | troca A2DP↔HFP pra escutar a resposta do atendente pelo mic dos óculos |
-| `SttEngine.kt` | transcrição da resposta do atendente |
+| `reconhecimento/LandmarkPipeline.kt` | orquestra decoder→ImageReader→extração→normalização→boundary→classificação |
+| `reconhecimento/LandmarkExtractor.kt` | MediaPipe Pose+Hands → `FrameLandmarks` (pontos crus 0..1) |
+| `reconhecimento/LandmarkNormalizer.kt` | normalização por ombros (origem/escala) — 57 pontos, 2 canais (x,y) |
+| `reconhecimento/HandGapImputer.kt` | preenche lacunas curtas de mão não detectada (portagem online de `treino/dados.py:imputar_maos`) |
+| `reconhecimento/SignBoundaryDetector.kt` | heurística de deslocamento — decide onde cada sinal começa/termina dentro da sessão |
+| `reconhecimento/SignClassifier.kt` | interface do classificador local + `PlaceholderSignClassifier` (o `.tflite` real ainda não existe) |
+| `dialogo/DialogOrchestrator.kt` | dono da sessão de diálogo (①→⑦) — decide quando capturar, falar, escutar; acumula as palavras da sessão numa frase |
+| `dialogo/DialogState.kt` | os 7 estados da sessão |
+| `audio/Speaker.kt` | TextToSpeech pt-BR |
+| `audio/WakeWordDetector.kt` | gatilho da sessão — hoje só os botões de fallback (`ManualWakeWordDetector`) |
+| `audio/AudioSessionManager.kt` | troca A2DP↔HFP pra escutar a resposta do atendente pelo mic dos óculos |
+| `audio/SttEngine.kt` | transcrição da resposta do atendente |
+| `audio/AudioInputHandler.kt` | fonte de PCM contínuo do mic do celular — preparado pra uma futura wake word real, não conectado a nenhum motor ainda |
 
 O estado (capturando / reconhecendo / resultado / erro) fica em
 `CameraUiState.libras` e é desenhado por `LibrasBanner` em `ui/CameraScreen.kt` — agora

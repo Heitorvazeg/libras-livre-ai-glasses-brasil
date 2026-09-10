@@ -3,7 +3,7 @@
  * mesma sequência sintética, mesmas asserções, adaptado pro consumo frame-a-frame
  * (offer()) em vez de um array pronto. Ver HandGapImputer.kt.
  */
-package com.meta.wearable.dat.externalsampleapps.cameraaccess.libras
+package com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.reconhecimento
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse

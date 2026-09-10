@@ -27,7 +27,7 @@
  * Só toca nos blocos de mão — pose nunca é modificada (mesma garantia do Python,
  * conferida em `teste_imputacao_maos`).
  */
-package com.meta.wearable.dat.externalsampleapps.cameraaccess.libras
+package com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.reconhecimento
 
 class HandGapImputer(private val lacunaMaxima: Int = 5) {
 

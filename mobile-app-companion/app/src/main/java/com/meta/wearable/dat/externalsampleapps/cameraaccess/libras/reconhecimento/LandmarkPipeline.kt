@@ -21,7 +21,7 @@
  * Custo: o MediaPipe (caro) só roda ENQUANTO a sessão está aberta. Fora disso o ImageReader
  * é drenado sem inferência, então o overhead em repouso é só o do segundo decode.
  */
-package com.meta.wearable.dat.externalsampleapps.cameraaccess.libras
+package com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.reconhecimento
 
 import android.content.Context
 import android.graphics.ImageFormat
@@ -155,7 +155,12 @@ class LandmarkPipeline(
     job.invokeOnCompletion { synchronized(sessionLock) { classificacoesEmVoo.remove(job) } }
   }
 
-  /** Libera decoder, ImageReader, thread e modelos. Chamar ao parar o stream. */
+  /**
+   * Libera decoder, ImageReader, thread e modelos. Chamar ao parar o STREAM — não fecha o
+   * [classifier] aqui de propósito: o stream (e portanto stop()) pode reiniciar várias vezes
+   * na vida do pipeline (reconexão dos óculos etc.), mas o classificador é o mesmo pelo tempo
+   * todo. Ver [dispose] para o teardown final, chamado só uma vez.
+   */
   fun stop() {
     collecting = false
     decoder?.stop()
@@ -168,6 +173,12 @@ class LandmarkPipeline(
     extractor = null
     frameW = 0
     frameH = 0
+  }
+
+  /** Teardown final — chamar só quando o pipeline inteiro vai embora (ex.: onCleared do ViewModel). */
+  fun dispose() {
+    stop()
+    classifier.close()
   }
 
   /**

@@ -28,7 +28,7 @@
 // ManualWakeWordDetector (botões), e nada instancia esta classe. Ela fica pronta pra quando um
 // motor de verdade (Porcupine, TFLite — §8 do plano) for escolhido.
 
-package com.meta.wearable.dat.externalsampleapps.cameraaccess.libras
+package com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.audio
 
 import android.Manifest
 import android.content.Context

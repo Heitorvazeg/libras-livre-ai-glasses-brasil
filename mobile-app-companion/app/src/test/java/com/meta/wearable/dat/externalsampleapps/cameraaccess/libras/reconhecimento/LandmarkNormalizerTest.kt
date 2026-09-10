@@ -10,7 +10,7 @@
  * o extract.py num frame real e comparar byte a byte com este resultado é o próximo
  * passo de validação recomendado antes de confiar nisto em produção.
  */
-package com.meta.wearable.dat.externalsampleapps.cameraaccess.libras
+package com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.reconhecimento
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
@@ -79,6 +79,16 @@ class LandmarkNormalizerTest {
   fun ombroPoucoVisivelDescartaOFrame() {
     val comOmbroFraco = ombros + (11 to floatArrayOf(0.4f, 0.5f, 0f, 0.2f)) // visibility < 0.5
     val frame = FrameLandmarks(pose = pose33(comOmbroFraco), leftHand = null, rightHand = null)
+    assertNull(LandmarkNormalizer.normalize(frame, width = 100, height = 200))
+  }
+
+  @Test
+  fun poseCurtaDemaisDescartaOFrameEmVezDeEstourarIndice() {
+    // Só os 13 primeiros pontos (0..12) — cobre os ombros (11,12), mas não os índices
+    // maiores que POSE_SUBSET também lê (até 24, quadril_dir). Antes de corrigir o
+    // bounds-check, isto lançava ArrayIndexOutOfBoundsException em vez de devolver null.
+    val poseCurta = List(13) { i -> ombros[i] ?: floatArrayOf(0f, 0f, 0f, 1f) }
+    val frame = FrameLandmarks(pose = poseCurta, leftHand = null, rightHand = null)
     assertNull(LandmarkNormalizer.normalize(frame, width = 100, height = 200))
   }
 

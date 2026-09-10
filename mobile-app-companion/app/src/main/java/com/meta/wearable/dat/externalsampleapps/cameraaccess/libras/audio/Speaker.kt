@@ -5,7 +5,7 @@
  * conhece Libras entender. Pequeno de propósito; a contextualização sinal->frase
  * (juntar palavras numa frase natural) é trabalho futuro, fora deste andaime.
  */
-package com.meta.wearable.dat.externalsampleapps.cameraaccess.libras
+package com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.audio
 
 import android.content.Context
 import android.speech.tts.TextToSpeech

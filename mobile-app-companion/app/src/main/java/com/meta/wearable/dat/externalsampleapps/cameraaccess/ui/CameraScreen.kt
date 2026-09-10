@@ -81,9 +81,9 @@ import com.meta.wearable.dat.core.types.RegistrationState
 import com.meta.wearable.dat.externalsampleapps.cameraaccess.R
 import com.meta.wearable.dat.externalsampleapps.cameraaccess.camera.CameraUiState
 import com.meta.wearable.dat.externalsampleapps.cameraaccess.camera.CameraViewModel
-import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.DialogState
-import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.LibrasState
-import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.WakeWord
+import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.audio.WakeWord
+import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.dialogo.DialogState
+import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.reconhecimento.LibrasState
 import com.meta.wearable.dat.externalsampleapps.cameraaccess.wearables.WearablesViewModel
 
 // Scrims behind the top/bottom bars so the white controls stay legible over the live feed. Hoisted

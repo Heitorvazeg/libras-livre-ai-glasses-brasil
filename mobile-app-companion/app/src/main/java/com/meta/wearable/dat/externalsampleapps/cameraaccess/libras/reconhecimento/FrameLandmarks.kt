@@ -3,7 +3,7 @@
  * (consumidor). Antes vivia em LandmarkApi.kt (removido — a classificação deixou de ser via
  * API, ver libras/SignClassifier.kt), mas é um tipo de dado independente de rede.
  */
-package com.meta.wearable.dat.externalsampleapps.cameraaccess.libras
+package com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.reconhecimento
 
 /** Landmarks crus de um frame, nas coordenadas normalizadas do MediaPipe (0..1). */
 data class FrameLandmarks(
