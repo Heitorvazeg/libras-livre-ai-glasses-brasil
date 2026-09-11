@@ -35,17 +35,34 @@ import numpy as np
 
 # Faixa (em unidades de ombro) mapeada para [0, 1]. Ver docstring.
 LIMITE = 2.0
+# O z tem faixa MUITO maior que x,y e precisa do seu próprio limite. Medido em
+# 150 clipes MINDS (valores não-nulos, em unidades de ombro):
+#
+#            mediana    p95    p99,9    máx
+#   x,y         0,44   1,35     1,63   2,05   -> LIMITE 2,0 corta ~0,1%
+#   z           0,74   2,15     4,89   5,47   -> LIMITE 2,0 cortaria >5%
+#
+# 5,0 mantém o z na mesma proporção de corte que x,y (~0,1%). Usar 2,0 para os
+# dois saturaria a metade superior do z e mediria a saturação, não o z.
+LIMITE_Z = 5.0
 # Frames por canal — o "3" do RGB.
 FRAMES_POR_CANAL = 3
 
 
 def para_imagem(seq: np.ndarray, frames_por_canal: int = FRAMES_POR_CANAL,
-                limite: float = LIMITE) -> np.ndarray:
-    """(T, P, 2) de landmarks -> imagem (P, 2*(T//n), n) em [0, 1].
+                limite: float = LIMITE, limite_z: float = LIMITE_Z) -> np.ndarray:
+    """(T, P, D) de landmarks -> imagem (P, D*(T//n), n) em [0, 1].
 
     Frames sobrando no fim (T não múltiplo de n) são descartados, como na
     implementação de referência: n-1 frames no máximo, irrelevante num clipe de
     ~140.
+
+    D é 2 (x,y) por padrão e 3 com `--com-z`. Note onde o z entra: NÃO como um
+    quarto canal da imagem — os 3 canais RGB já são 3 frames consecutivos, e
+    mexer neles mudaria o significado da representação. O z vira mais um bloco de
+    colunas, ao lado de x e y. A imagem fica 50% mais larga e o
+    redimensionamento para 224x224 absorve a diferença, exatamente como já
+    absorve clipes de durações diferentes.
     """
     if seq.ndim != 3 or seq.shape[2] < 2:
         raise ValueError(f"esperava (T, P, >=2), veio {seq.shape}")
@@ -54,15 +71,16 @@ def para_imagem(seq: np.ndarray, frames_por_canal: int = FRAMES_POR_CANAL,
     if t_util == 0:
         raise ValueError(f"clipe curto demais: {seq.shape[0]} frame(s), mínimo {n}")
 
-    x = seq[:t_util, :, 0].T  # (P, t_util)
-    y = seq[:t_util, :, 1].T
-    p = x.shape[0]
-    x = x.reshape(p, -1, n)
-    y = y.reshape(p, -1, n)
-    imagem = np.concatenate([x, y], axis=1)
-
-    imagem = np.clip(imagem, -limite, limite)
-    return ((imagem + limite) / (2 * limite)).astype(np.float32)
+    p = seq.shape[1]
+    blocos = []
+    for d in range(seq.shape[2]):
+        # Cada dimensão é escalada pelo SEU limite antes de virar coluna: x,y e z
+        # têm faixas diferentes por quase 3x, e um limite único ou satura o z ou
+        # desperdiça a faixa de x,y.
+        lim = limite_z if d == 2 else limite
+        bloco = np.clip(seq[:t_util, :, d].T.reshape(p, -1, n), -lim, lim)
+        blocos.append((bloco + lim) / (2 * lim))
+    return np.concatenate(blocos, axis=1).astype(np.float32)
 
 
 # ------------------------------------------------------------------ augmentação

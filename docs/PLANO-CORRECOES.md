@@ -172,6 +172,28 @@ ruído de ±1,7 pp.
 
 **Arquivos:** `treino/representacao.py`, `treino/gcn.py`
 
+**Status (2026-09-09): implementado, ainda não medido.** `gcn.pais()` deriva a árvore por
+busca em largura sobre `arestas()` (raiz no nariz) e `gcn.com_ossos()` concatena os
+vetores de osso aos canais: (T,V,2) → (T,V,4). Liga-se com `treinar.py --ossos`.
+
+Três desvios do que o item pedia, cada um com motivo:
+
+1. **Fusão por canal, não duas redes.** O 2s-AGCN treina dois modelos e soma os softmax,
+   o que dobra o custo de treino. Concatenar nos canais custa **+612 parâmetros**
+   (463.898 → 464.510, +0,13%) e uma passada só. Com o orçamento de CPU desta máquina a
+   versão de duas redes não cabe antes do prazo; `com_ossos` já serve para alimentá-la
+   depois, se couber.
+2. **Só GCN, não "as duas arquiteturas".** A representação Skeleton-DML empilha 3 frames
+   nos canais RGB — não há canal livre para os ossos sem redefinir a imagem e invalidar os
+   93,4% já medidos. `--ossos` com `--arquitetura resnet` avisa e é ignorado.
+3. **Raiz no nariz, não num ombro.** O conjunto de arestas é simétrico esquerda/direita e o
+   nariz é ponto fixo do espelhamento, então a árvore sai simétrica. Enraizar num ombro
+   daria uma árvore que a augmentação de espelho transformaria em outra — os clipes
+   espelhados teriam ossos incoerentes, e em silêncio. `teste_ossos` no selftest trava
+   exatamente isso, junto com a coerência osso↔aresta e a invariância a translação.
+
+**Falta:** o LOSO comparativo. Depende da máquina, hoje ocupada com o LOSO do B1.
+
 ---
 
 ### B3. Adjacência adaptativa (2s-AGCN)
@@ -196,6 +218,38 @@ clipe inteiro. Não está errado, está **não calibrado**: nunca varremos esse 
 **Prioridade:** baixa, mesma justificativa de B3.
 
 **Arquivos:** `treino/gcn.py`
+
+---
+
+### B5. Medir o efeito do z (2 vs 3 coordenadas)
+**Problema:** `treino/dados.py` descarta a terceira coordenada (`arr[:, :, :2]`) desde o
+primeiro commit do pipeline, **sem medição própria e sem comentário**. A justificativa
+existe, mas é de outro modelo: `PoC/config.yaml` registra 64,0% → 68,7% ao desligar o z,
+medido no **DTW 1-NN** com 10 sinais.
+
+**Por que não transfere:** o DTW soma distâncias cruas e não tem defesa contra um canal de
+escala incoerente (o z de mão é relativo ao punho, o de pose ao quadril — referenciais
+diferentes no mesmo vetor). ResNet e GCN têm peso aprendido e podem ponderar ou ignorar o
+canal. A conclusão do DTW não vale para eles, em nenhuma das duas direções: nem "o z
+piora" (não medido nestes modelos), nem "a rede aprende a usar" (também não medido).
+
+**Por que virou prioridade agora:** `docs/extracao-landmarks-plano.md` §3 item 2 decidiu
+que o app vai extrair **3 canais**, explicitamente contra o dado da PoC. Como o modelo é
+construído com `canais_ent=2`, isso não é diferença de acurácia — é **erro de shape** na
+integração. Os dois lados têm de concordar, e a decisão pertence a `treino/`, onde dá
+para medir.
+
+**Fazer:** LOSO com `arr[:, :, :3]` e `canais_ent=3` contra a mesma configuração em 2D,
+nas duas arquiteturas. Uma flag `--com-z`, simétrica a `--sem-imputacao`.
+
+**Pronto quando:** número dos dois lados na mesma régua, com a ressalva de ±1,7 pp, e o
+resultado propagado para `extracao-landmarks-plano.md`.
+
+**Armadilha registrada:** `usar_z` no `PoC/config.yaml` **não é lida pelo treino**. O
+comentário dizia "voltar atrás é só trocar para true", verdade só para a PoC — corrigido
+no mesmo commit que abriu este item.
+
+**Arquivos:** `treino/dados.py`, `treino/treinar.py`, `treino/gcn.py`
 
 ---
 
@@ -288,7 +342,7 @@ de proveniência), suíte de datasets e PoC (10/10, incluindo MediaPipe). Todos 
 O ambiente executável foi `computer-vision-model/PoC/.venv311/bin/python`; o ambiente
 Python 3.14 selecionado no editor não tem Torch e ainda pode mostrar avisos de imports.
 
-**Pendência de dados, não contornada:** a auditoria do corpus real atual aborta por
+**Pendência de dados em 09/09 (resolvida para a cópia auditada em §9):** a auditoria do corpus real abortava por
 sidecars históricos ausentes. Antes de treinar, registrar o legado com vídeos e índice
 disponíveis e **confirmar a configuração histórica**. Não foram inventados metadados,
 modificados arrays nem iniciados treinos reais. O utilitário de migração é retomável.
@@ -299,3 +353,22 @@ somente a fixture do pré-treino foi adaptada de M para V com sidecars sintétic
 asserções e ordem dos testes existentes foram preservadas.
 
 Detalhes operacionais e limites: [protocolo-pretreino.md](protocolo-pretreino.md).
+
+## 9. Fechamento das pendências de dados — 2026-09-10
+
+**Pendências 1 e 2 concluídas; execução de treinamento (3/A5) adiada pelo usuário.**
+
+- Registrados 4.053 pares vídeo/landmark com sidecars: 8.106 registros. Configuração
+  histórica declarada a partir de snapshot Git, com limites de evidência explícitos.
+- SHA-256 dos 8.106 arquivos originais conferidos antes/depois: nenhum byte alterado.
+- A auditoria revelou 14 grupos de vídeos idênticos sob rótulos/articuladores
+  diferentes. O corpus original continua preservado e reprovado por essas duplicatas.
+- Preparada cópia **landmarks-pretreino-auditado**, excluindo todos os 28 membros
+  ambíguos sem escolher rótulos/pessoas. **4.025 amostras aprovadas** pela auditoria.
+- O filtro mínimo de dois clipes por classe deixa 4.021 clipes / 1.349 classes,
+  antes da partição contrastiva. Não houve treino nem medição de ganho de acurácia.
+- Corrigida migração de colisões `avó`/`avô` por tamanho/CRC, sem enfraquecer a
+  auditoria. Testes offline de migração, preparação e isolamento passaram.
+
+Evidências, hashes, exclusões e uso correto da cópia privada:
+[auditoria-pretreino-2026-09-10.md](auditoria-pretreino-2026-09-10.md).
