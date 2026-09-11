@@ -13,11 +13,12 @@
 // SttEngine (transcrição) — nenhum componente decide roteamento de áudio ou o que uma wake word
 // significa por conta própria, tudo passa por aqui ("só existe um dono do áudio por vez", §5).
 //
-// A costura sinal->frase (como uma sequência de sinais reconhecidos vira uma frase falável) é
-// responsabilidade DESTA classe: palavrasReconhecidas acumula uma palavra por boundary do
-// SignBoundaryDetector (via onSignRecognized), e endSignSession() junta com espaço ao
-// "encerrar" — placeholder explícito no lugar da tabela combinacoesConhecidas real (ver
-// docs/sign-boundary-detector-plano.md §5.3).
+// A costura sinal->frase continua sendo responsabilidade DESTA classe, mas ela agora DELEGA a
+// resolução: palavrasReconhecidas acumula uma glosa por boundary do SignBoundaryDetector (via
+// onSignRecognized) e endSignSession() entrega a lista ao GlossContextualizer
+// (docs/contextualizacao-glosa-seq2seq-plano.md §3). O joinToString(" ") que existia aqui era
+// um placeholder explícito; ele sobrevive como PassthroughGlossContextualizer, último degrau
+// do fallback.
 
 package com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.dialogo
 
@@ -27,6 +28,7 @@ import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.audio.Speake
 import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.audio.SttEngine
 import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.audio.WakeWord
 import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.audio.WakeWordDetector
+import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.contextualizacao.GlossContextualizer
 import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.reconhecimento.LandmarkPipeline
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -40,6 +42,9 @@ class DialogOrchestrator(
     private val speaker: Speaker,
     private val audioSessionManager: AudioSessionManager,
     private val sttEngine: SttEngine,
+    // Glossário -> frase em PT-BR. Cadeia montada em criarGlossContextualizer():
+    // modelo .tflite sob guarda -> template -> passthrough (§3.3).
+    private val contextualizer: GlossContextualizer,
     // Handoff pro pipeline texto->glosa->avatar (docs/vlibras-webview-plano.md) — ainda não
     // implementado nesta branch, por isso é só um callback injetado (ver §6.5 do plano).
     private val onAvatarText: (String) -> Unit,
@@ -69,10 +74,10 @@ class DialogOrchestrator(
 
   private var wakeWordDetector: WakeWordDetector? = null
 
-  // Palavras reconhecidas na sessão de sinais em curso — uma por boundary (ver
-  // docs/sign-boundary-detector-plano.md §5.3). Junta com espaço ao "encerrar": placeholder
-  // explícito no lugar da tabela combinacoesConhecidas real, que não existe implementada em
-  // lugar nenhum do repo ainda (mobile-app-companion/README.md, item de checklist em aberto).
+  // Glosas reconhecidas na sessão em curso — uma por boundary (ver
+  // docs/sign-boundary-detector-plano.md §5.3). Ao "encerrar", a lista vai inteira para o
+  // [contextualizer], que decide como ela vira frase — esta classe não sabe (nem deve saber) se
+  // a resolução veio do modelo, do template ou do passthrough.
   private val palavrasReconhecidas = mutableListOf<String>()
 
   /** Liga a fonte de wake words (hoje, [ManualWakeWordDetector]) — chamar uma vez, na criação. */
@@ -128,10 +133,12 @@ class DialogOrchestrator(
       // houver, e espera qualquer classificação já em voo — só depois disso a lista de
       // palavras está completa (§5.3).
       landmarkPipeline.endSession()
-      val frase = palavrasReconhecidas.joinToString(" ")
+      val glosas = palavrasReconhecidas.toList()
       palavrasReconhecidas.clear()
-      if (frase.isNotBlank()) {
-        speaker.speakAndAwait(frase)
+      if (glosas.isNotEmpty()) {
+        val resultado = contextualizer.contextualize(glosas)
+        Log.i(TAG, "glosas=$glosas -> \"${resultado.texto}\" (${resultado.origem})")
+        if (resultado.texto.isNotBlank()) speaker.speakAndAwait(resultado.texto)
       }
       setState(DialogState.AGUARDANDO_RESPOSTA)
     }

@@ -48,6 +48,7 @@ import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.audio.Manual
 import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.audio.Speaker
 import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.audio.SttEngine
 import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.audio.WakeWord
+import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.contextualizacao.criarGlossContextualizer
 import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.dialogo.DialogOrchestrator
 import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.dialogo.DialogState
 import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.reconhecimento.LandmarkPipeline
@@ -114,6 +115,9 @@ class CameraViewModel(
           onRecognitionFailed = { dialogOrchestrator.onSignRecognitionFailed() },
       )
   private val audioSessionManager = AudioSessionManager(application)
+  // Cadeia modelo -> guarda -> template -> passthrough (§3.3). Nasce uma vez e vive até
+  // onCleared(): o Interpreter do .tflite não deve ser recriado por sessão (§7.1).
+  private val glossContextualizer = criarGlossContextualizer(application)
   private val sttEngine: SttEngine = AndroidSpeechRecognizerSttEngine(application)
   private val manualWakeWordDetector =
       ManualWakeWordDetector(onWakeWord = { word -> dialogOrchestrator.onWakeWord(word) })
@@ -164,6 +168,7 @@ class CameraViewModel(
             speaker = speaker,
             audioSessionManager = audioSessionManager,
             sttEngine = sttEngine,
+            contextualizer = glossContextualizer,
             // TODO: handoff pro pipeline texto->glosa->avatar de docs/vlibras-webview-plano.md,
             // ainda não implementado nesta branch.
             onAvatarText = { text ->
@@ -675,6 +680,7 @@ class CameraViewModel(
     cleanupSession()
     videoRecorder.close()
     landmarkPipeline.dispose()
+    glossContextualizer.close()
     speaker.shutdown()
     sttEngine.stop()
     audioSessionManager.releaseListening()

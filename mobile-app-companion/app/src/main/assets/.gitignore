@@ -6,3 +6,9 @@
 
 # Mantém a pasta no git mesmo vazia.
 !.gitignore
+
+# Modelo de contextualização glosa->PT (Libras Livre) — 46 MB, regenerável.
+# Gere com: cd ../contextualization-model && python exportacao/para_tflite.py --experimento v2
+# e copie para cá junto de glosa_ids.json / destokenizar.json (que SÃO versionados: são
+# contrato com o modelo — ver docs/contextualizacao-implementacao.md §10, §11).
+*.tflite
