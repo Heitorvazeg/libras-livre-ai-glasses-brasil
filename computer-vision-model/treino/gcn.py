@@ -148,8 +148,59 @@ def com_ossos(seq: np.ndarray, pai: np.ndarray | None = None) -> np.ndarray:
         pai = pais()
     if pai.shape[0] != seq.shape[1]:
         raise ValueError(f"árvore tem {pai.shape[0]} nós, sequência tem {seq.shape[1]}")
-    xy = seq[:, :, :2]
-    return np.concatenate([xy, xy - xy[:, pai, :]], axis=2).astype(np.float32)
+    # Genérico no número de dimensões: com x,y saem 4 canais; com x,y,z saem 6.
+    # Fixar 2 aqui faria `--ossos --com-z` descartar o z em silêncio.
+    osso = seq - seq[:, pai, :]
+    if seq.shape[2] >= 3:
+        # O z das DUAS ligações pulso(pose) -> punho(mão) não significa nada.
+        # Com --z-recentrado o punho da mão vira z=0 por construção (referencial
+        # da própria mão), enquanto o pulso da pose segue no referencial do corpo.
+        # A diferença entre eles mede a troca de origem, não anatomia. Zerar é
+        # honesto: é a única componente do vetor que não tem interpretação.
+        # (x e y ficam: esses compartilham referencial e medem o deslocamento real.)
+        osso[:, N_POSE, 2] = 0.0
+        osso[:, N_POSE + N_MAO, 2] = 0.0
+    return np.concatenate([seq, osso], axis=2).astype(np.float32)
+
+
+def com_movimento(seq: np.ndarray, valido: np.ndarray | None = None) -> np.ndarray:
+    """(T, V, C) -> (T, V, 2C): os canais atuais mais a variação deles no tempo.
+
+    POR QUE. Movimento é um dos parâmetros que DEFINEM um sinal em Libras, ao lado
+    de configuração de mão e locação. Hoje a rede precisa inferi-lo das convoluções
+    temporais; entregar `frame[t] - frame[t-1]` pronto é o mesmo presente que os
+    ossos foram — uma quantidade que ela teria de aprender a calcular, gastando
+    dado que não temos de sobra (800 clipes).
+
+    Compõe com `com_ossos`: aplicar ossos e depois movimento dá 8 canais, onde os
+    4 últimos são a velocidade das juntas E dos ossos. A ordem importa e é essa —
+    velocidade de osso é "como a orientação do membro está mudando", que é
+    diferente de "osso da velocidade".
+
+    O primeiro frame não tem anterior, então sua variação é zero. É a convenção
+    padrão e evita inventar um frame -1.
+
+    `valido` é uma máscara (T, V) de "este nó foi observado neste frame". Sem ela o
+    canal de movimento vira ruído nas transições de detecção — ver o comentário no
+    corpo. Passe sempre, exceto em teste sintético sem ausências.
+    """
+    if seq.ndim != 3:
+        raise ValueError(f"esperava (T, V, C), veio {seq.shape}")
+    d = np.zeros_like(seq)
+    d[1:] = seq[1:] - seq[:-1]
+    if valido is not None:
+        # SEM ISTO O CANAL VIRA RUÍDO. Medido nos 800 clipes MINDS, DEPOIS da
+        # imputação: 720 clipes ainda têm transições ausente<->presente, 3.011
+        # nos punhos. O salto mediano numa transição é 1,32 unidade de ombro
+        # contra 0,0116 de deslocamento normal entre frames — cem vezes maior.
+        # Uma mão parada que some e volta produziria "velocidade" enorme e falsa.
+        # Só há velocidade entre duas observações REAIS.
+        if valido.shape != seq.shape[:2]:
+            raise ValueError(f"máscara {valido.shape} não bate com {seq.shape[:2]}")
+        par = np.zeros(seq.shape[:2], dtype=bool)
+        par[1:] = valido[1:] & valido[:-1]
+        d[~par] = 0.0
+    return np.concatenate([seq, d], axis=2).astype(np.float32)
 
 
 def adjacencia(n_nos: int, lista_arestas: list[tuple[int, int]]) -> torch.Tensor:
@@ -246,27 +297,41 @@ class STGCN(nn.Module):
     """
 
     def __init__(self, num_classes: int, n_nos: int = N_POSE + 2 * N_MAO,
-                 canais_ent: int = 2, largura: int = 64, dropout: float = 0.3):
+                 canais_ent: int = 2, largura: int = 64, dropout: float = 0.3,
+                 adjacencia_adaptativa: bool = False, kernel_t: int = 9):
         super().__init__()
         # Necessário para reconstruir também variantes não padrão do checkpoint.
         self.config = {
             "n_nos": n_nos, "canais_ent": canais_ent,
             "largura": largura, "dropout": dropout,
+            "adjacencia_adaptativa": adjacencia_adaptativa, "kernel_t": kernel_t,
         }
+        if kernel_t < 1 or kernel_t % 2 == 0:
+            # Par quebra a soma residual (padding assimétrico deixa T-1 contra T),
+            # e o erro só aparece no primeiro lote — depois de alocar GPU e
+            # carregar dados. Falhar aqui custa segundos em vez de minutos.
+            raise ValueError(f"kernel_t deve ser ímpar e >= 1, veio {kernel_t}")
         a = adjacencia(n_nos, arestas())
         self.register_buffer("a", a)
         # Importância de aresta aprendida: o grafo anatômico é o ponto de
         # partida, não a palavra final — o treino pode enfraquecer ligações que
         # não ajudam e reforçar as que distinguem sinais.
         self.importancia = nn.Parameter(torch.ones(a.size()))
+        # Adjacência adaptativa: a máscara acima só PONDERA arestas existentes —
+        # onde a adjacência é zero, qualquer peso continua zero, e a rede não
+        # consegue criar uma ligação mão<->rosto por mais útil que seja (hoje são
+        # 4 saltos). Esta matriz é somada, então ela PODE criar. Inicia em zero
+        # para o modelo começar idêntico ao sem ela: o que for aprendido aqui é
+        # ganho sobre a anatomia, não substituição dela.
+        self.adaptativa = nn.Parameter(torch.zeros(a.size())) if adjacencia_adaptativa else None
         self.bn_entrada = nn.BatchNorm1d(canais_ent * n_nos)
 
         k = a.size(0)
         self.blocos = nn.ModuleList([
-            _BlocoSTGCN(canais_ent, largura, k, dropout=dropout),
-            _BlocoSTGCN(largura, largura, k, dropout=dropout),
-            _BlocoSTGCN(largura, largura * 2, k, passo=2, dropout=dropout),
-            _BlocoSTGCN(largura * 2, largura * 2, k, passo=2, dropout=dropout),
+            _BlocoSTGCN(canais_ent, largura, k, kernel_t=kernel_t, dropout=dropout),
+            _BlocoSTGCN(largura, largura, k, kernel_t=kernel_t, dropout=dropout),
+            _BlocoSTGCN(largura, largura * 2, k, passo=2, kernel_t=kernel_t, dropout=dropout),
+            _BlocoSTGCN(largura * 2, largura * 2, k, passo=2, kernel_t=kernel_t, dropout=dropout),
         ])
         self.fc = nn.Linear(largura * 2, num_classes)
 
@@ -277,6 +342,8 @@ class STGCN(nn.Module):
         x = x.view(n, c, v, t).permute(0, 1, 3, 2).contiguous()
 
         a = self.a * self.importancia
+        if self.adaptativa is not None:
+            a = a + self.adaptativa
         for bloco in self.blocos:
             x = bloco(x, a)
 

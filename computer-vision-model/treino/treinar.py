@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import zlib
 import time
 from datetime import datetime
 from pathlib import Path
@@ -44,10 +45,14 @@ class DatasetSinais(Dataset):
 
     def __init__(self, clipes: list[dd.Clipe], rotulos: list[str],
                  permutacao: np.ndarray | None, aumentar: bool, semente: int = 0,
-                 arquitetura: str = "resnet", ossos: bool = False):
+                 arquitetura: str = "resnet", ossos: bool = False,
+                 movimento: bool = False, rodada: int = 0):
         self.arquitetura = arquitetura
+        self.rodada = rodada
+        self.epoca = 0
         # Árvore calculada uma vez, não por item: é a mesma para todos os clipes.
         self.pais = gg.pais() if (ossos and arquitetura == "gcn") else None
+        self.movimento = movimento and arquitetura == "gcn"
         self.clipes = clipes
         self.indice = {r: i for i, r in enumerate(rotulos)}
         self.permutacao = permutacao
@@ -60,10 +65,27 @@ class DatasetSinais(Dataset):
     def __getitem__(self, i: int):
         clipe = self.clipes[i]
         seq = clipe.seq
+        # Validade vem do clipe CRU, antes de qualquer augmentação. `maos_ausentes`
+        # detecta ausência por "bloco exatamente zerado", e `rp.aumentar` soma ruído
+        # gaussiano em x,y — depois dela nenhum bloco é exatamente zero e a máscara
+        # vira inerte. O efeito era pior que inútil: máscara ativa na validação e no
+        # teste (sem augmentação) e desligada no treino, ou seja, discrepância
+        # treino/teste. Ausência é propriedade do clipe, não da amostra aumentada.
+        valido = None
+        if self.movimento:
+            valido = np.ones(seq.shape[:2], dtype=bool)
+            for (a, b), ausente in zip(dd.BLOCOS_MAO, dd.maos_ausentes(seq)):
+                valido[:, a:b] = ~ausente[:, None]
         if self.aumentar:
-            # Semente por (época, índice) via torch: cada worker recebe um estado
-            # diferente, e a augmentação não repete igual toda época.
-            rng = np.random.default_rng(abs(hash((self.semente, i, torch.initial_seed()))) % 2**32)
+            # Semente EXPLÍCITA por (semente, rodada, época, índice). A versão
+            # anterior usava torch.initial_seed(), que depende do estado global —
+            # e o estado global já foi consumido pela construção do modelo, cuja
+            # quantidade de parâmetros muda entre variantes. Resultado: "mesma
+            # semente" dava augmentação diferente para cada variante, e a
+            # comparação pareada que eu prometi não existia. Também não incluía a
+            # época, então com workers=0 o mesmo clipe repetia a mesma augmentação
+            # a treino inteiro.
+            rng = np.random.default_rng([self.semente, self.rodada, self.epoca, i])
             seq = rp.aumentar(seq, rng, self.permutacao)
 
         if self.arquitetura == "gcn":
@@ -74,6 +96,9 @@ class DatasetSinais(Dataset):
             # pose transformada.
             if self.pais is not None:
                 seq = gg.com_ossos(seq, self.pais)
+            if self.movimento:
+                # Depois dos ossos: assim a velocidade cobre juntas E ossos.
+                seq = gg.com_movimento(seq, valido)
             t = torch.from_numpy(gg.para_sequencia(seq))
         else:
             img = rp.para_imagem(seq)                      # (P, W, 3) em [0,1]
@@ -84,11 +109,20 @@ class DatasetSinais(Dataset):
 
 
 def _loader(clipes, rotulos, permutacao, aumentar, batch, workers, embaralhar,
-            arquitetura="resnet", ossos=False):
-    ds = DatasetSinais(clipes, rotulos, permutacao, aumentar, arquitetura=arquitetura,
-                       ossos=ossos)
+            arquitetura="resnet", ossos=False, movimento=False,
+            semente=0, rodada=0):
+    ds = DatasetSinais(clipes, rotulos, permutacao, aumentar, semente=semente,
+                       arquitetura=arquitetura, ossos=ossos, movimento=movimento,
+                       rodada=rodada)
+    # Gerador PRÓPRIO, não o RNG global. O global é consumido pela construção do
+    # modelo, e variantes com contagens de parâmetros diferentes o deixam em
+    # estados diferentes — a ordem dos lotes deixaria de ser comparável entre
+    # elas. Aqui a ordem depende só de (semente, rodada).
+    g = torch.Generator()
+    g.manual_seed(int(semente) * 1000 + rodada)
     return DataLoader(ds, batch_size=batch, shuffle=embaralhar, num_workers=workers,
-                      drop_last=embaralhar and len(ds) > batch)
+                      drop_last=embaralhar and len(ds) > batch,
+                      generator=g if embaralhar else None)
 
 
 def _avaliar(modelo, loader, criterio, dispositivo):
@@ -132,14 +166,95 @@ def aplicar_backbone(modelo, caminho: Path, arquitetura: str) -> int:
     return carregados
 
 
-def treinar_rodada(treino, validacao, teste, rotulos, permutacao, args, dispositivo):
+def canais_gcn(args) -> dict:
+    """Config do ST-GCN derivada das flags de representação.
+
+    Um lugar só: espalhar essa conta faria a construção do modelo e a contagem
+    de parâmetros divergirem em silêncio, e o erro só apareceria como shape
+    mismatch no meio do treino.
+
+    Cada transformação DOBRA os canais, e elas compõem na ordem em que o dataset
+    as aplica: coordenadas -> ossos -> movimento. Com x,y: 2 -> 4 -> 8. Com
+    x,y,z: 3 -> 6 -> 12.
+    """
+    c = 3 if getattr(args, "com_z", False) else 2
+    if getattr(args, "ossos", False):
+        c *= 2
+    if getattr(args, "movimento", False):
+        c *= 2
+    return {"canais_ent": c,
+            "adjacencia_adaptativa": bool(getattr(args, "adjacencia_adaptativa", False)),
+            "kernel_t": int(getattr(args, "kernel_temporal", 9))}
+
+
+# Campos que NÃO definem o experimento: mudar só estes pode reaproveitar rodadas.
+IGNORAR_NA_RETOMADA = {"saida", "dispositivo", "threads", "workers", "folds"}
+
+
+def semear(args, rodada: int) -> None:
+    """Fixa o acaso da rodada, quando `--semente` é passada.
+
+    POR QUE ISSO EXISTE. A mesma configuração oscila ~1,7 ponto entre execuções
+    (docs/CONTEXTO.md §2). Ao comparar duas representações — x,y contra x,y,z,
+    digamos — rodar cada uma uma vez mede a diferença entre elas SOMADA ao ruído
+    de inicialização, e o ruído é da mesma ordem do efeito esperado. Não dá para
+    concluir nada assim.
+
+    Com a semente fixa, as duas variantes partem dos mesmos pesos e recebem a
+    mesma sequência de augmentação; o que sobra na diferença é a representação.
+    É comparação pareada, e custa uma linha em vez de N execuções por variante.
+
+    Semear por rodada (e não uma vez só) mantém as rodadas diferentes entre si —
+    fixar tudo no mesmo valor faria as 8 partições compartilharem a inicialização,
+    o que reduz a variância pelo motivo errado.
+    """
+    s = getattr(args, "semente", None)
+    if s is None:
+        return
+    torch.manual_seed(s + rodada)
+    np.random.seed((s + rodada) % 2**32)
+
+
+def semear_pesos(modelo, args, rodada: int) -> None:
+    """Reinicializa cada módulo com semente derivada do NOME dele.
+
+    POR QUE. `semear` fixa o RNG global, mas a construção do modelo consome
+    sorteios em ordem, e a primeira convolução consome um número que depende de
+    `canais_ent`. Resultado: variantes com contagens de parâmetros diferentes
+    recebem pesos diferentes em TODAS as camadas seguintes, inclusive nas de
+    forma idêntica. A docstring de `semear` afirmava que "as duas variantes
+    partem dos mesmos pesos" — era falso, e inicialização é a maior fonte do
+    ruído de ~1,7 pp que separa as variantes que queremos comparar.
+
+    Semeando por nome, camadas de mesma forma recebem os mesmos pesos entre
+    variantes; só as que realmente mudaram de forma diferem. O hash é `crc32`,
+    não `hash()`, porque `hash()` de string é aleatorizado por processo e a
+    semente deixaria de reproduzir entre execuções.
+
+    Só para o ST-GCN: a ResNet nasce com pesos do ImageNet, e reinicializar
+    apagaria justamente o pré-treino que a torna competitiva.
+    """
+    if getattr(args, "semente", None) is None or getattr(args, "arquitetura", "") != "gcn":
+        return
+    base = int(args.semente) + rodada
+    for nome, m in modelo.named_modules():
+        if hasattr(m, "reset_parameters"):
+            torch.manual_seed((base + zlib.crc32(nome.encode())) % 2**31)
+            m.reset_parameters()
+
+
+def treinar_rodada(treino, validacao, teste, rotulos, permutacao, args, dispositivo,
+                   rodada: int = 0):
     """Treina uma rodada e devolve (acurácia no teste, predições, verdadeiros)."""
+    semear(args, rodada)
     arq = getattr(args, "arquitetura", "resnet")
     ossos = bool(getattr(args, "ossos", False)) and arq == "gcn"
     construtor = gg.construir if arq == "gcn" else mm.construir
-    # canais_ent tem de acompanhar a representação: 2 (x/y) ou 4 (x/y + osso).
-    # O checkpoint guarda esse config, então recarregar já vem com o valor certo.
-    modelo = construtor(len(rotulos), **({"canais_ent": 4} if ossos else {}))
+    # canais_ent acompanha a representação: 2 (x,y) ou 3 (x,y,z), e o dobro com
+    # ossos, que acrescentam um vetor por dimensão. O checkpoint guarda esse
+    # config, então recarregar já vem com o valor certo.
+    modelo = construtor(len(rotulos), **(canais_gcn(args) if arq == "gcn" else {}))
+    semear_pesos(modelo, args, rodada)
     if getattr(args, "inicializar", None):
         n = aplicar_backbone(modelo, Path(args.inicializar), arq)
         print(f"      backbone de pré-treino aplicado ({n} tensores)")
@@ -154,15 +269,20 @@ def treinar_rodada(treino, validacao, teste, rotulos, permutacao, args, disposit
     if getattr(args, "agendador", "nenhum") == "cosseno":
         agendador = torch.optim.lr_scheduler.CosineAnnealingLR(otim, T_max=args.epocas)
 
+    mov = bool(getattr(args, "movimento", False)) and arq == "gcn"
+    sem = int(getattr(args, "semente", None) or 0)
     l_treino = _loader(treino, rotulos, permutacao, True, args.batch, args.workers, True,
-                       arq, ossos)
+                       arq, ossos, mov, sem, rodada)
     l_val = _loader(validacao, rotulos, None, False, args.batch, args.workers, False,
-                    arq, ossos)
+                    arq, ossos, mov, sem, rodada)
     l_teste = _loader(teste, rotulos, None, False, args.batch, args.workers, False,
-                      arq, ossos)
+                      arq, ossos, mov, sem, rodada)
 
     melhor_perda, melhores_pesos, melhor_epoca = float("inf"), None, -1
     for epoca in range(args.epocas):
+        # A augmentação depende da época explicitamente; sem isto o mesmo clipe
+        # recebe a mesma transformação em todas as épocas quando workers=0.
+        l_treino.dataset.epoca = epoca
         modelo.train()
         soma, certos, total = 0.0, 0, 0
         for x, y in l_treino:
@@ -234,8 +354,13 @@ def escrever_relatorio(destino: Path, rotulos, accs, nomes_fold, cm, args, segun
          "- Inicializado do ImageNet (sem pré-treino em Libras)."),
         ("- Landmarks SEM imputação de lacunas." if getattr(args, "sem_imputacao", False)
          else "- Lacunas curtas de mão preenchidas por interpolação (<=5 frames)."),
-        *(["- Entrada de 4 canais: coordenadas + vetores de osso (`--ossos`)."]
-          if getattr(args, "ossos", False) and args.arquitetura == "gcn" else []),
+        (f"- Coordenadas: x, y, z{' (z recentrado no punho)' if args.z_recentrado else ''}."
+         if getattr(args, "com_z", False) else "- Coordenadas: x, y (z descartado)."),
+        *([f"- ST-GCN: {'ossos, ' if args.ossos else ''}"
+           f"{'movimento, ' if args.movimento else ''}"
+           f"{'adjacência adaptativa, ' if args.adjacencia_adaptativa else ''}"
+           f"kernel temporal {args.kernel_temporal}."]
+          if args.arquitetura == "gcn" else []),
         "",
         "## Acurácia por rodada (pessoa deixada de fora)",
         "",
@@ -274,8 +399,26 @@ def main() -> None:
                          "gcn: ST-GCN sobre o grafo do esqueleto.")
     ap.add_argument("--ossos", action="store_true",
                     help="GCN: acrescenta os vetores de osso aos canais de entrada "
-                         "(2 -> 4). Ignorado com --arquitetura resnet, cuja "
-                         "representação em imagem não tem onde encaixá-los.")
+                         "(dobra: 2->4, ou 3->6 com --com-z). Ignorado com "
+                         "--arquitetura resnet, cuja representação em imagem não "
+                         "tem onde encaixá-los.")
+    ap.add_argument("--movimento", action="store_true",
+                    help="GCN: acrescenta a variação temporal dos canais (dobra). "
+                         "Compõe com --ossos: x,y -> 4 -> 8 canais.")
+    ap.add_argument("--adjacencia-adaptativa", action="store_true",
+                    help="GCN: matriz de adjacência aprendida somada à anatômica, "
+                         "permitindo ligações que a anatomia não tem (mão<->rosto). "
+                         "Inicia em zero, então parte do modelo atual.")
+    ap.add_argument("--kernel-temporal", type=int, default=9,
+                    help="GCN: tamanho do kernel da convolução temporal. É onde estão "
+                         "~80%% dos parâmetros — reduzir encolhe muito o modelo.")
+    ap.add_argument("--com-z", action="store_true",
+                    help="usa a terceira coordenada dos landmarks. O .npy sempre tem "
+                         "3 dims — não precisa reextrair. Ver PLANO-CORRECOES.md (B5).")
+    ap.add_argument("--z-recentrado", action="store_true",
+                    help="com --com-z: devolve o z de cada mão ao referencial do "
+                         "próprio punho, desfazendo o offset do ombro que extract.py "
+                         "aplica indevidamente aos blocos de mão")
     ap.add_argument("--fontes", default="minds", choices=["minds", "vlibrasil", "todas"])
     ap.add_argument("--sem-imputacao", action="store_true",
                     help="desliga o preenchimento de lacunas curtas de mão — existe para "
@@ -292,6 +435,10 @@ def main() -> None:
                          "e no Colab/Kaggle sem edição")
     ap.add_argument("--folds", type=int, default=0,
                     help="limita o nº de rodadas (0 = todas). Use 1 para testar o encanamento.")
+    ap.add_argument("--semente", type=int, default=None,
+                    help="fixa a inicialização e a augmentação. Sem isso, execuções da "
+                         "MESMA configuração variam ~1,7 pp e comparar duas variantes "
+                         "uma vez cada mede ruído. Use o mesmo valor nas variantes.")
     ap.add_argument("--agendador", default="nenhum", choices=["nenhum", "cosseno"],
                     help="cosseno decai a taxa de aprendizado ao longo das épocas. "
                          "Recomendado para treino do zero (GCN sem pré-treino); "
@@ -313,7 +460,8 @@ def main() -> None:
 
     cfg = yaml.safe_load(CONFIG.read_text(encoding="utf-8"))
     lm_dir = POC / cfg["paths"]["landmarks"]
-    clipes = dd.carregar(lm_dir, fontes=args.fontes, imputar=not args.sem_imputacao)
+    clipes = dd.carregar(lm_dir, fontes=args.fontes, imputar=not args.sem_imputacao,
+                         com_z=args.com_z, z_recentrado=args.z_recentrado)
     if not clipes:
         raise SystemExit(f"nenhum landmark em {lm_dir} — rode ../PoC/src/extract.py primeiro.")
 
@@ -325,12 +473,17 @@ def main() -> None:
     if args.ossos and args.arquitetura != "gcn":
         print("[treino] ⚠ --ossos só vale para --arquitetura gcn; ignorando.")
         args.ossos = False
-    extra = {"canais_ent": 4} if args.ossos else {}
+    if args.z_recentrado and not args.com_z:
+        raise SystemExit("--z-recentrado exige --com-z: não há z para recentrar sem ele.")
+    extra = canais_gcn(args) if args.arquitetura == "gcn" else {}
     n_par = sum(p.numel() for p in (gg.construir if args.arquitetura == "gcn"
                                     else mm.construir)(len(rotulos), **extra).parameters())
     print(f"[treino] {len(clipes)} clipes | {len(dd.pessoas(clipes))} pessoas | "
           f"{len(rotulos)} sinais | arquitetura={args.arquitetura} ({n_par/1e6:.2f}M par.) "
-          f"| canais={'4 (juntas+ossos)' if args.ossos else '2 (juntas)'} "
+          f"| repr={'xyz' + ('*' if args.z_recentrado else '') if args.com_z else 'xy'}"
+          f"{'+ossos' if args.ossos else ''}{'+mov' if args.movimento else ''}"
+          f"{'+adapt' if args.adjacencia_adaptativa else ''}"
+          f"{'' if args.kernel_temporal == 9 else f'+k{args.kernel_temporal}'} "
           f"| dispositivo={dispositivo} threads={args.threads}")
 
     saida = AQUI / args.saida
@@ -357,7 +510,8 @@ def main() -> None:
         mm.salvar(modelo_final, destino, rotulos,
                   {"fontes": args.fontes, "pessoas": todas, "args": vars(args),
                    "proveniencia": procedencia,
-                   "pontos": cfg["pose_indices"], "limite_escala": rp.LIMITE})
+                   "pontos": cfg["pose_indices"], "limite_escala": rp.LIMITE,
+                   "limite_escala_z": rp.LIMITE_Z if args.com_z else None})
         print(f"[treino] checkpoint salvo em {destino}")
         return
 
@@ -365,20 +519,53 @@ def main() -> None:
     if args.folds:
         particoes = particoes[: args.folds]
 
+    # Uma rodada por vez, gravada assim que fecha. Uma execução LOSO do ST-GCN leva
+    # ~55 min; oito rodadas passam de 7 h. Guardar tudo só no fim significa que uma
+    # sessão morta na rodada 7 perde as sete — e sessão de nuvem morre por limite de
+    # tempo, não por erro nosso. Com o parcial em disco, reexecutar retoma de onde
+    # parou em vez de recomeçar.
+    parciais = saida / "rodadas"
+    parciais.mkdir(parents=True, exist_ok=True)
+
     accs, nomes, todos_preds, todos_reais = [], [], [], []
     for i, part in enumerate(particoes, 1):
-        treino = [c for c in clipes if c.pessoa in part.treino]
-        validacao = [c for c in clipes if c.pessoa == part.validacao]
-        teste = [c for c in clipes if c.pessoa == part.teste]
-        print(f"\n[treino] rodada {i}/{len(particoes)} — teste={part.teste} "
-              f"val={part.validacao} treino={len(treino)} clipes")
-        acc, preds, reais, melhor, _ = treinar_rodada(treino, validacao, teste, rotulos,
-                                                      permutacao, args, dispositivo)
-        print(f"   -> acurácia em {part.teste}: {acc:.1%} (melhor época {melhor + 1})")
-        accs.append(acc)
-        nomes.append(part.teste)
-        todos_preds += preds
-        todos_reais += reais
+        arquivo = parciais / f"{i:02d}-{part.teste}.json"
+        if arquivo.is_file():
+            r = json.loads(arquivo.read_text(encoding="utf-8"))
+            # CONFERIR A CONFIGURAÇÃO antes de reaproveitar. Sem isto, rodar duas
+            # variantes no mesmo --saida (e o padrão é resultados-<arquitetura>,
+            # igual para todas) faz a segunda herdar as rodadas da primeira em
+            # silêncio — e o relatorio.md sai bem-formado, com bloco de
+            # reprodutibilidade completo, descrevendo uma configuração que nunca
+            # rodou. É o pior modo de falha possível: número plausível e falso.
+            iguais = {k: v for k, v in r.get("args", {}).items() if k not in IGNORAR_NA_RETOMADA}
+            atuais = {k: v for k, v in vars(args).items() if k not in IGNORAR_NA_RETOMADA}
+            if iguais != atuais:
+                difs = {k: (iguais.get(k), atuais.get(k))
+                        for k in set(iguais) | set(atuais) if iguais.get(k) != atuais.get(k)}
+                raise SystemExit(
+                    f"[treino] ✗ {arquivo} é de OUTRA configuração (gravado vs atual): "
+                    f"{difs}. Use um --saida diferente ou apague {parciais}.")
+            print(f"[treino] rodada {i}/{len(particoes)} — {part.teste} já feita "
+                  f"({r['acuracia']:.1%}), reaproveitando")
+        else:
+            treino = [c for c in clipes if c.pessoa in part.treino]
+            validacao = [c for c in clipes if c.pessoa == part.validacao]
+            teste = [c for c in clipes if c.pessoa == part.teste]
+            print(f"\n[treino] rodada {i}/{len(particoes)} — teste={part.teste} "
+                  f"val={part.validacao} treino={len(treino)} clipes")
+            acc, preds, reais, melhor, _ = treinar_rodada(treino, validacao, teste, rotulos,
+                                                          permutacao, args, dispositivo, i)
+            print(f"   -> acurácia em {part.teste}: {acc:.1%} (melhor época {melhor + 1})")
+            r = {"rodada": i, "teste": part.teste, "validacao": part.validacao,
+                 "acuracia": acc, "melhor_epoca": melhor + 1,
+                 "predicoes": preds, "verdadeiros": reais,
+                 "rotulos": rotulos, "args": vars(args)}
+            arquivo.write_text(json.dumps(r, ensure_ascii=False), encoding="utf-8")
+        accs.append(r["acuracia"])
+        nomes.append(r["teste"])
+        todos_preds += r["predicoes"]
+        todos_reais += r["verdadeiros"]
 
     segundos = time.perf_counter() - inicio
     cm = matriz_confusao(todos_preds, todos_reais, len(rotulos))

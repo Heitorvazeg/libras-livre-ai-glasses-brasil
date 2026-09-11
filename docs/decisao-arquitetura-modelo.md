@@ -3,6 +3,67 @@
 **Status:** aberto para discussão do time (Walisson · Heitor · Arthur).
 **Prazo que condiciona a decisão:** entrega do hackathon em 16/09/2026.
 
+---
+
+> ## ⚠️ REVISÃO DE 2026-09-11 — O ST-GCN ALCANÇOU A RESNET, COM 24× MENOS PARÂMETROS
+>
+> Tudo abaixo da seção 1 foi escrito quando o ST-GCN media 44,6% e a ResNet 93,4%.
+> **Esses 44,6% eram configuração, não arquitetura**, e a distância desapareceu quando o
+> modelo recebeu a representação certa.
+>
+> | Modelo | LOSO | Parâmetros | Orçamento |
+> |---|---|---|---|
+> | **ResNet-18 + imputação** | **95,1%** | 11,25M | 540 atualizações |
+> | **ST-GCN + ossos + z** | **94,6% / 94,9%** | **0,47M** | 1.080 |
+> | ResNet-18 (controle da sessão de 10/09) | 93,0% | 11,25M | 270 |
+> | ST-GCN + ossos | 91,0% / 92,5% | 0,46M | 1.080 |
+> | ST-GCN x,y | 72,1% | 0,46M | 1.080 |
+>
+> ### Uma versão anterior desta seção dizia que o GCN PASSOU a ResNet. Estava errado.
+>
+> A comparação foi feita contra a ResNet de 93,0% — o controle daquela sessão — ignorando
+> que **este mesmo repositório tem uma ResNet em 95,1%** (`resultados-resnet-imputado/`),
+> listada duas tabelas adiante no `protocolo-treinamento.md`. O GCN está **0,2-0,5 pp
+> abaixo** dela, não acima. Registrado porque o erro é instrutivo: o número escolhido foi o
+> que confirmava a hipótese preferida.
+>
+> ### O que o dado sustenta
+>
+> **Empate, com 24× menos parâmetros.** GCN 94,6/94,9 contra ResNet 95,1 é diferença
+> dentro do ruído — e o piso de reprodutibilidade medido aqui é 1,5 pp (a mesma config com
+> a mesma semente deu 91,0% e 92,5% em sessões diferentes). Para um modelo que precisa
+> caber em `.tflite`, empatar com 1/24 do tamanho é o resultado que importa.
+>
+> **O orçamento NÃO é pareado, e isso pesa contra o GCN — ou a favor.** O GCN recebe 1.080
+> atualizações de peso; a ResNet, 270 ou 540. A §6 deste documento registra que a ResNet
+> **não convergiu** (melhor época foi a 30 de 30 em 4 das 8 rodadas). Só mudar o batch da
+> ResNet de 64 para 32 moveu 93,0 → 95,1 = **+2,1 pp**, mais que a margem que se quis
+> reivindicar. **Antes de qualquer veredito, rodar a ResNet com orçamento equivalente.**
+>
+> ### Ganhos de representação, medidos
+>
+> 1. **Ossos** (vetores nó→pai): **+18,9 pp**, 8 de 8 folds, por +612 parâmetros.
+>    ⚠️ Medido ANTES do conserto do pareamento de RNG (commit `d48b313`); falta uma
+>    rodada `x,y` pós-conserto para essa margem ter régua única.
+> 2. **z recentrado**: **+2,1 pp**, confirmado numa segunda semente (+2,4), **com o
+>    controle rodando junto**. Ressalva: +2,1 é próximo do valor esperado do máximo de 5
+>    sorteios de ruído com dp 1,7 (≈1,98), e a confirmação usa a mesma partição de 8
+>    pessoas.
+>
+> **O z ajuda o GCN e atrapalha a ResNet.** Comparando o mesmo tratamento (z recentrado)
+> nas duas: **+2,1 pp no GCN** contra **−4,2 pp na ResNet** (2 de 8 folds acima). A decisão
+> herdada da PoC do DTW, de descartar o z, estava certa para a arquitetura errada.
+>
+> **O que NÃO ajudou:** adjacência adaptativa (−2,6). Kernel temporal 9→5 empatou (−0,3)
+> com **35% menos parâmetros** — combinação com o z ainda em teste.
+> ⚠️ **Movimento (−0,6) precisa ser refeito:** a máscara de validade estava inerte durante
+> o treino (a augmentação somava ruído e o bloco de mão ausente deixava de ser zero), então
+> o número mediu uma implementação quebrada, não a feature. Corrigido em 11/09.
+>
+> **Os relatórios destas execuções ainda não estão no repositório** — vivem num `.zip`
+> local. Pelo critério que este projeto aplica ao "GCN em 95,6%" de terceiros, estes
+> números são **não verificados** até serem commitados.
+
 Este documento existe porque há **duas arquiteturas candidatas** e elas não estão no
 mesmo estágio de evidência: uma já foi medida no nosso dataset, a outra é a que está
 desenhada no diagrama do sistema. O objetivo aqui não é declarar uma vencedora — é
