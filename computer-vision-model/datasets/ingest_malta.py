@@ -43,6 +43,7 @@ from __future__ import annotations
 import argparse
 import ast
 import csv
+import hashlib
 import os
 import re
 import sys
@@ -54,6 +55,8 @@ from pathlib import Path
 from urllib.parse import unquote, urlparse
 
 import requests
+
+import proveniencia as pv
 
 AQUI = Path(__file__).resolve().parent
 DESTINO = AQUI.parent / "PoC" / "data" / "raw-malta"
@@ -268,6 +271,62 @@ def baixar(clipes: list[Clipe], destino: Path, manifesto: Path) -> tuple[int, in
     return ok, falhas
 
 
+def indice_sha256(raiz: Path, fontes: list[str]) -> str:
+    """sha256 dos CSVs de links usados — o "índice" do MALTA.
+
+    Um bundle do Kaggle tem um índice de ZIP versionado; aqui o equivalente é a
+    lista de URLs. Pinar o hash dela responde depois a pergunta "que conjunto de
+    links produziu estes arquivos?", que é a única âncora de reprodutibilidade
+    que uma coleção baixada por HTTP tem.
+    """
+    h = hashlib.sha256()
+    for fonte in sorted(fontes):
+        h.update(fonte.encode())
+        h.update((raiz / "video_downloads" / FONTES[fonte]).read_bytes())
+    return h.hexdigest()
+
+
+def registrar(raiz: Path, destino: Path, manifesto: Path, landmarks: Path | None,
+              fontes: list[str]) -> None:
+    """Gera os sidecars de proveniência a partir do manifesto do download.
+
+    Sem isto, `pretreinar.py --auditar` rejeita tudo com "sem origem registrada;
+    landmarks NÃO elegíveis para pré-treino" — que é exatamente o uso principal
+    desta base. O manifesto guarda a URL de cada arquivo, então dá para registrar
+    sem rebaixar nada e sem rebaixar dado.
+    """
+    import yaml
+    if not manifesto.is_file():
+        raise SystemExit(f"manifesto ausente: {manifesto}")
+    indice = indice_sha256(raiz, fontes)
+    cfg = yaml.safe_load((AQUI.parent / "PoC" / "config.yaml").read_text(encoding="utf-8"))
+
+    ok_v = ok_l = pulados = 0
+    erros: list[str] = []
+    with manifesto.open(encoding="utf-8") as f:
+        for linha in csv.DictReader(f):
+            video = destino / linha["destino"]
+            if not video.is_file():
+                pulados += 1          # apagado por ser inválido, por exemplo
+                continue
+            try:
+                pv.registrar_video_http(video, fonte="malta", origem=linha["url"],
+                                        indice_sha256=indice)
+                ok_v += 1
+                npy = (landmarks / video.name).with_suffix(".npy") if landmarks else None
+                if npy and npy.is_file():
+                    pv.registrar_landmarks(video, npy, cfg, legado=True)
+                    ok_l += 1
+            except Exception as e:
+                erros.append(f"{video.name}: {e}")
+    print(f"[malta] sidecars: {ok_v} vídeo(s), {ok_l} landmark(s), {pulados} ausente(s)")
+    if erros:
+        print(f"[malta] ⚠ {len(erros)} falha(s); primeiras:")
+        for e in erros[:5]:
+            print(f"[malta]   {e}")
+    print(f"[malta] índice dos CSVs de links: {indice[:16]}…")
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--repo", type=Path, required=True,
@@ -275,6 +334,11 @@ def main() -> None:
     ap.add_argument("--fonte", action="append", choices=sorted(FONTES),
                     help="repita para várias; padrão é todas as incluídas")
     ap.add_argument("--listar", action="store_true", help="mostra a cobertura sem baixar")
+    ap.add_argument("--registrar", action="store_true",
+                    help="gera os sidecars de proveniência do que já está em disco, "
+                         "a partir do manifesto; não baixa nada")
+    ap.add_argument("--landmarks", type=Path,
+                    help="com --registrar: diretório dos .npy, para registrá-los também")
     ap.add_argument("--destino", type=Path, default=DESTINO)
     args = ap.parse_args()
 
@@ -288,6 +352,9 @@ def main() -> None:
         return
 
     manifesto = args.destino.parent / "manifest-malta.csv"
+    if args.registrar:
+        registrar(args.repo, args.destino, manifesto, args.landmarks, fontes)
+        return
     ok, falhas = baixar(clipes, args.destino, manifesto)
     print(f"[malta] concluído: {ok} baixado(s), {falhas} falha(s) -> {args.destino}")
     print(f"[malta] manifesto: {manifesto}")
