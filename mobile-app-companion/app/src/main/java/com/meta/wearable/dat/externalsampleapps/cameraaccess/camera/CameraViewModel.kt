@@ -42,11 +42,13 @@ import com.meta.wearable.dat.core.session.DeviceSessionState
 import com.meta.wearable.dat.core.types.Permission
 import com.meta.wearable.dat.core.types.PermissionStatus
 import com.meta.wearable.dat.externalsampleapps.cameraaccess.R
-import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.audio.AndroidSpeechRecognizerSttEngine
+import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.audio.AttendantAudioCapture
 import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.audio.AudioSessionManager
+import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.audio.PiperSherpaOnnxTtsEngine
 import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.audio.Speaker
 import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.audio.SpeechRecognizerWakeWordDetector
 import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.audio.SttEngine
+import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.audio.VoskSttEngine
 import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.audio.WakeWord
 import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.audio.WakeWordDetector
 import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.dialogo.DialogOrchestrator
@@ -110,7 +112,11 @@ class CameraViewModel(
   // — seguro porque essas lambdas só são invocadas depois que o init{} abaixo o atribui.
   private lateinit var dialogOrchestrator: DialogOrchestrator
 
-  private val speaker = Speaker(application)
+  // Motor real de TTS: Piper (pt-BR) local via sherpa-onnx (ver docs/orquestracao-dialogo-audio-plano.md
+  // §4 item 10, §8 item 4). Pra voltar ao motor nativo do Android (fallback, sem depender dos
+  // assets de tts/pt_br/), troque por Speaker(application) — construtor usa
+  // AndroidTextToSpeechEngine por padrão quando nenhum TtsEngine é passado.
+  private val speaker = Speaker(application, PiperSherpaOnnxTtsEngine(application))
   private val landmarkPipeline =
       LandmarkPipeline(
           context = application,
@@ -121,12 +127,23 @@ class CameraViewModel(
           onRecognitionFailed = { dialogOrchestrator.onSignRecognitionFailed() },
       )
   private val audioSessionManager = AudioSessionManager(application)
-  private val sttEngine: SttEngine = AndroidSpeechRecognizerSttEngine(application)
 
-  // Motor real de wake word (ver SpeechRecognizerWakeWordDetector.kt). Os botões de fallback
-  // (DialogControlRow) não passam por aqui — chamam dialogOrchestrator.onWakeWord diretamente via
-  // onWakeWordButton, então continuam funcionando mesmo se este motor falhar/estiver sem
-  // permissão.
+  // Motor real de STT: Vosk pt-BR local (§4 item 11, §8 item 2) — precisa de PCM cru do mic dos
+  // óculos, capturado por AttendantAudioCapture (§6.4). Pra voltar ao motor nativo do Android
+  // (fallback, sem depender do asset vosk-model-small-pt-0.3/), troque por
+  // AndroidSpeechRecognizerSttEngine(application).
+  private val attendantAudioCapture = AttendantAudioCapture(application)
+  private val sttEngine: SttEngine = VoskSttEngine(application, attendantAudioCapture)
+
+  // Motor de wake word: ainda SpeechRecognizerWakeWordDetector (motor de destravamento, §4 item
+  // 7), NÃO OpenWakeWordDetector (motor real escolhido, §4 item 9) — este último exige os dois
+  // classificadores .onnx treinados (Fase 3, §7), que não existem neste repo ainda. Trocar pra ele
+  // é só trocar a implementação aqui embaixo por
+  // OpenWakeWordDetector(context = application, onWakeWord = { ... }) depois que os assets
+  // existirem — comparar objetivamente contra este motor antes (§7 Fase 3 critério de sucesso).
+  // Os botões de fallback (DialogControlRow) não passam por aqui — chamam
+  // dialogOrchestrator.onWakeWord diretamente via onWakeWordButton, então continuam funcionando
+  // mesmo se o motor real falhar/estiver sem permissão.
   private val wakeWordDetector: WakeWordDetector =
       SpeechRecognizerWakeWordDetector(
           context = application,
@@ -748,6 +765,7 @@ class CameraViewModel(
     landmarkPipeline.dispose()
     speaker.shutdown()
     sttEngine.stop()
+    attendantAudioCapture.cleanup()
     audioSessionManager.releaseListening()
     wakeWordDetector.stop()
   }

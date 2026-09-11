@@ -12,6 +12,9 @@ uiJunit4 = "1.11.2"
 exifInterface = "1.4.2"
 mediapipeTasksVision = "0.10.14"
 junit = "4.13.2"
+onnxRuntimeAndroid = "1.22.0"
+voskAndroid = "0.3.75"
+jna = "5.18.1"
 
 [libraries]
 androidx-activity-compose = { group = "androidx.activity", name = "activity-compose", version.ref = "activityCompose" }
@@ -30,6 +33,13 @@ androidx-ui-test-junit4 = { group = "androidx.compose.ui", name = "ui-test-junit
 androidx-exifinterface = { group = "androidx.exifinterface", name = "exifinterface", version.ref = "exifInterface" }
 mediapipe-tasks-vision = { group = "com.google.mediapipe", name = "tasks-vision", version.ref = "mediapipeTasksVision" }
 junit = { group = "junit", name = "junit", version.ref = "junit" }
+# Motor real de wake word (docs/orquestracao-dialogo-audio-plano.md §4 item 9) — usado por
+# OpenWakeWordDetector.kt via com.rementia.openwakeword.lib (vendorizado, não é dependência Maven).
+onnxruntime-android = { group = "com.microsoft.onnxruntime", name = "onnxruntime-android", version.ref = "onnxRuntimeAndroid" }
+# vosk-android e jna (motor real de STT, §4 item 11) NÃO entram aqui: os dois publicam como .aar
+# com classifier "@aar" (ex. "com.alphacephei:vosk-android:0.3.75@aar"), que o schema padrão do
+# catálogo de versões não representa — declarados como string literal direto em
+# app/build.gradle.kts, interpolando voskAndroid/jna deste bloco [versions].
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }
