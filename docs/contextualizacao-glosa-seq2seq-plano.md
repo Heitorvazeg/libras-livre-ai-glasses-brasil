@@ -23,9 +23,11 @@
 1. A **interface** (`GlossContextualizer`) e o ponto de plugue exato no
    `DialogOrchestrator` — implementáveis hoje, sem modelo nenhum (§3).
 2. A **estratégia de corpus**, que é o problema real deste plano: não
-   existe corpus paralelo glosa→PT de Libras em tamanho útil (§5).
-3. A **forma do modelo** (T5 minúsculo com vocabulário próprio, não
-   T5-small genérico) e por quê (§6).
+   existe corpus paralelo glosa→PT de Libras em tamanho útil. Três rotas
+   para fabricar um, com os vieses de cada uma (§5.1).
+3. A **forma do modelo**: `ptt5-small` fine-tunado com a tabela de
+   embeddings podada — pesos pré-treinados intactos, vocabulário cortado
+   de 32k para ~4k (§6.1). Decidido em 2026-09-11.
 4. Como **quantização e delegação se relacionam** — e por que "int8 +
    GPU" é, na prática, escolher um dos dois (§6.2, §7).
 5. As **guardas de segurança** que precisam ser estruturais, não
@@ -271,8 +273,10 @@ o pipeline.
 ~20 sinais na Camada 1, ~40-60 somando as três camadas) e sessões de 2-8
 sinais, uma tabela de regras cobre uma fração grande dos casos reais de
 balcão, com custo perto de zero, zero risco de alucinação e zero MB de
-APK. Um seq2seq de 8M de parâmetros treinado em corpus sintético é
-*provavelmente* pior que 200 linhas de regras nesse recorte específico.
+APK. Um seq2seq treinado em corpus sintético pode perfeitamente perder
+pra 200 linhas de regras nesse recorte específico — a decisão de §6.1 (usar
+pesos pré-treinados em vez de treinar do zero) reduz esse risco, porque a
+fluência deixa de depender só do corpus, mas não o elimina.
 
 **Por que fazer o seq2seq assim mesmo:** o recorte fechado é explicitamente
 temporário (`libras-livre-arquitetura.md` §10: "o recorte de vocabulário
@@ -298,45 +302,130 @@ Não existe corpus paralelo glosa→português de Libras, público e anotado,
 em tamanho que treine um encoder-decoder. Isto é o que decide se este
 plano vive ou morre; o resto é engenharia conhecida.
 
-### 5.1 VLibras invertido (recomendado)
+### 5.1 Três rotas para gerar o corpus sintético
 
-O projeto **já depende** de um tradutor PT-BR → glosa: o
-`vlibras-translator-api`, na branch
-`feat/Empacota-player-vlibras-em-webview-nativa`
-(`docs/vlibras-webview-plano.md`, citado em
-`orquestracao-dialogo-audio-plano.md` §6.5 e no glossário §7 daquele
-documento). Ele existe pro sentido inverso — texto do atendente → glosa →
-avatar.
+Nenhuma das três produz evidência — todas são sintéticas, e o conjunto
+humano de §5.3 continua sendo o único que vale como medida. A escolha
+aqui é sobre **volume, custo e que tipo de viés o modelo vai herdar**.
 
-**É exatamente a função inversa da que precisamos.** Então:
+| | Rota A — VLibras invertido | Rota B — LLM gera os pares | Rota C — híbrida |
+|---|---|---|---|
+| Direção de partida | PT → glosa | **glosa → PT** | glosa → PT, com verificação |
+| Cobertura do vocabulário fechado | baixa (filtra depois, joga fora a maioria) | **100% por construção** | 100% |
+| Custo | zero, determinístico | por chamada; precisa cache versionado | soma dos dois |
+| Viés herdado | regras do VLibras | estereótipo de glosa do LLM | atenuado (§5.1.3) |
+| Reprodutível | sim | só com corpus commitado | idem |
+
+#### 5.1.1 Rota A — VLibras invertido
+
+O projeto **já depende** de um tradutor PT-BR → glosa: o `text-core` do
+VLibras (`rule_translation(texto) → glosa`), que a branch
+`feat/Empacota-player-vlibras-em-webview-nativa` integra pro sentido
+avatar (`docs/vlibras-webview-plano.md` §4). É a função inversa da que
+precisamos:
 
 ```
-corpus PT-BR (frases de atendimento)
+frases PT-BR de atendimento
         │
-        ▼  vlibras-translator-api  (PT → glosa, determinístico)
+        ▼  text-core.rule_translation()  (PT → glosa, determinístico)
    pares (glosa, PT)
         │
         ▼  inverte a direção
    treino: glosa → PT
 ```
 
-Isso é *back-translation* clássica, e tem duas vantagens específicas
-aqui: reusa um componente que o time já vai integrar de qualquer jeito, e
-gera volume arbitrário a partir de texto PT-BR simples (que é abundante).
+*Back-translation* clássica. Roda **offline, em lote, numa máquina de
+dev** — não é o app chamando o VLibras em runtime, e não depende do stack
+HTTP/MongoDB/RabbitMQ que a outra branch monta pro avatar: `text-core` é
+Python, dá pra importar `rule_translation` direto num script de lote.
 
-**As duas ressalvas, que precisam estar no documento e não só na cabeça
-de quem treina:**
+**Três ressalvas:**
 
 1. O modelo aprende a **inverter um sistema de regras**, não a língua
-   real. Ele herda todas as escolhas e todos os vieses do VLibras. Onde o
-   VLibras gera uma glosa que um sinalizante não usaria, o modelo aprende
-   a mapear de volta uma construção que nunca vai aparecer na entrada real.
-2. A entrada real do modelo **não vem do VLibras** — vem do
-   `SignClassifier`, cujo output é o rótulo cru do dataset de treino
-   (minúsculo, sem marcação: `banheiro`, `ruim`, `cinco`). O corpus tem
-   que ser normalizado pra **esse** formato, não pro formato de glosa do
-   VLibras. Essa normalização (maiúsculas, marcadores, classificadores) é
-   um passo obrigatório do pipeline de corpus, não um detalhe.
+   real. Herda as escolhas e os vieses do VLibras.
+2. A entrada real **não vem do VLibras** — vem do `SignClassifier`, cujo
+   output é o rótulo cru do dataset (minúsculo, sem marcação:
+   `banheiro`, `ruim`, `cinco`). O VLibras devolve `"BANHEIRO ONDE"`, com
+   maiúsculas, marcadores tipo `[PONTO]` e numerais expandidos.
+   Normalizar pro formato do classificador é passo obrigatório do
+   pipeline, não limpeza cosmética.
+3. **Desperdício de filtragem.** Partindo do português, a glosa que sai
+   contém o que ela quiser — e §5.2 descarta todo par com qualquer glosa
+   fora do vocabulário fechado (~40-60 sinais). A taxa de sobrevivência
+   tende a ser baixa, e o que sobrevive é enviesado pras frases mais
+   curtas e simples. Chegar a 20k pares úteis pode exigir ordens de
+   magnitude mais frases de entrada.
+
+#### 5.1.2 Rota B — LLM gerando os pares
+
+A vantagem não é "o LLM sabe Libras" — ele não sabe. É **controle da
+direção de partida**, que resolve exatamente a ressalva 3 acima.
+
+```
+1. VOCÊ enumera as sequências de glosas          ← lista fechada, você controla
+   [eu, dor, cabeça] / [banheiro, onde] / [eu, querer, marcar, vacina] ...
+        │
+        ▼  LLM: "escreva N formas naturais de dizer isto em PT-BR de atendimento"
+2. várias paráfrases PT por sequência
+        │
+   treino: glosa → PT
+```
+
+Três ganhos concretos sobre a Rota A:
+
+- **100% dentro do vocabulário, por construção.** Zero filtragem
+  desperdiçada, porque a entrada é enumerada a partir do léxico fechado,
+  não torcida pra cair nele.
+- **A distribuição de entrada é a real.** As sequências que você enumera
+  são exatamente o formato que o `SignClassifier` emite — sem passo de
+  normalização entre dois formatos de glosa diferentes.
+- **Um-para-muitos.** Várias paráfrases PT por sequência de glosas é
+  regularização barata, e reflete o fato real de que a mesma sinalização
+  tem mais de uma tradução aceitável.
+
+E o ponto que decide: nessa direção, **o LLM não inventa glosa nenhuma**.
+Quem produz a glosa é você, a partir do vocabulário. O LLM só escreve
+português — que é a única parte da tarefa em que ele é confiável. Usar o
+LLM pra *gerar* glosas de Libras seria pedir exatamente o que ele não
+tem: ele reproduziria um estereótipo de glosa aprendido de texto *sobre*
+Libras, com fluência convincente e sem base.
+
+**Ressalvas:**
+
+1. O corpus gerado tem que ser **commitado como artefato versionado**, não
+   regenerado sob demanda. Sem isso não há reprodutibilidade: dois treinos
+   em datas diferentes viram experimentos incomparáveis.
+2. Enumerar as sequências de glosas é trabalho humano de verdade
+   (combinatória sobre o léxico, filtrada por plausibilidade) — e é
+   justamente o trecho que mais se beneficia de revisão do consultor.
+3. Continua sintético. Não substitui §5.3.
+
+#### 5.1.3 Rota C — híbrida, com filtro de ida-e-volta (recomendada)
+
+As duas rotas erram de formas independentes, e é isso que dá pra
+explorar: usar o VLibras como **verificador** do que o LLM escreveu.
+
+```
+1. enumera sequências de glosas (léxico fechado)        → glosa_0
+2. LLM escreve N paráfrases PT                          → pt_1..pt_N
+3. cada pt_i volta pelo text-core do VLibras            → glosa_i
+4. mantém o par (glosa_0, pt_i) se glosa_i ≈ glosa_0
+   (comparação por palavra de conteúdo, via LexicoGlosas — §5.4)
+5. descarta o resto
+```
+
+O passo 4 é o que interessa: se a frase que o LLM escreveu, passada pelo
+tradutor de regras, não volta pra glosa de onde saiu, ou o LLM mudou o
+conteúdo ou a construção é ambígua. Nos dois casos o par é ruim pro
+treino. É um filtro de consistência que **nenhuma das duas rotas
+sozinha** consegue aplicar, e ele reusa o `LexicoGlosas` que §5.4 já
+exige por outros dois motivos.
+
+Custo: a Rota C precisa das duas peças montadas. Se só uma estiver
+disponível quando a Fase 2 começar, começar pela **Rota B** — é a que
+entrega corpus alinhado com a entrada real do modelo, e o filtro de
+ida-e-volta pode ser aplicado depois, retroativamente, sobre o corpus já
+gerado.
 
 ### 5.2 Restrição ao vocabulário e ruído deliberado
 
@@ -391,41 +480,151 @@ do vocabulário.
 
 ## 6. O modelo
 
-### 6.1 T5 pequeno, mas com vocabulário próprio
+### 6.1 `ptt5-small` fine-tunado, com o vocabulário podado
 
-A intuição "usar um T5 muito otimizado" está certa; o detalhe que decide
-o tamanho não é a profundidade, é a **tabela de embeddings**.
+**Decisão (2026-09-11):** manter os pesos pré-treinados e cortar só a
+tabela de embeddings. É o meio-termo entre um modelo geral e um
+específico: o conhecimento de português fica intacto — ele mora nas
+camadas do encoder/decoder — e o desperdício, que é de vocabulário, sai.
 
-`t5-small`: ~60M parâmetros, `d_model=512`, `vocab=32128`. Só a matriz de
-embedding (compartilhada entre encoder, decoder e a projeção de saída em
-T5 v1.0) é `32128 × 512 ≈ 16,4M` — mais de um quarto do modelo, dedicado
-a um vocabulário de propósito geral. Num domínio onde a **entrada tem ~60
-tokens possíveis** (o vocabulário fechado) e a saída é um subconjunto
-pequeno do português de atendimento, isso é desperdício quase puro.
+O detalhe que decide o tamanho de um T5 pequeno não é a profundidade, é a
+**tabela de embeddings**. Para `t5-small`/`ptt5-small` (`d_model=512`,
+6 camadas de encoder + 6 de decoder, `vocab=32k`):
 
-**Trilha A (recomendada) — T5 minúsculo treinado do zero, vocabulário
-próprio:**
+| Bloco | Parâmetros | Sobrevive à poda? |
+|---|---|---|
+| Embeddings (32.128 × 512) | 16,4M | **não** — vira ~2M (4k × 512) |
+| Encoder (6 camadas) | 18,9M | sim, intacto |
+| Decoder (6 camadas) | 25,2M | sim, intacto |
+| **Total** | **~60M** | **→ ~46M** |
 
-| Item | Valor |
-|---|---|
-| Tokenizer | SentencePiece treinado no corpus, `vocab ≈ 4.000` |
-| Config | `d_model=256`, `d_ff=1024`, 4 camadas enc + 4 dec, 4 cabeças |
-| Parâmetros | ~8M (embeddings ~1M, encoder ~3,1M, decoder ~4,2M) |
-| `.tflite` int8 | ~8-10 MB |
+A matriz de embedding é compartilhada entre encoder, decoder e a projeção
+de saída (`tie_word_embeddings` em T5 v1.0), então ela é contada uma vez
+e podada uma vez. Num domínio onde a **entrada tem ~60 tokens possíveis**
+(o vocabulário fechado) e a saída é um subconjunto pequeno do português
+de atendimento, carregar 32k tokens de propósito geral é desperdício
+quase puro — mas as camadas que sabem português não são.
 
-Com corpus sintético em domínio fechado, um modelo desse tamanho não está
-subdimensionado — está dimensionado pro problema. E torna a discussão de
-quantização/delegação quase acadêmica, o que é um resultado bom.
+Resultado: **~46M parâmetros, ~46MB em int8**. Cabe no orçamento de §8.5
+com folga menor que os ~10MB da alternativa treinada do zero, mas com
+fluência de português que não depende do corpus sintético ser bom.
 
-**Trilha B (comparação) — `ptt5-small` (unicamp-dl) fine-tunado.** Traz
-conhecimento de português de verdade, o que ajuda na fluência e em
-palavras fora do corpus sintético. Custa ~60M de parâmetros (~60MB em
-int8) e um tokenizer de propósito geral. *Confirmar disponibilidade e
-licença do checkpoint antes de planejar em cima dele.*
+**Passo opcional, só se §8.5 apertar:** podar profundidade também (ficar
+com as 4 primeiras camadas de encoder e decoder em vez de 6) leva a
+~31M. Aí você está trocando conhecimento por tamanho de verdade — medir
+antes, não assumir.
 
-**Ordem:** construir a Trilha A primeiro — o pipeline de export/decode/
-guarda (§6.3, §3.2) é idêntico nas duas, e a A itera em minutos. A B
-entra como comparação se a A não bater o template em §10.
+**Saída de emergência, se ~46MB não couber:** destilar este modelo
+(professor, fica na máquina de dev) num T5 minúsculo de ~8M (aluno, é o
+que embarca). Não está no caminho principal; fica registrado porque é a
+ponte natural caso o tamanho vire bloqueio.
+
+#### 6.1.1 O que continua como comparação: o T5 do zero
+
+Um T5 minúsculo treinado do zero (`d_model=256`, 4+4 camadas, tokenizer
+SentencePiece próprio de ~4k, ~8M parâmetros, ~10MB em int8) **não sai do
+plano** — mas muda de papel: deixa de ser candidato a embarcar e vira
+**baseline de iteração**.
+
+A razão é custo de experimento. Ele treina em minutos, então é nele que
+se testa depressa o que realmente importa (o corpus, o ruído de §5.2, o
+tamanho do vocabulário) antes de gastar uma rodada de fine-tuning. O
+pipeline de export/decode/guarda (§6.3, §3.2) é idêntico nos dois.
+
+A contrapartida que o torna inadequado pra embarcar, e que é exatamente o
+que a poda evita: **um modelo do zero só sabe o português que viu no
+corpus.** O corpus deixa de ser dado de treino e passa a ser toda a
+competência linguística do modelo — se as 20k frases de §5.1.2 forem
+variações de cinco moldes, ele aprende cinco moldes, e parece ótimo na
+validação sintética porque ela tem os mesmos cinco moldes. O `ptt5`
+podado não tem esse modo de falha: a fluência vem do pré-treino, e o
+corpus só precisa ensinar o mapeamento glosa→PT.
+
+#### 6.1.2 Como a poda funciona, na prática
+
+```python
+# 1. tokeniza o corpus INTEIRO com o tokenizer original do ptt5
+usados = set()
+for texto in corpus_glosas + corpus_pt:
+    usados.update(tok(texto).input_ids)
+
+# 2. mantém os usados + especiais, com margem de segurança
+manter = sorted(usados | ESPECIAIS | top_n_frequentes_do_pt)   # ~4k ids
+
+# 3. fatia a matriz compartilhada — as camadas não são tocadas
+novo_emb = modelo.shared.weight.data[manter]                    # (4k, 512)
+
+# 4. tabela de remapeamento id_antigo -> id_novo, salva como artefato
+remap = {antigo: novo for novo, antigo in enumerate(manter)}
+```
+
+Três decisões que precisam estar registradas:
+
+1. **Podar ANTES do fine-tuning, não depois.** Assim todas as rodadas de
+   treino são mais baratas e — o que importa mais — o modelo que você
+   avalia é exatamente o modelo que você embarca. Avaliar 60M e embarcar
+   46M é o tipo de descompasso que aparece só em produção.
+2. **Manter margem, não podar exatamente o corpus.** Um token que não
+   apareceu no corpus sintético mas apareceria numa saída válida fica
+   impossível de gerar. Incluir os mais frequentes do português geral
+   além dos observados, e manter o `<unk>`. O risco aqui é baixo (a
+   entrada é vocabulário fechado e a saída é gerada pelo próprio modelo),
+   mas custa pouco.
+3. **Descartar os tokens sentinela** (`<extra_id_*>`): eles só servem pro
+   objetivo de span-corruption do pré-treino. São 100 tokens de graça.
+
+#### 6.1.3 O tokenizer não precisa existir no aparelho
+
+Consequência direta da poda + vocabulário fechado, e vale registrar
+porque elimina uma dependência nativa inteira do app:
+
+- **Entrada:** o glossário só contém glosas do vocabulário fechado. Dá
+  pra pré-tokenizar cada glosa **em tempo de build** e embarcar um mapa
+  `glosa → [ids]` (~60 entradas). Nenhum SentencePiece em runtime.
+- **Saída:** o Kotlin só precisa *destokenizar* — uma tabela de ~4k
+  strings e a convenção de espaço do SentencePiece (`▁`). É um
+  `Array<String>` e um `replace`.
+
+Os dois artefatos saem do mesmo script de poda e vão pra `assets/` junto
+do `.tflite`. Isso remove a maior fonte de descompasso treino/inferência
+que o teste de paridade da Fase 4 existe pra pegar.
+
+#### 6.1.4 A mecânica do treino, e por que o export tem duas assinaturas
+
+Fine-tuning comum, com um detalhe que explica §6.3. Cada par vira:
+
+```
+entrada:  "eu dor cabeça"
+alvo:     "estou com dor de cabeça"
+
+labels             [estou, com, dor, de, cabeça, </s>]
+decoder_input_ids  [<pad>, estou, com, dor, de, cabeça]   ← alvo deslocado 1 à direita
+```
+
+A loss é cross-entropy posição a posição: na posição 3 o decoder recebe
+`[<pad>, estou, com]` e tem que prever `dor`. Passando `labels=`, a
+HuggingFace monta o `decoder_input_ids` sozinha.
+
+**O ponto que liga esta seção à §6.3:** no treino o decoder sempre vê o
+prefixo **correto**, mesmo tendo errado o token anterior — é *teacher
+forcing*, e é o que permite treinar todas as posições da frase **em
+paralelo, num único forward**. Na inferência não existe prefixo correto:
+o modelo consome a própria saída, um token por vez. Treino = 1 passada;
+inferência = N passadas. As duas assinaturas de §6.3 não são uma
+excentricidade do TFLite — são a consequência direta disso.
+
+Duas armadilhas de configuração:
+
+- **Learning rate.** Fine-tuning de um checkpoint pré-treinado quer algo
+  na faixa de `1e-4`/`5e-5` — bem mais baixo do que o `1e-3` que um
+  modelo do zero precisa. Trocar os dois é o erro clássico: com `1e-3` o
+  fine-tuning esquece o pré-treino (que é justamente o que se está
+  pagando pra manter), e com `5e-5` o modelo do zero parece não aprender.
+- T5 foi desenhado pro **Adafactor**. AdamW funciona no fine-tuning, com
+  warmup.
+
+*Confirmar disponibilidade e licença do checkpoint `unicamp-dl/ptt5-small`
+antes de fechar a Fase 3 em cima dele.*
 
 ### 6.2 Quantização — e o conflito com a GPU
 
@@ -516,10 +715,15 @@ modelo. Vale registrar a diferença, porque ela inverte a prioridade.
 ### 7.1 A ordem honesta
 
 1. **XNNPACK (CPU, multi-thread) — a baseline, e provavelmente
-   suficiente.** ~8M de parâmetros, ~15 invocações de um passo de decoder
-   por sessão, uma vez por sessão. Medir antes de otimizar. É plausível
-   que o total caiba em dezenas de ms num celular mediano — nesse caso
-   toda a discussão de delegate é otimização de algo que já é invisível.
+   suficiente.** Uma passada de encoder mais ~15 passos de decoder, uma
+   vez por sessão. Com KV cache cada passo é essencialmente
+   matriz-vetor, então o custo é dominado por **ler os pesos do decoder
+   da memória** — ~25MB em int8, relidos a cada passo. É esse número
+   (largura de banda × 15, não FLOPs) que a Fase 5 precisa medir.
+   > Com a decisão de §6.1 (~46M em vez dos ~8M de um modelo do zero)
+   > esta aposta ficou menos folgada do que na versão anterior deste
+   > documento — mas ainda é a aposta. Se a medição reprovar, a primeira
+   > saída é poda de profundidade (§6.1), não trocar de acelerador.
 
 2. **GPU delegate — a apostar contra, para *este* modelo.** Dois motivos
    estruturais, não de implementação:
@@ -606,9 +810,13 @@ e errada mente com confiança. O fallback tem que ser o default em
 qualquer dúvida — o `GuardedGlossContextualizer` existe pra tornar isso
 uma propriedade do código, não uma intenção.
 
-### 8.2 O corpus sintético inverte um sistema de regras, não a língua
+### 8.2 Todo corpus sintético carrega o viés de quem o gerou
 
-Ver §5.1. Só o conjunto humano (§5.3) mede o que importa. **Nenhum
+Ver §5.1. A Rota A ensina o modelo a inverter um sistema de regras; a
+Rota B, a reverter o português que um LLM considera natural; a Rota C
+atenua os dois sem eliminar nenhum. Nenhuma delas é Libras real, e a
+fluência do corpus não deve ser confundida com fidelidade. Só o conjunto
+humano (§5.3) mede o que importa. **Nenhum
 número medido em corpus sintético deve aparecer em apresentação ou
 documentação do projeto sem essa qualificação** — mesma disciplina que
 `vocabulario-mvp-proposta.md` aplica aos 3 articuladores da V-LIBRASIL.
@@ -631,8 +839,10 @@ neste ambiente.
 
 Este modelo soma ao `.tflite` do GCN (`sign-boundary-detector-plano.md`
 §5.4), aos modelos do MediaPipe em `assets/` e ao runtime. Somar tamanho
-de APK e pico de memória **antes** de escolher entre Trilha A (~10MB) e
-Trilha B (~60MB) — a diferença pode decidir sozinha.
+de APK e pico de memória **antes** de fechar a Fase 3: o alvo é ~46MB
+(§6.1). Se não couber, as saídas em ordem são poda de profundidade
+(~31MB) e depois destilação (~10MB) — as duas já registradas em §6.1, as
+duas custando qualidade que precisa ser medida, não presumida.
 
 ### 8.6 Uma frase por sessão é o recorte certo?
 
@@ -668,19 +878,36 @@ camada antes de integrar.
   comuns, e guarda que rejeita corretamente omissão e inversão de negação
   em teste unitário. **Este é o baseline que o modelo terá que bater.**
 
-### Fase 2 — Corpus sintético — **bloqueada** (depende de `feat/Empacota-player-vlibras-em-webview-nativa`)
-- [ ] Reunir corpus PT-BR de frases de atendimento.
-- [ ] Gerar pares via `vlibras-translator-api`; normalizar a glosa pro
-      formato de rótulo do `SignClassifier` (§5.1, ressalva 2).
+### Fase 2 — Corpus sintético — depende do vocabulário fechado (§5.4), **não** da branch do avatar
+> A Rota A usa o `text-core` do VLibras como biblioteca Python em lote —
+> não precisa da API HTTP, do MongoDB nem do RabbitMQ que
+> `vlibras-webview-plano.md` §4 monta pro app. A Rota B não precisa nem
+> disso.
+- [ ] Escolher a rota (§5.1). Se só uma peça estiver pronta, começar pela
+      **Rota B**; o filtro de ida-e-volta da Rota C pode ser aplicado
+      depois, retroativamente.
+- [ ] Escrever `LexicoGlosas` (§5.4) — pré-requisito das Rotas B e C.
+- [ ] Enumerar as sequências de glosas sobre o vocabulário fechado
+      (Rota B/C) **ou** reunir corpus PT-BR e rodar o `text-core` em lote
+      (Rota A, normalizando pro formato do `SignClassifier` — §5.1.1,
+      ressalva 2).
 - [ ] Filtrar pelo vocabulário; aplicar o ruído de §5.2.
-- [ ] Solicitar o conjunto humano de teste (§5.3) ao consultor.
+- [ ] **Commitar o corpus gerado como artefato versionado** (§5.1.2,
+      ressalva 1) — sem isso os treinos não são comparáveis entre si.
+- [ ] Solicitar o conjunto humano de teste (§5.3) ao consultor; pedir
+      revisão das sequências de glosas enumeradas na mesma conversa.
 - **Critério de sucesso:** ≥ 20k pares sintéticos filtrados + ≥ 200 pares
   humanos separados como teste, **jamais** vistos no treino.
 
 ### Fase 3 — Treino e avaliação offline — **fora deste repo/branch** (`computer-vision-model/contextualizacao/`)
-- [ ] Tokenizer SentencePiece (~4k) sobre o corpus.
-- [ ] Treinar a Trilha A; avaliar com as métricas de §10.
-- [ ] Só se A não bater o template: tentar a Trilha B.
+- [ ] Confirmar disponibilidade e licença de `unicamp-dl/ptt5-small`.
+- [ ] Rodar a poda de vocabulário (§6.1.2) **antes** do fine-tuning, e
+      gerar os dois artefatos de §6.1.3 (`glosa → [ids]`, tabela de
+      destokenização) junto.
+- [ ] Fine-tunar o modelo podado; avaliar com as métricas de §10.
+- [ ] Em paralelo, manter o T5 do zero (§6.1.1) como baseline barato pra
+      iterar corpus e ruído — não como candidato a embarcar.
+- [ ] Conferir o tamanho resultante contra §8.5 antes de seguir pra Fase 4.
 - **Critério de sucesso:** bate o `TemplateGlossContextualizer` **no
   conjunto humano**, com *content-word recall* ≥ 0,98 e acerto de negação
   = 1,00.
@@ -735,12 +962,16 @@ regras não deve entrar no APK.
 
 ---
 
+> **Execução:** o runbook que implementa este plano — pastas, scripts,
+> ordem dos passos e política de versionamento — está em
+> [`contextualizacao-implementacao.md`](./contextualizacao-implementacao.md).
+
 ## 11. Referências
 
 - `docs/libras-livre-arquitetura.md` §4.4 — o estágio que este plano implementa; §10 — limitações do recorte fechado.
 - `docs/sign-boundary-detector-plano.md` §5.2, §5.3 — o padrão de interface-com-placeholder e o buffer de palavras que alimenta este estágio.
 - `docs/orquestracao-dialogo-audio-plano.md` §5, §6.5 — máquina de estados do diálogo e o handoff pro avatar.
-- `docs/vlibras-webview-plano.md` (branch `feat/Empacota-player-vlibras-em-webview-nativa`) — o `vlibras-translator-api`, fonte do corpus sintético de §5.1.
+- `docs/vlibras-webview-plano.md` §4 (branch `feat/Empacota-player-vlibras-em-webview-nativa`) — o `text-core`/`rule_translation`, usado offline nas Rotas A e C de §5.1. O app **não** o chama em runtime para contextualizar.
 - `docs/vocabulario-mvp-proposta.md` — vocabulário fechado que delimita o `LexicoGlosas` e o filtro do corpus.
 - `mobile-app-companion/README.md:170` — item `combinacoesConhecidas`, que este plano substitui.
 - Código: `libras/dialogo/DialogOrchestrator.kt:131` (ponto de plugue), `libras/reconhecimento/SignClassifier.kt` (padrão da interface), `libras/audio/Speaker.kt` (consumidor da frase).
