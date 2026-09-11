@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import zlib
 import time
 from datetime import datetime
 from pathlib import Path
@@ -64,6 +65,17 @@ class DatasetSinais(Dataset):
     def __getitem__(self, i: int):
         clipe = self.clipes[i]
         seq = clipe.seq
+        # Validade vem do clipe CRU, antes de qualquer augmentação. `maos_ausentes`
+        # detecta ausência por "bloco exatamente zerado", e `rp.aumentar` soma ruído
+        # gaussiano em x,y — depois dela nenhum bloco é exatamente zero e a máscara
+        # vira inerte. O efeito era pior que inútil: máscara ativa na validação e no
+        # teste (sem augmentação) e desligada no treino, ou seja, discrepância
+        # treino/teste. Ausência é propriedade do clipe, não da amostra aumentada.
+        valido = None
+        if self.movimento:
+            valido = np.ones(seq.shape[:2], dtype=bool)
+            for (a, b), ausente in zip(dd.BLOCOS_MAO, dd.maos_ausentes(seq)):
+                valido[:, a:b] = ~ausente[:, None]
         if self.aumentar:
             # Semente EXPLÍCITA por (semente, rodada, época, índice). A versão
             # anterior usava torch.initial_seed(), que depende do estado global —
@@ -82,13 +94,6 @@ class DatasetSinais(Dataset):
             # esqueleto e derivar os ossos do resultado mantém os dois fluxos
             # coerentes. Derivar antes daria ossos da pose original colados numa
             # pose transformada.
-            valido = None
-            if self.movimento:
-                # Máscara ANTES dos ossos, a partir das coordenadas cruas: só há
-                # velocidade entre duas observações reais. Ver gg.com_movimento.
-                valido = np.ones(seq.shape[:2], dtype=bool)
-                for (a, b), ausente in zip(dd.BLOCOS_MAO, dd.maos_ausentes(seq)):
-                    valido[:, a:b] = ~ausente[:, None]
             if self.pais is not None:
                 seq = gg.com_ossos(seq, self.pais)
             if self.movimento:
@@ -182,6 +187,10 @@ def canais_gcn(args) -> dict:
             "kernel_t": int(getattr(args, "kernel_temporal", 9))}
 
 
+# Campos que NÃO definem o experimento: mudar só estes pode reaproveitar rodadas.
+IGNORAR_NA_RETOMADA = {"saida", "dispositivo", "threads", "workers", "folds"}
+
+
 def semear(args, rodada: int) -> None:
     """Fixa o acaso da rodada, quando `--semente` é passada.
 
@@ -206,6 +215,34 @@ def semear(args, rodada: int) -> None:
     np.random.seed((s + rodada) % 2**32)
 
 
+def semear_pesos(modelo, args, rodada: int) -> None:
+    """Reinicializa cada módulo com semente derivada do NOME dele.
+
+    POR QUE. `semear` fixa o RNG global, mas a construção do modelo consome
+    sorteios em ordem, e a primeira convolução consome um número que depende de
+    `canais_ent`. Resultado: variantes com contagens de parâmetros diferentes
+    recebem pesos diferentes em TODAS as camadas seguintes, inclusive nas de
+    forma idêntica. A docstring de `semear` afirmava que "as duas variantes
+    partem dos mesmos pesos" — era falso, e inicialização é a maior fonte do
+    ruído de ~1,7 pp que separa as variantes que queremos comparar.
+
+    Semeando por nome, camadas de mesma forma recebem os mesmos pesos entre
+    variantes; só as que realmente mudaram de forma diferem. O hash é `crc32`,
+    não `hash()`, porque `hash()` de string é aleatorizado por processo e a
+    semente deixaria de reproduzir entre execuções.
+
+    Só para o ST-GCN: a ResNet nasce com pesos do ImageNet, e reinicializar
+    apagaria justamente o pré-treino que a torna competitiva.
+    """
+    if getattr(args, "semente", None) is None or getattr(args, "arquitetura", "") != "gcn":
+        return
+    base = int(args.semente) + rodada
+    for nome, m in modelo.named_modules():
+        if hasattr(m, "reset_parameters"):
+            torch.manual_seed((base + zlib.crc32(nome.encode())) % 2**31)
+            m.reset_parameters()
+
+
 def treinar_rodada(treino, validacao, teste, rotulos, permutacao, args, dispositivo,
                    rodada: int = 0):
     """Treina uma rodada e devolve (acurácia no teste, predições, verdadeiros)."""
@@ -217,6 +254,7 @@ def treinar_rodada(treino, validacao, teste, rotulos, permutacao, args, disposit
     # ossos, que acrescentam um vetor por dimensão. O checkpoint guarda esse
     # config, então recarregar já vem com o valor certo.
     modelo = construtor(len(rotulos), **(canais_gcn(args) if arq == "gcn" else {}))
+    semear_pesos(modelo, args, rodada)
     if getattr(args, "inicializar", None):
         n = aplicar_backbone(modelo, Path(args.inicializar), arq)
         print(f"      backbone de pré-treino aplicado ({n} tensores)")
@@ -494,6 +532,20 @@ def main() -> None:
         arquivo = parciais / f"{i:02d}-{part.teste}.json"
         if arquivo.is_file():
             r = json.loads(arquivo.read_text(encoding="utf-8"))
+            # CONFERIR A CONFIGURAÇÃO antes de reaproveitar. Sem isto, rodar duas
+            # variantes no mesmo --saida (e o padrão é resultados-<arquitetura>,
+            # igual para todas) faz a segunda herdar as rodadas da primeira em
+            # silêncio — e o relatorio.md sai bem-formado, com bloco de
+            # reprodutibilidade completo, descrevendo uma configuração que nunca
+            # rodou. É o pior modo de falha possível: número plausível e falso.
+            iguais = {k: v for k, v in r.get("args", {}).items() if k not in IGNORAR_NA_RETOMADA}
+            atuais = {k: v for k, v in vars(args).items() if k not in IGNORAR_NA_RETOMADA}
+            if iguais != atuais:
+                difs = {k: (iguais.get(k), atuais.get(k))
+                        for k in set(iguais) | set(atuais) if iguais.get(k) != atuais.get(k)}
+                raise SystemExit(
+                    f"[treino] ✗ {arquivo} é de OUTRA configuração (gravado vs atual): "
+                    f"{difs}. Use um --saida diferente ou apague {parciais}.")
             print(f"[treino] rodada {i}/{len(particoes)} — {part.teste} já feita "
                   f"({r['acuracia']:.1%}), reaproveitando")
         else:

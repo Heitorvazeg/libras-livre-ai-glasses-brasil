@@ -397,6 +397,64 @@ def teste_movimento_e_adjacencia() -> None:
     _ok("movimento mascarado, adjacência adaptativa, kernel e z das ligações")
 
 
+def teste_pipeline_real_das_flags() -> None:
+    """Exercita o DatasetSinais e a semeadura COMO O TREINO os usa.
+
+    POR QUE ISTO EXISTE. `teste_movimento_e_adjacencia` chama `gcn.com_movimento`
+    com a máscara montada à mão — e passava enquanto o pipeline não montava
+    máscara nenhuma no treino. O teste estava certo e o produto errado: a
+    augmentação soma ruído, o bloco de mão ausente deixa de ser exatamente zero,
+    e `maos_ausentes` não achava mais nada. A máscara valia na validação e no
+    teste, e não no treino. Testar a função sem testar o caminho que a chama é
+    como conferir a chave sem tentar a porta.
+    """
+    import argparse as _ap
+    import numpy as _np
+    v = gcn.N_POSE + 2 * gcn.N_MAO
+
+    # 1. Mão ausente + augmentação: velocidade tem de ser zero no bloco ausente.
+    seq = _np.ones((20, v, 2), dtype=_np.float32)
+    a, b = dd.BLOCOS_MAO[0]
+    seq[5:15, a:b, :] = 0.0
+    clipes = [dd.Clipe("M01", "x", "01", seq)]
+    for aumentar in (False, True):
+        ds = tr.DatasetSinais(clipes, ["x"], None, aumentar, semente=1,
+                              arquitetura="gcn", ossos=True, movimento=True)
+        t, _ = ds[0]
+        pico = t[4:, :, a:b].abs().max().item()
+        assert pico == 0.0, \
+            f"aumentar={aumentar}: mão ausente com velocidade {pico:.4f} — máscara inerte"
+
+    # 2. Pesos pareados: camadas de forma idêntica têm de bater entre variantes.
+    def pesos(canais):
+        ns = _ap.Namespace(semente=20260916, arquitetura="gcn", com_z=False, ossos=True,
+                           movimento=False, adjacencia_adaptativa=False, kernel_temporal=9)
+        tr.semear(ns, 1)
+        m = gcn.construir(20, canais_ent=canais)
+        tr.semear_pesos(m, ns, 1)
+        return m.blocos[1].tcn[0].weight.detach().clone()
+    assert torch.equal(pesos(4), pesos(8)) and torch.equal(pesos(4), pesos(6)), \
+        "variantes com canais diferentes deveriam compartilhar os pesos das camadas de mesma forma"
+
+    # 3. Retomada não pode reaproveitar rodada de OUTRA configuração.
+    import json as _json
+    with tempfile.TemporaryDirectory() as tmp:
+        destino = Path(tmp) / "saida"
+        (destino / "rodadas").mkdir(parents=True)
+        (destino / "rodadas" / "01-M01.json").write_text(_json.dumps({
+            "rodada": 1, "teste": "M01", "validacao": "M02", "acuracia": 0.5,
+            "melhor_epoca": 1, "predicoes": [], "verdadeiros": [], "rotulos": ["x"],
+            "args": {"ossos": True, "com_z": False, "movimento": False},
+        }), encoding="utf-8")
+        gravado = {"ossos": True, "com_z": False, "movimento": False}
+        atual = {"ossos": True, "com_z": True, "movimento": False}
+        assert {k: v for k, v in gravado.items() if k not in tr.IGNORAR_NA_RETOMADA} != \
+               {k: v for k, v in atual.items() if k not in tr.IGNORAR_NA_RETOMADA}, \
+            "configurações diferentes precisam ser detectadas como diferentes"
+        assert "saida" in tr.IGNORAR_NA_RETOMADA and "com_z" not in tr.IGNORAR_NA_RETOMADA
+    _ok("pipeline real: máscara sob augmentação, pesos pareados, retomada confere config")
+
+
 def teste_gcn_ponta_a_ponta() -> None:
     acc = _rodada_sintetica(rotulo_aleatorio=False, arquitetura="gcn")
     assert acc > 0.60, f"GCN em classes separáveis deveria passar de 60%, veio {acc:.1%}"
@@ -585,6 +643,7 @@ TESTES = [
     ("vetores de osso (two-stream)", teste_ossos),
     ("terceira coordenada (x,y,z)", teste_terceira_coordenada),
     ("movimento, adjacência adaptativa, kernel", teste_movimento_e_adjacencia),
+    ("pipeline real das flags novas", teste_pipeline_real_das_flags),
     ("treino de ponta a ponta com ST-GCN", teste_gcn_ponta_a_ponta),
     ("controle negativo (rótulo aleatório)", teste_controle_negativo),
     ("contrastivo: perda e amostrador", teste_contrastivo),

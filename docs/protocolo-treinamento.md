@@ -285,6 +285,36 @@ integração, não diferença de acurácia.
 
 ## 6. Números medidos
 
+**O ST-GCN alcançou a ResNet com 24× menos parâmetros** — não a superou. A melhor ResNet
+medida aqui é **95,1%**; o melhor ST-GCN é 94,6/94,9%. Ver
+[`decisao-arquitetura-modelo.md`](decisao-arquitetura-modelo.md), incluindo por que uma
+versão anterior afirmou superioridade e estava errada.
+
+Etapa 1 do notebook de variantes (`gcn-20260910-235322`, commit `d48b313`):
+
+| Configuração | LOSO | Parâmetros |
+|---|---|---|
+| **ST-GCN + ossos + z** | **94,6% / 94,9%** | 0,47M |
+| ST-GCN + ossos + z + movimento ⚠️ | 94,5% | 0,47M |
+| ST-GCN + ossos (controle) | 92,5% | 0,46M |
+| ST-GCN + ossos + kernel 5 | 92,2% | **0,30M** |
+| ST-GCN + ossos + movimento ⚠️ | 91,9% | 0,47M |
+| ST-GCN + ossos + adj. adaptativa | 89,9% | 0,47M |
+
+⚠️ As duas variantes com `--movimento` mediram uma implementação quebrada: a máscara de
+validade estava inerte durante o treino. Corrigido em 11/09; **precisam ser refeitas antes
+de descartar movimento**.
+
+⚠️ **Estes relatórios ainda não estão commitados.** Pelo critério que este documento aplica
+ao "GCN em 95,6%" de terceiros, são números não verificados até entrarem no repositório.
+
+⚠️ **A comparação entre arquiteturas não é pareada em orçamento:** o GCN recebe 1.080
+atualizações de peso, a ResNet 270 (controle) ou 540 (imputada). O
+`decisao-arquitetura-modelo.md` §6 registra que a ResNet **não convergiu**. Mudar só o
+batch da ResNet moveu +2,1 pp.
+
+Histórico, na mesma régua:
+
 | Configuração | LOSO | Onde |
 |---|---|---|
 | Chance aleatória (20 classes) | 5,0% | — |
