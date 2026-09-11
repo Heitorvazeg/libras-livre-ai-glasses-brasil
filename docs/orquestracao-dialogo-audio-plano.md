@@ -234,6 +234,25 @@ produto/arquitetura, com o motivo:
     Fica como upgrade futuro trocar por Whisper `small` (ou outro motor neural) se a qualidade do
     Vosk se mostrar insuficiente em uso real, atrás da mesma interface `SttEngine` já existente.
 
+12. **[NOVO] Timeout de 1 minuto de inatividade nas sessões ATIVAS (② capturando sinais, ⑤
+    escutando atendente) — não nos estados de espera (①④).** Adianta parte do item de Fase 7
+    "Refinamento" (§7) que antes previa isso só pra ④/⑤. Comportamento: se ninguém sinalizar/falar
+    por 60s dentro de uma dessas duas sessões, o `DialogOrchestrator` encerra sozinho — mesmo
+    efeito de ouvir "Libras Livre, encerrar" (`DialogOrchestrator.endSignSession`/`endListening`).
+    Não se aplica a ①/④ propositalmente: nesses dois só a wake word real ou o botão de fallback
+    devem tirar o app da espera — inatividade ali é o estado normal (esperando alguém agir), não um
+    problema a corrigir.
+
+    Implementação assimétrica entre os dois estados, registrada porque não é óbvia lendo o código:
+    em ②, o timer **reinicia a cada gesto reconhecido OU tentado** (`onSignRecognized`/
+    `onSignRecognitionFailed`) — inatividade de verdade, não um teto fixo de sessão; alguém
+    sinalizando por 5 minutos seguidos não é cortado. Em ⑤, o timer é **fixo desde o início da
+    escuta** — `SttEngine` só entrega `onResult`/`onError` uma vez, no fim (§6.4), não expõe
+    nenhum sinal de "ainda tem gente falando" no meio da captura (precisaria de VAD/resultados
+    parciais, fora de escopo aqui); uma resposta genuinamente longa do atendente (>60s) seria
+    cortada no meio mesmo com fala contínua — limitação conhecida, revisitar se incomodar na
+    prática.
+
 ---
 
 ## 5. Máquina de estados
@@ -248,7 +267,8 @@ produto/arquitetura, com o motivo:
         │  cada um começa/termina e como é classificado é decidido pelo
         │  pipeline de reconhecimento (LandmarkPipeline + SignBoundaryDetector
         │  + classificador — ver docs/sign-boundary-detector-plano.md), não
-        │  por este documento. Este estado só permanece aberto até "encerrar".
+        │  por este documento. Este estado só permanece aberto até "encerrar"
+        │  — OU até 1 min sem nenhum gesto reconhecido/tentado (§4 item 12).
         │
         │ "Libras Livre, encerrar" (falado pelo atendente, uma vez por
         │ sessão/frase — não mais uma vez por sinal)
@@ -262,6 +282,7 @@ produto/arquitetura, com o motivo:
         ▼
 ⑤ ESCUTANDO ATENDENTE          ← AudioSessionManager troca A2DP→HFP; mic dos óculos; wake ENCERRAR ativa
         │ "Libras Livre, encerrar" (mesmas duas frases, mesmo mic do celular — ver §4, item 3)
+        │ OU 1 min fixo desde o início da escuta, sem sinal de atividade (§4 item 12)
         ▼
 ⑥ TRANSCREVENDO                ← STT converte a captura em texto; corta a wake word do final
         │ texto pronto; AudioSessionManager libera HFP → volta A2DP
@@ -392,6 +413,10 @@ a sessão. Como uma sequência de sinais reconhecidos vira uma frase falável
 não é detalhado aqui — reaproveita o mecanismo de combinação de sinais já
 previsto no checklist da trilha mobile (`mobile-app-companion/README.md`,
 tabela `combinacoesConhecidas`), não é uma decisão nova deste documento.
+
+Também dono do timer de inatividade de ②/⑤ (§4 item 12) — `resetIdleTimeout`/`cancelIdleTimeout`,
+armado/reiniciado nos mesmos pontos que decidem entrar/sair desses dois estados, encerrando a
+sessão sozinho (`endSignSession`/`endListening`) depois de 1 min sem atividade.
 
 ### 6.6 `TtsEngine.kt` — nova interface, `Speaker.kt` passa a delegar
 
@@ -557,8 +582,12 @@ validar cada camada isolada antes de integrar.
 - [ ] Testar o ciclo completo ①→⑦→① pelo menos uma vez ponta a ponta.
 
 ### Fase 7 — Refinamento
-- [ ] Timeout em ④/⑤ (se o atendente nunca responder — nem falar "iniciar"
-  em ④, nem falar "encerrar" em ⑤ — voltar pro `IDLE` sozinho).
+- [x] Timeout de inatividade — adiantado e implementado com escopo revisado: **② e ⑤** (sessões
+  ativas), não ④/⑤ como cogitado originalmente aqui (ver §4 item 12 pro motivo e pras diferenças
+  de implementação entre os dois estados). ①/④ (estados de espera) continuam sem timeout,
+  propositalmente.
+- [ ] Testar o timeout de 1 min em hardware real — nenhum build rodou nesta sessão (sem Android
+  SDK no ambiente).
 - [ ] Tratamento de interrupção do sistema durante ⑤ (ligação chegando —
   mesmo padrão que `AudioInputHandler.wasInterrupted` já cobre pro mic do
   celular).

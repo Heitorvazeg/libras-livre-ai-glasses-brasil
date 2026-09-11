@@ -34,6 +34,8 @@ import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.audio.WakeWo
 import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.audio.WakeWordDetector
 import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.reconhecimento.LandmarkPipeline
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -74,12 +76,22 @@ class DialogOrchestrator(
     // transcrição — a frase pode vazar pro texto reconhecido pelo STT (plano §4 item 3, §6.4).
     private val TRAILING_ENCERRAR_PATTERN =
         Regex("""\s*libras\s+livre,?\s+encerrar[.!?]?\s*$""", RegexOption.IGNORE_CASE)
+
+    // Timeout de inatividade nas duas sessões ATIVAS (② capturando sinais, ⑤ escutando
+    // atendente) — se ninguém sinalizar/falar por 1 minuto, encerra sozinho, como se "Libras
+    // Livre, encerrar" tivesse sido ouvido (§7 Fase 7). NÃO se aplica aos estados de espera
+    // (①④) — lá só a wake word real ou o botão de fallback disparam a transição.
+    private const val IDLE_TIMEOUT_MS = 60_000L
   }
 
   private val _state = MutableStateFlow(DialogState.AGUARDANDO_SINAL)
   val state: StateFlow<DialogState> = _state.asStateFlow()
 
   private var wakeWordDetector: WakeWordDetector? = null
+
+  // Timer de inatividade das sessões ativas (② e ⑤) — um só campo porque as duas são mutuamente
+  // exclusivas no state machine (nunca as duas ativas ao mesmo tempo). Ver IDLE_TIMEOUT_MS.
+  private var idleTimeoutJob: Job? = null
 
   // Palavras reconhecidas na sessão de sinais em curso — uma por boundary (ver
   // docs/sign-boundary-detector-plano.md §5.3). Junta com espaço ao "encerrar": placeholder
@@ -126,6 +138,8 @@ class DialogOrchestrator(
    */
   fun onSignRecognized(text: String) {
     if (text.isNotBlank()) palavrasReconhecidas.add(text)
+    // Conta como atividade — reinicia o timeout de 1 min de inatividade (§7 Fase 7).
+    resetIdleTimeout(DialogState.CAPTURANDO_SINAIS) { endSignSession() }
   }
 
   /**
@@ -137,6 +151,9 @@ class DialogOrchestrator(
    */
   fun onSignRecognitionFailed() {
     Log.w(TAG, "Um segmento da sessão não foi reconhecido — seguindo o resto da sessão")
+    // Um gesto foi tentado (só não reconhecido) — ainda conta como atividade pro timeout de 1 min
+    // (§7 Fase 7): a pessoa está sinalizando, só não com sucesso.
+    resetIdleTimeout(DialogState.CAPTURANDO_SINAIS) { endSignSession() }
   }
 
   // Evita que uma segunda "Libras Livre, iniciar" (a wake word continua ativa em ①) dispare uma
@@ -154,6 +171,7 @@ class DialogOrchestrator(
         }
         palavrasReconhecidas.clear()
         setState(DialogState.CAPTURANDO_SINAIS)
+        resetIdleTimeout(DialogState.CAPTURANDO_SINAIS) { endSignSession() }
         landmarkPipeline.startSession()
       } finally {
         startingSignSession = false
@@ -162,6 +180,9 @@ class DialogOrchestrator(
   }
 
   private fun endSignSession() {
+    // Pode ser chamado pela wake word real, pelo botão de fallback, ou pelo próprio timeout de
+    // inatividade (§7 Fase 7) — cancela o timer nos três casos (idempotente se já disparou).
+    cancelIdleTimeout()
     // Pausa a wake word já aqui, no instante em que "encerrar" foi ouvido — mesmo que ainda
     // falte esperar a classificação de um sinal em aberto (abaixo).
     setState(DialogState.FALANDO)
@@ -197,10 +218,18 @@ class DialogOrchestrator(
           onResult = { text -> onAttendantTranscribed(text) },
           onError = { onAttendantTranscriptionFailed() },
       )
+      // Sem VAD/resultado parcial disponível ainda (SttEngine só dispara onResult/onError uma vez,
+      // no fim — ver docs/orquestracao-dialogo-audio-plano.md §6.4), então este timer é fixo desde
+      // o início da escuta, não reinicia por atividade de fala como o de ② faz por gesto — §7
+      // Fase 7 registra essa diferença como limitação conhecida.
+      resetIdleTimeout(DialogState.ESCUTANDO_ATENDENTE) { endListening() }
     }
   }
 
   private fun endListening() {
+    // Pode ser chamado pela wake word real, pelo botão de fallback, ou pelo timeout de
+    // inatividade acima — cancela o timer nos três casos (idempotente se já disparou).
+    cancelIdleTimeout()
     setState(DialogState.TRANSCREVENDO)
     // Corta a captura agora — como se o atendente tivesse parado de falar neste instante. O
     // resultado chega de forma assíncrona via o onResult/onError já configurado em
@@ -224,6 +253,24 @@ class DialogOrchestrator(
     audioSessionManager.releaseListening()
     // Permite tentar de novo com "Libras Livre, iniciar" sem reabrir a sessão de sinais inteira.
     setState(DialogState.AGUARDANDO_RESPOSTA)
+  }
+
+  // (Re)inicia o timer de inatividade — cancela qualquer um pendente antes (cobre tanto "resetar
+  // o relógio por atividade nova" quanto "trocar de estado ativo"). onTimeout só dispara se o
+  // estado ainda for o mesmo de quando o timer foi armado — evita disparo tardio depois de uma
+  // transição legítima (wake word real, botão) já ter mudado de estado.
+  private fun resetIdleTimeout(whileInState: DialogState, onTimeout: () -> Unit) {
+    idleTimeoutJob?.cancel()
+    idleTimeoutJob =
+        scope.launch {
+          delay(IDLE_TIMEOUT_MS)
+          if (_state.value == whileInState) onTimeout()
+        }
+  }
+
+  private fun cancelIdleTimeout() {
+    idleTimeoutJob?.cancel()
+    idleTimeoutJob = null
   }
 
   // Único ponto que muda o estado E decide se a wake word deve estar ouvindo — "nenhum
