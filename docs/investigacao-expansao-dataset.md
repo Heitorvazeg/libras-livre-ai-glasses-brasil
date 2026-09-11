@@ -121,6 +121,26 @@ sinalizadores encontrados. Se aparecerem 09-12, é a hipótese 1 e o ganho é im
 
 ## Ação B — MALTA-LIBRAS / toolkit `Malta-Lab/ISLR_LIBRAS`
 
+> ### ⚠️ DECISÃO REVERTIDA EM 2026-09-11 — o MALTA foi baixado
+>
+> A conclusão desta seção ("ROI ruim dentro do prazo", "~1 pessoa nova por sinal") era
+> consequência do **filtro de licença**, que descartava tudo sem termo de uso localizável.
+> Em 11/09 o time decidiu que, para o hackathon, o enquadramento é **uso de pesquisa** —
+> o que devolve as fontes universitárias à mesa. Ver
+> [`decisao-datasets-e-licencas.md`](decisao-datasets-e-licencas.md).
+>
+> **Resultado real:** 6.353 vídeos de Acessibilidade Brasil e UFV. UFSC (3.082) e USP
+> (432) falharam por problema de certificado no servidor; Spread the Sign ficou de fora
+> por proibição expressa.
+>
+> **E o ganho em pessoas não se confirmou.** Sem a UFSC, sobraram **8 pessoas**, sendo
+> que uma delas responde por 90% dos clipes. Os 20 sinais do MVP passam de 8 para 8-10
+> pessoas, não para 10-12. O MALTA serve para **pré-treino**, não para avaliação
+> signer-independent.
+>
+> O texto abaixo fica como registro da análise de licenças, que continua válida.
+
+
 Repositório: <https://github.com/Malta-Lab/ISLR_LIBRAS> (licença MIT declarada no
 README). Agrega vídeos de INES V2/V3, Corpus Libras (UFSC), SignBank (UFSC_V2), Spread
 the Sign, V-LIBRASIL, USP, UFV e YouTube. Tensores prontos em

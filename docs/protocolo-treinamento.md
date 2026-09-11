@@ -1,6 +1,6 @@
 # Protocolo de treinamento — como o modelo é treinado, medido e entregue
 
-**Atualizado:** 2026-09-10 · **Prazo do hackathon:** 16/09/2026
+**Atualizado:** 2026-09-11 · **Prazo do hackathon:** 16/09/2026
 
 Este documento é o **procedimento**: o que rodar, em que ordem, com quais garantias, e o
 que ainda falta. Ele não repete o que já está em outros lugares:
@@ -8,9 +8,10 @@ que ainda falta. Ele não repete o que já está em outros lugares:
 | Para | Leia |
 |---|---|
 | Entender o projeto do zero | [`CONTEXTO.md`](CONTEXTO.md) |
-| Por que ResNet e não GCN | [`decisao-arquitetura-modelo.md`](decisao-arquitetura-modelo.md) |
+| Por que ST-GCN e não ResNet | [`decisao-arquitetura-modelo.md`](decisao-arquitetura-modelo.md) |
 | Isolamento e proveniência do pré-treino | [`protocolo-pretreino.md`](protocolo-pretreino.md) |
-| De onde vêm os dados e as licenças | [`investigacao-expansao-dataset.md`](investigacao-expansao-dataset.md) |
+| De onde vêm os dados e as licenças | [`decisao-datasets-e-licencas.md`](decisao-datasets-e-licencas.md) |
+| Investigação original das bases | [`investigacao-expansao-dataset.md`](investigacao-expansao-dataset.md) |
 | Vocabulário do MVP | [`vocabulario-mvp-proposta.md`](vocabulario-mvp-proposta.md) |
 | Correções em andamento e donos | [`PLANO-CORRECOES.md`](PLANO-CORRECOES.md) |
 
@@ -24,8 +25,9 @@ diferente, e misturá-los destrói a única métrica honesta que temos.
 | Corpus | Clipes | Classes | Pessoas | Papel | Prefixo |
 |---|---|---|---|---|---|
 | **MINDS-Libras** | 800 | 20 sinais | 8 | **treino supervisionado + avaliação LOSO** | `M` |
-| V-LIBRASIL auditada | 4.025 (4.053 originais) | 1.353 palavras | 3 (sempre os mesmos) | pré-treino | `V` |
-| WLASL100 (ASL) | 1.013 | 100 | 64 | corpus disponível; pré-treino multi-fonte ainda não habilitado | `W` |
+| V-LIBRASIL auditada | 4.025 | 1.349 palavras | 3 (sempre os mesmos) | pré-treino | `V` |
+| **MALTA-LIBRAS** | 6.353 | 5.958 rótulos | 8 (uma é 90% dos clipes) | pré-treino | `T` |
+| WLASL100 (ASL) | 1.013 | 100 | 64 | pré-treino | `W` |
 
 Por que não mesclar, com o motivo específico de cada um:
 
@@ -64,6 +66,47 @@ deixou 9 de 30 passarem.
 Os mesmos três articuladores e o mesmo domínio visual aparecem no corpus de pré-treino
 (V03 participa da validação interna). Os 30 clipes são **diagnóstico em clipes
 reservados**, não teste de domínio nem de pessoas inéditas.
+
+---
+
+## 1b. O plano de treino consolidado
+
+Decidido em 11/09, com o **ST-GCN como modelo de entrega**. Cada corpus entra numa fase,
+e a fase determina o que ele precisa ter.
+
+| Fase | Corpus | O que aprende | Por que esse corpus |
+|---|---|---|---|
+| **1. Pré-treino contrastivo** | V-LIBRASIL 4.025 + MALTA 6.353 + WLASL 1.013 | invariância a sinalizante e primitivas de movimento | não precisa de muitas pessoas por palavra; precisa de volume e variedade |
+| **2. Fine-tuning supervisionado** | MINDS 800 | os 20 sinais do MVP | única base com pessoas suficientes por sinal |
+| **3. Avaliação LOSO** | MINDS, 8 rodadas | o número honesto | idem |
+| **4. Entrega** | MINDS completo (`--final`) | o checkpoint | usa todo o dado disponível |
+
+**Por que MALTA vai para o pré-treino e não para o supervisionado.** Ele tem 5.958
+rótulos com ~1 pessoa cada — não sustenta leave-one-signer-out. Mas 6.353 clipes de
+movimento real de Libras, num domínio visual diferente, é exatamente o que o aprendizado
+contrastivo consome, e ali a contagem de pessoas por palavra não importa.
+
+**Por que WLASL entra mesmo sendo ASL.** 64 sinalizantes em condições variadas (vídeo de
+YouTube, ângulos e iluminação diferentes) — a única fonte que temos com variação de
+enquadramento. Configuração de mão e primitivas de movimento transferem entre línguas de
+sinais; o léxico não precisa.
+
+**O MINDS nunca entra no pré-treino.** É o conjunto de avaliação.
+
+### O que precisa ser construído antes
+
+| # | Bloqueio | Onde |
+|---|---|---|
+| 1 | `dados.carregar` aceita só `M` e `V` | `treino/dados.py:104` |
+| 2 | A auditoria do pré-treino rejeita tudo que não seja `V` | `treino/pretreinar.py:78` |
+| 3 | **Não existe export do GCN para TFLite** — o `exportar.py` recusa checkpoint GCN | `treino/exportar.py` |
+
+O (3) é o maior: além de converter, precisa calcular os **ossos dentro do grafo**, já que
+hoje isso acontece em Python no `DatasetSinais`. Sem ele, a decisão de arquitetura não
+chega ao aparelho.
+
+Os (1) e (2) precisam preservar o bloqueio do MINDS — é onde um erro vira vazamento
+silencioso e um número de generalização que mente.
 
 ---
 
