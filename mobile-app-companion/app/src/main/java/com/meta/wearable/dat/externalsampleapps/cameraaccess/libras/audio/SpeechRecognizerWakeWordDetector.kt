@@ -27,7 +27,7 @@
 // aparelho. Só teste em hardware real confirma; os botões de fallback continuam servindo de
 // contorno se isso falhar.
 
-package com.meta.wearable.dat.externalsampleapps.cameraaccess.libras
+package com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.audio
 
 import android.Manifest
 import android.content.Context

@@ -14,18 +14,25 @@
 // significa por conta própria, tudo passa por aqui ("só existe um dono do áudio por vez", §5).
 //
 // A costura sinal->frase (como uma sequência de sinais reconhecidos vira uma frase falável) é
-// responsabilidade do pipeline de reconhecimento (docs/sign-boundary-detector-plano.md), fora do
-// escopo deste arquivo — aqui uma sessão ainda mapeia 1:1 pra uma única chamada de classificação,
-// igual ao fluxo manual anterior, até aquele plano ser implementado.
+// responsabilidade DESTA classe: palavrasReconhecidas acumula uma palavra por boundary do
+// SignBoundaryDetector (via onSignRecognized), e endSignSession() junta com espaço ao
+// "encerrar" — placeholder explícito no lugar da tabela combinacoesConhecidas real (ver
+// docs/sign-boundary-detector-plano.md §5.3).
 //
-// "Libras Livre, iniciar"/"encerrar" agora também ligam/desligam a câmera+stream dos óculos (não
-// só a sessão lógica de captura), via os callbacks ensureCameraActive/deactivateCamera injetados
-// pelo CameraViewModel (que é quem sabe startSession/startStreaming/stopStreaming) — mesma lógica
-// de "nenhum componente decide sozinho", aplicada agora também ao hardware da câmera.
+// "Libras Livre, iniciar"/"encerrar" também ligam/desligam a câmera+stream dos óculos (não só a
+// sessão lógica de captura), via os callbacks ensureCameraActive/deactivateCamera injetados pelo
+// CameraViewModel (que é quem sabe startSession/startStreaming/stopStreaming) — mesma lógica de
+// "nenhum componente decide sozinho", aplicada agora também ao hardware da câmera.
 
-package com.meta.wearable.dat.externalsampleapps.cameraaccess.libras
+package com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.dialogo
 
 import android.util.Log
+import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.audio.AudioSessionManager
+import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.audio.Speaker
+import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.audio.SttEngine
+import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.audio.WakeWord
+import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.audio.WakeWordDetector
+import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.reconhecimento.LandmarkPipeline
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -74,6 +81,12 @@ class DialogOrchestrator(
 
   private var wakeWordDetector: WakeWordDetector? = null
 
+  // Palavras reconhecidas na sessão de sinais em curso — uma por boundary (ver
+  // docs/sign-boundary-detector-plano.md §5.3). Junta com espaço ao "encerrar": placeholder
+  // explícito no lugar da tabela combinacoesConhecidas real, que não existe implementada em
+  // lugar nenhum do repo ainda (mobile-app-companion/README.md, item de checklist em aberto).
+  private val palavrasReconhecidas = mutableListOf<String>()
+
   /** Liga a fonte de wake words (hoje, [SpeechRecognizerWakeWordDetector]) — chamar uma vez, na
    * criação. */
   fun attachWakeWordDetector(detector: WakeWordDetector) {
@@ -106,30 +119,24 @@ class DialogOrchestrator(
     }
   }
 
-  /** Chamado pelo LandmarkPipeline quando a classificação da sessão termina com sucesso. */
+  /**
+   * Chamado pelo LandmarkPipeline a cada sinal reconhecido dentro da sessão em curso — um por
+   * boundary do SignBoundaryDetector, não mais uma vez por sessão inteira (§5.3). Só acumula;
+   * quem decide quando falar é [endSignSession].
+   */
   fun onSignRecognized(text: String) {
-    if (_state.value != DialogState.FALANDO) return
-    scope.launch {
-      speaker.speakAndAwait(text)
-      setState(DialogState.AGUARDANDO_RESPOSTA)
-    }
+    if (text.isNotBlank()) palavrasReconhecidas.add(text)
   }
 
   /**
-   * Chamado pelo LandmarkPipeline quando a classificação falha — retoma a captura na sessão.
-   * Precisa religar a câmera: [endSignSession] já desligou o stream ao fechar a sessão anterior.
+   * Chamado pelo LandmarkPipeline quando um segmento não é reconhecido. Um sinal perdido não
+   * aborta a sessão inteira — só não entra na frase final; a sessão segue capturando o
+   * próximo sinal normalmente (LandmarkPipeline já reinicia o buffer sozinho por boundary). Não
+   * mexe na câmera: ela continua ligada o tempo todo dentro de uma sessão de sinais, só
+   * [endSignSession] a desliga.
    */
   fun onSignRecognitionFailed() {
-    if (_state.value != DialogState.FALANDO) return
-    scope.launch {
-      if (!ensureCameraActive()) {
-        Log.w(TAG, "Câmera não religou pra nova tentativa — volta pra AGUARDANDO_SINAL")
-        setState(DialogState.AGUARDANDO_SINAL)
-        return@launch
-      }
-      setState(DialogState.CAPTURANDO_SINAIS)
-      landmarkPipeline.startCollecting()
-    }
+    Log.w(TAG, "Um segmento da sessão não foi reconhecido — seguindo o resto da sessão")
   }
 
   // Evita que uma segunda "Libras Livre, iniciar" (a wake word continua ativa em ①) dispare uma
@@ -145,8 +152,9 @@ class DialogOrchestrator(
           Log.w(TAG, "Câmera/stream não ficou pronta a tempo — 'Libras Livre, iniciar' ignorado")
           return@launch
         }
+        palavrasReconhecidas.clear()
         setState(DialogState.CAPTURANDO_SINAIS)
-        landmarkPipeline.startCollecting()
+        landmarkPipeline.startSession()
       } finally {
         startingSignSession = false
       }
@@ -154,13 +162,26 @@ class DialogOrchestrator(
   }
 
   private fun endSignSession() {
+    // Pausa a wake word já aqui, no instante em que "encerrar" foi ouvido — mesmo que ainda
+    // falte esperar a classificação de um sinal em aberto (abaixo).
     setState(DialogState.FALANDO)
-    landmarkPipeline.stopCollectingAndClassify()
-    // A câmera não é mais necessária dali em diante no ciclo (fala, escuta e transcrição são só
-    // áudio) — desliga já aqui; a próxima "iniciar" (beginSignSession/onSignRecognitionFailed)
-    // religa sob demanda.
-    deactivateCamera()
-    // onSignRecognized/onSignRecognitionFailed chegam depois, de forma assíncrona.
+    scope.launch {
+      // Suspende até LandmarkPipeline terminar: força classificar um segmento em aberto, se
+      // houver, e espera qualquer classificação já em voo — só depois disso a lista de
+      // palavras está completa (§5.3).
+      landmarkPipeline.endSession()
+      // A câmera não é mais necessária dali em diante no ciclo (fala, escuta e transcrição são só
+      // áudio) — desliga só agora, depois que endSession() processou o que faltava (ela pode
+      // depender dos últimos frames capturados); a próxima "iniciar" (beginSignSession) religa
+      // sob demanda.
+      deactivateCamera()
+      val frase = palavrasReconhecidas.joinToString(" ")
+      palavrasReconhecidas.clear()
+      if (frase.isNotBlank()) {
+        speaker.speakAndAwait(frase)
+      }
+      setState(DialogState.AGUARDANDO_RESPOSTA)
+    }
   }
 
   private fun beginListening() {

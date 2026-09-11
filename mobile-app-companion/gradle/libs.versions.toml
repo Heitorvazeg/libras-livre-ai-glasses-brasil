@@ -11,6 +11,7 @@ testRules = "1.7.0"
 uiJunit4 = "1.11.2"
 exifInterface = "1.4.2"
 mediapipeTasksVision = "0.10.14"
+junit = "4.13.2"
 
 [libraries]
 androidx-activity-compose = { group = "androidx.activity", name = "activity-compose", version.ref = "activityCompose" }
@@ -28,6 +29,7 @@ androidx-test-rules = { group = "androidx.test", name = "rules", version.ref = "
 androidx-ui-test-junit4 = { group = "androidx.compose.ui", name = "ui-test-junit4", version.ref = "uiJunit4" }
 androidx-exifinterface = { group = "androidx.exifinterface", name = "exifinterface", version.ref = "exifInterface" }
 mediapipe-tasks-vision = { group = "com.google.mediapipe", name = "tasks-vision", version.ref = "mediapipeTasksVision" }
+junit = { group = "junit", name = "junit", version.ref = "junit" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }

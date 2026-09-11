@@ -41,19 +41,18 @@ import com.meta.wearable.dat.core.session.DeviceSession
 import com.meta.wearable.dat.core.session.DeviceSessionState
 import com.meta.wearable.dat.core.types.Permission
 import com.meta.wearable.dat.core.types.PermissionStatus
-import com.meta.wearable.dat.externalsampleapps.cameraaccess.BuildConfig
 import com.meta.wearable.dat.externalsampleapps.cameraaccess.R
-import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.AndroidSpeechRecognizerSttEngine
-import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.AudioSessionManager
-import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.DialogOrchestrator
-import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.DialogState
-import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.LandmarkApi
-import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.LandmarkPipeline
-import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.Speaker
-import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.SpeechRecognizerWakeWordDetector
-import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.SttEngine
-import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.WakeWord
-import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.WakeWordDetector
+import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.audio.AndroidSpeechRecognizerSttEngine
+import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.audio.AudioSessionManager
+import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.audio.Speaker
+import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.audio.SpeechRecognizerWakeWordDetector
+import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.audio.SttEngine
+import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.audio.WakeWord
+import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.audio.WakeWordDetector
+import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.dialogo.DialogOrchestrator
+import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.dialogo.DialogState
+import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.reconhecimento.LandmarkPipeline
+import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.reconhecimento.PlaceholderSignClassifier
 import com.meta.wearable.dat.externalsampleapps.cameraaccess.stream.HevcDecoder
 import com.meta.wearable.dat.externalsampleapps.cameraaccess.stream.HevcParameterSetCollector
 import com.meta.wearable.dat.externalsampleapps.cameraaccess.stream.RecordingResult
@@ -105,10 +104,10 @@ class CameraViewModel(
   // mais usado aqui.
   private val videoRecorder = VideoRecorder(application, viewModelScope)
 
-  // Libras Livre — reconhecimento de sinal via API + voz, e orquestração da sessão de diálogo
+  // Libras Livre — reconhecimento de sinal local + voz, e orquestração da sessão de diálogo
   // bidirecional (docs/orquestracao-dialogo-audio-plano.md). dialogOrchestrator é referenciado
-  // por lambdas capturadas ANTES de ser inicializado (landmarkPipeline/manualWakeWordDetector,
-  // abaixo) — seguro porque essas lambdas só são invocadas depois que o init{} abaixo o atribui.
+  // por lambdas capturadas ANTES de ser inicializado (landmarkPipeline/wakeWordDetector, abaixo)
+  // — seguro porque essas lambdas só são invocadas depois que o init{} abaixo o atribui.
   private lateinit var dialogOrchestrator: DialogOrchestrator
 
   private val speaker = Speaker(application)
@@ -116,7 +115,7 @@ class CameraViewModel(
       LandmarkPipeline(
           context = application,
           scope = viewModelScope,
-          api = LandmarkApi(BuildConfig.LIBRAS_API_BASE_URL),
+          classifier = PlaceholderSignClassifier(),
           onState = { transform -> _uiState.update { it.copy(libras = it.libras.transform()) } },
           onRecognized = { text -> dialogOrchestrator.onSignRecognized(text) },
           onRecognitionFailed = { dialogOrchestrator.onSignRecognitionFailed() },
@@ -588,6 +587,10 @@ class CameraViewModel(
     }
     viewModelScope.launch {
       if (requestRecordAudioPermission()) {
+        // RECORD_AUDIO acabou de ser concedido (ou já estava) — garante que o foreground
+        // service já está anunciado como tipo "microphone" antes de escutar de verdade (ver
+        // StreamingService.refreshForegroundServiceType).
+        StreamingService.refreshForegroundServiceType(getApplication())
         dialogOrchestrator.onWakeWord(word)
       } else {
         wearablesViewModel.setRecentError(
@@ -742,7 +745,7 @@ class CameraViewModel(
     session?.stop()
     cleanupSession()
     videoRecorder.close()
-    landmarkPipeline.stop()
+    landmarkPipeline.dispose()
     speaker.shutdown()
     sttEngine.stop()
     audioSessionManager.releaseListening()

@@ -18,7 +18,7 @@
  * Requer dois modelos em app/src/main/assets/ (ver libras/README.md):
  *   pose_landmarker_lite.task   e   hand_landmarker.task
  */
-package com.meta.wearable.dat.externalsampleapps.cameraaccess.libras
+package com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.reconhecimento
 
 import android.content.Context
 import android.media.Image

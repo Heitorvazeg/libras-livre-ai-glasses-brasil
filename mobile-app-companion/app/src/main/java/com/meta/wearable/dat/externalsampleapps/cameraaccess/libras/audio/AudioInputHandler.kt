@@ -30,7 +30,7 @@
 // pra não existir uma classe de captura crua ali). Esta classe fica pronta pra quando um motor que
 // consome PCM cru (Porcupine, TFLite — §8 do plano) for escolhido no lugar.
 
-package com.meta.wearable.dat.externalsampleapps.cameraaccess.libras
+package com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.audio
 
 import android.Manifest
 import android.content.Context

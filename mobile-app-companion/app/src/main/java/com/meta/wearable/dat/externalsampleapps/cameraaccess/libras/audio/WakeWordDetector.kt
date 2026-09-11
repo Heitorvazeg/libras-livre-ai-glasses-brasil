@@ -21,7 +21,7 @@
 // passam por esta interface, então funcionam mesmo se o motor real falhar, estiver pausado ou sem
 // permissão de microfone.
 
-package com.meta.wearable.dat.externalsampleapps.cameraaccess.libras
+package com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.audio
 
 /** As duas wake words que delimitam sessões (docs/orquestracao-dialogo-audio-plano.md §4.2). */
 enum class WakeWord {
