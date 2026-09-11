@@ -48,6 +48,10 @@ android {
     targetCompatibility = JavaVersion.VERSION_17
   }
   packaging { resources { excludes += "/META-INF/{AL2.0,LGPL2.1}" } }
+
+  // O .tflite precisa ficar NÃO COMPRIMIDO no APK: o Interpreter o acessa por
+  // mmap a partir do asset, e um asset comprimido não é mapeável (§7.3 do plano).
+  androidResources { noCompress += "tflite" }
   signingConfigs {
     getByName("debug") {
       storeFile = file("sample.keystore")
@@ -69,6 +73,7 @@ dependencies {
   implementation(libs.androidx.material.icons.extended)
   implementation(libs.androidx.material3)
   implementation(libs.kotlinx.collections.immutable)
+  implementation(libs.litert)
   implementation(libs.mediapipe.tasks.vision)
   implementation(libs.mwdat.core)
   implementation(libs.mwdat.camera)
@@ -79,4 +84,5 @@ dependencies {
   // Libras Livre: testes de paridade numérica (LandmarkNormalizer/HandGapImputer contra
   // computer-vision-model/treino) — puro JVM, sem Android, não precisa de emulador.
   testImplementation(libs.junit)
+  testImplementation(libs.org.json)
 }
