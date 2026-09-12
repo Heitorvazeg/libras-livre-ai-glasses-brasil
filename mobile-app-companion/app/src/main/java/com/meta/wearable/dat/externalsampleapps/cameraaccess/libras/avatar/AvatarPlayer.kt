@@ -27,6 +27,8 @@ package com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.avatar
 
 import android.annotation.SuppressLint
 import android.content.Context
+import android.os.Handler
+import android.os.Looper
 import android.util.Log
 import android.view.ViewGroup
 import android.webkit.JavascriptInterface
@@ -41,6 +43,17 @@ private const val TAG = "Libras:Avatar"
 
 /** Origem virtual do WebViewAssetLoader. Nunca usar file:// — quebra o loader do WASM. */
 private const val BASE = "https://appassets.androidplatform.net/assets/vlibras/"
+
+/**
+ * Teto para o Unity ficar pronto. A sonda mediu 6-9 s; o dobro disso dá folga para aparelho lento
+ * sem prender o ⑦.
+ *
+ * Existe porque o player só emite "error" na tradução (que não usamos — quem traduz é o
+ * [VLibrasGlosaTranslator]): um Unity que trava na carga não avisa ninguém. Sem este relógio o
+ * estado ficaria em CARREGANDO para sempre e CADA resposta pagaria o timeout inteiro de quem
+ * espera a animação, em vez de cair na legenda de uma vez.
+ */
+private const val CARGA_TIMEOUT_MS = 20_000L
 
 /** Estado do avatar, refletido na UI para o operador saber se pode contar com ele. */
 enum class AvatarState {
@@ -72,6 +85,12 @@ class AvatarPlayer(
 
   private var webView: WebView? = null
   private var glosaPendente: String? = null
+  private val mainHandler = Handler(Looper.getMainLooper())
+  private val cargaTimeout = Runnable {
+    Log.e(TAG, "Unity não ficou pronto em ${CARGA_TIMEOUT_MS}ms — avatar indisponível")
+    descartarView()
+    state = AvatarState.FALHOU
+  }
 
   var state: AvatarState = AvatarState.OCIOSO
     private set(value) {
@@ -98,10 +117,17 @@ class AvatarPlayer(
    */
   @SuppressLint("SetJavaScriptEnabled")
   fun prepare() {
+    // Uma falha vinda do JS (sem WebGL, vlibras.js ausente) deixa a WebView de pé: sem descartá-la
+    // aqui, o `webView != null` abaixo transformaria a retentativa num silêncio — o avatar ficaria
+    // FALHOU para sempre até alguém chamar [release].
+    if (state == AvatarState.FALHOU) {
+      Log.i(TAG, "retentando depois de falha anterior")
+      descartarView()
+    }
     if (webView != null) return
-    if (state == AvatarState.FALHOU) Log.i(TAG, "retentando depois de falha anterior")
     Log.i(TAG, "prepare() — carregando o Unity escondido")
     state = AvatarState.CARREGANDO
+    mainHandler.postDelayed(cargaTimeout, CARGA_TIMEOUT_MS)
 
     val assetLoader = WebViewAssetLoader.Builder()
         .addPathHandler("/assets/", WebViewAssetLoader.AssetsPathHandler(context))
@@ -206,6 +232,7 @@ class AvatarPlayer(
     get() = state != AvatarState.FALHOU
 
   private fun descartarView() {
+    mainHandler.removeCallbacks(cargaTimeout)
     webView?.let { wv ->
       (wv.parent as? ViewGroup)?.removeView(wv)
       wv.stopLoading()
@@ -220,6 +247,7 @@ class AvatarPlayer(
     fun onReady() {
       // Vem da thread do JS; tudo que toca a WebView precisa voltar para a main thread.
       webView?.post {
+        mainHandler.removeCallbacks(cargaTimeout)
         state = AvatarState.PRONTO
         glosaPendente?.let { glosaPendente = null; enviar(it) }
       }

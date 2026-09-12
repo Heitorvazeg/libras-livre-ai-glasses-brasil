@@ -76,6 +76,7 @@ as instale no mesmo `venv`.
 | *Onde um sinal termina e outro começa?* | o app (Kotlin), por `SignBoundaryDetector` |
 | *Como essas glosas viram uma frase em português?* | `contextualization-model` (Python), via `.tflite` |
 | *Como a frase vira voz, e a resposta vira texto?* | o app (Kotlin), via Piper/sherpa-onnx e Vosk |
+| *Como a resposta do atendente vira Libras?* | o app (Kotlin), via o player VLibras numa WebView |
 
 ---
 
@@ -100,7 +101,7 @@ fallbacks documentados para o que ainda não existe.
 ```bash
 git clone <este-repositório> && cd libras-livre-ai-glasses-brasil/mobile-app-companion
 echo "github_token=SEU_TOKEN" >> local.properties
-./download-assets.sh          # MediaPipe, TTS, STT e wake word — ~110 MB
+./download-assets.sh          # MediaPipe, TTS, STT, wake word e avatar — ~125 MB
 # abra no Android Studio, sincronize o Gradle e execute
 ```
 
@@ -165,6 +166,7 @@ Duas ressalvas que precisam acompanhar qualquer citação desses números:
 | Classificação de sinal no app | **placeholder** — o export TFLite do ST-GCN não existe |
 | Contextualização glosa → português | pronta e integrada (`.tflite` sob guarda, template como piso) |
 | Fala (TTS Piper/sherpa-onnx) e transcrição (Vosk pt-BR) | prontas |
+| Avatar em Libras para a pessoa surda (VLibras em WebView) | implementado; **depende de rede** e não medido em aparelho ARM |
 | Wake word "Libras Livre, iniciar/encerrar" | **fallback ativo** — os classificadores pt-BR precisam ser treinados |
 | Coleta própria no cenário de balcão | pendente |
 | Validação de vocabulário com consultor de Libras | pendente |

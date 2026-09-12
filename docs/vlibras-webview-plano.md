@@ -505,7 +505,11 @@ Os três itens em aberto foram respondidos em §0: o build Unity vem pronto, o
 endpoint público funciona sem backend próprio, e o dicionário é remoto. Nada a
 fazer aqui.
 
-### Fase 1 — Tradução em Kotlin (sem WebView, sem Android)
+### Fase 1 — Tradução em Kotlin — CONCLUÍDA
+
+Implementada em `libras/avatar/`: `VLibrasGlosaTranslator` mais `GlosaCache` (TSV em
+disco, normalização de caixa e espaços, descarte das entradas mais antigas), com
+sete testes JVM contra um `ServerSocket` local. Itens originais abaixo, para registro.
 
 Substitui a antiga "Fase 1 — Backend local", que saiu de escopo.
 
@@ -571,7 +575,11 @@ os mesmos caminhos**.
       erro e entrega algo muito pior que o sinal. Confirmar por observação.
 - [ ] **Aceite:** avatar anima uma frase inteira com o Wi-Fi desligado.
 
-### Fase 4 — Bridge Kotlin ↔ JS e bancada de teste
+### Fase 4 — Bridge Kotlin ↔ JS — implementada, bancada pendente
+
+`AvatarPlayer.kt` + `assets/vlibras/index.html` fazem a ponte pelos dois lados
+(`evaluateJavascript` para dentro, `addJavascriptInterface` para fora), usando o
+wrapper oficial. A tela de debug com campo de texto continua pendente.
 
 - [ ] Embutir o `build/vlibras.js` do wrapper oficial e instanciar `VLibras.Player`
       — **não** dirigir o Unity por `SendMessage` na mão (§4.3): sem o wrapper, os
@@ -584,7 +592,12 @@ os mesmos caminhos**.
       digitar → traduzir → animar, sem depender de óculos nem de wake word.
 - [ ] **Aceite:** digitar uma frase na tela de debug anima o avatar correspondente.
 
-### Fase 5 — Ligar no estado ⑦
+### Fase 5 — Ligar no estado ⑦ — implementada
+
+`DialogOrchestrator` recebeu `playAvatar` / `prepareAvatar` / `releaseAvatar` /
+`onAvatarUnavailable`, e `CameraViewModel` os implementa. `abrirAvatar()` /
+`fecharAvatar()` expõem o ciclo para os botões de fallback. Falta a decisão de
+apresentação (para onde a tela aponta), que é de produto.
 
 - [ ] Preencher `onAvatarText` em `CameraViewModel`, substituindo o `Log.d` atual.
 - [ ] Criar a WebView sob demanda e destruí-la ao sair de ⑦ (§4.2).
@@ -599,8 +612,9 @@ os mesmos caminhos**.
 
 ### Fase 6 — Refinamento
 
-- [ ] Reavaliar Play Asset Delivery com o tamanho final do APK somado ao que já
-      existe (46 + 40 + 21 + 13,5 MB, mais o espelho).
+- [ ] **Reavaliar Play Asset Delivery: o APK de debug com todos os assets mediu
+      473 MB** (2026-09-12). Medir também a variante de release com minify antes de
+      concluir.
 - [ ] Testar em aparelho com WebView antiga.
 - [ ] Decisão de licença LGPLv3 registrada (§0.6).
 - [ ] Medir quantas vezes, em uso real, a glosa vem do cache e não da rede.

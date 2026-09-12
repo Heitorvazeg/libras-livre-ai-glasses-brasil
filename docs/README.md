@@ -50,7 +50,7 @@ Escritos antes do código. Cada um tem um estado de implementação.
 | [`contextualizacao-glosa-seq2seq-plano.md`](contextualizacao-glosa-seq2seq-plano.md) | **implementado** — `contextualization-model/` e `libras/contextualizacao/` |
 | [`contextualizacao-implementacao.md`](contextualizacao-implementacao.md) | runbook do anterior; **executado** até o `.tflite` integrado |
 | [`poc-tres-coordenadas.md`](poc-tres-coordenadas.md) | **respondido** — o z ajuda (+2,1 pontos); incorporado à configuração de entrega |
-| [`vlibras-webview-plano.md`](vlibras-webview-plano.md) | **revisado, não implementado** — avatar VLibras em WebView; fecha o estado ⑦ (`GERANDO_AVATAR`) |
+| [`vlibras-webview-plano.md`](vlibras-webview-plano.md) | **parcialmente implementado** — avatar VLibras em WebView, fechando o estado ⑦. Fases 1 a 5 no código; falta o espelho offline do dicionário (3.5) e a medição em aparelho ARM |
 | [`PLANO-CORRECOES.md`](PLANO-CORRECOES.md) | plano de correções de 2026-09-09, em duas frentes |
 
 ## Investigações e relatórios datados
