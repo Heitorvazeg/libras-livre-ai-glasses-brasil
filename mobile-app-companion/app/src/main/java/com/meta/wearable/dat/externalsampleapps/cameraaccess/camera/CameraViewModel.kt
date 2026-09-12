@@ -24,6 +24,7 @@ import android.media.AudioDeviceInfo
 import android.media.MediaRecorder
 import android.util.Log
 import android.view.Surface
+import android.webkit.WebView
 import androidx.exifinterface.media.ExifInterface
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.ViewModel
@@ -164,6 +165,22 @@ class CameraViewModel(
           onGlossEnd = { avatarAnimacaoTerminada?.let { if (it.isActive) it.complete(true) } },
       )
 
+  /**
+   * A WebView do avatar, para o [ui.AvatarScreen] anexar.
+   *
+   * Fica FORA do [CameraUiState] de propósito: uma View numa data class de estado quebra a
+   * igualdade estrutural e segura contexto vivo dentro de um StateFlow. Quem dispara a
+   * recomposição é o `avatarState`, que muda exatamente quando esta View nasce, fica pronta ou
+   * morre — a tela então busca a referência atual aqui.
+   */
+  val avatarView: WebView?
+    get() = avatarPlayer.view
+
+  /** Congela/descongela o Unity com o app em background — ver AvatarScreen. */
+  fun pausarAvatar() = avatarPlayer.pause()
+
+  fun retomarAvatar() = avatarPlayer.resume()
+
   // Completado por onGlossEnd (true) ou pela transição para FALHOU (false) — é como playAvatar()
   // sabe que pode devolver o controle ao ⑦.
   @Volatile private var avatarAnimacaoTerminada: CompletableDeferred<Boolean>? = null
@@ -250,7 +267,7 @@ class CameraViewModel(
             deactivateCamera = ::deactivateCameraForLibras,
             playAvatar = ::playAvatar,
             prepareAvatar = avatarPlayer::prepare,
-            releaseAvatar = avatarPlayer::release,
+            releaseAvatar = ::liberarAvatar,
             onAvatarUnavailable = { text ->
               // Degradação explícita, nunca silêncio: a pessoa surda perde o avatar, mas a
               // legenda aparece e o atendente ouve que a resposta não foi sinalizada.
@@ -273,10 +290,14 @@ class CameraViewModel(
    * conversa: melhor uma legenda tardia que um atendimento congelado.
    */
   private suspend fun playAvatar(text: String): Boolean {
+    // Abre a tela ANTES de traduzir, e com a legenda já preenchida: a pessoa surda vê o que foi
+    // dito enquanto a glosa vem da rede, e os dois caminhos de falha (sem rede, player caído)
+    // encontram a tela aberta mostrando o texto em vez de devolverem preto.
+    _uiState.update { it.copy(avatarVisivel = true, avatarLegenda = text) }
+
     if (avatarPlayer.state == AvatarState.FALHOU) return false
     val glosa = glosaTranslator.traduzir(text) ?: return false
     Log.i(TAG, "glosa para o avatar: \"$glosa\"")
-    _uiState.update { it.copy(avatarLegenda = text) }
 
     val espera = CompletableDeferred<Boolean>()
     avatarAnimacaoTerminada = espera
@@ -303,7 +324,14 @@ class CameraViewModel(
   }
 
   /** Fecha a tela e devolve a memória. A próxima [abrirAvatar] recarrega do zero. */
-  fun fecharAvatar() {
+  fun fecharAvatar() = liberarAvatar()
+
+  /**
+   * Destrói a WebView E fecha a tela. As duas coisas andam juntas: o DialogOrchestrator chama
+   * isto quando o atendimento encerra por inatividade, e uma tela aberta sobre uma WebView
+   * destruída mostraria um retângulo preto sem dono.
+   */
+  private fun liberarAvatar() {
     avatarPlayer.release()
     _uiState.update { it.copy(avatarVisivel = false, avatarLegenda = null) }
   }
