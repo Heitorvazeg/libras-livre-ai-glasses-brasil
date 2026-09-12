@@ -50,12 +50,8 @@ Escritos antes do código. Cada um tem um estado de implementação.
 | [`contextualizacao-glosa-seq2seq-plano.md`](contextualizacao-glosa-seq2seq-plano.md) | **implementado** — `contextualization-model/` e `libras/contextualizacao/` |
 | [`contextualizacao-implementacao.md`](contextualizacao-implementacao.md) | runbook do anterior; **executado** até o `.tflite` integrado |
 | [`poc-tres-coordenadas.md`](poc-tres-coordenadas.md) | **respondido** — o z ajuda (+2,1 pontos); incorporado à configuração de entrega |
+| [`vlibras-webview-plano.md`](vlibras-webview-plano.md) | **revisado, não implementado** — avatar VLibras em WebView; fecha o estado ⑦ (`GERANDO_AVATAR`) |
 | [`PLANO-CORRECOES.md`](PLANO-CORRECOES.md) | plano de correções de 2026-09-09, em duas frentes |
-
-> **`vlibras-webview-plano.md` é citado por vários documentos e não existe nesta
-> branch.** Ele vive em `feat/Empacota-player-vlibras-em-webview-nativa`, junto da
-> implementação do player. O estado ⑦ da sessão de diálogo (`GERANDO_AVATAR`) é o
-> ponto de costura entre os dois.
 
 ## Investigações e relatórios datados
 
