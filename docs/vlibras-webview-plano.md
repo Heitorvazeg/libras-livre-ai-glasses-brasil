@@ -5,9 +5,10 @@
 > atendente vira glosa e é animado por um avatar 3D, para que a pessoa surda leia
 > a resposta em Libras.
 >
-> **Revisado em 2026-09-12**, contra os quatro repositórios oficiais já clonados e
-> contra o estado atual do app. A revisão está em §0 e muda as Fases 0, 1 e 5, além
-> de acrescentar uma fase nova que a versão anterior não previa.
+> **Revisado em 2026-09-12**, contra os quatro repositórios oficiais já clonados,
+> contra o estado atual do app, e contra uma **sonda executada de verdade** num
+> emulador Android (§0.7). A revisão está em §0; o que foi medido reescreve §4.1,
+> §4.2, a tabela de riscos §5 e as Fases 2 e 3.
 
 ---
 
@@ -148,6 +149,118 @@ qualquer APK, junto das já tomadas em `docs/decisao-datasets-e-licencas.md`.
 
 ---
 
+### 0.7 Sonda executada: o que foi medido, não suposto
+
+Uma sonda Android mínima — WebView + `WebViewAssetLoader` + os binários Unity do
+repositório, **sem o wrapper `vlibras.js`** — foi construída e executada em
+2026-09-12 num emulador Pixel 7 (API 33, `-gpu host`, passthrough Vulkan para
+Intel UHD 770, WebView Chromium 148).
+
+**Ressalva de leitura, que vale para toda esta seção:** é x86_64 com GPU de
+desktop. Resultado positivo aqui **não prova** que roda num celular ARM; resultado
+negativo seria conclusivo. O teste no aparelho que de fato acompanha os óculos
+continua obrigatório.
+
+#### WebGL 2.0: funciona
+
+```
+WEBGL2=true  WEBGL1=true
+ctx=webgl2  version="WebGL 2.0 (OpenGL ES 3.0 Chromium)"  maxTexture=4096
+UnityLoader.SystemInfo.hasWebGL=2  mobile=true  ->  compatibilityCheck: ACEITO
+```
+
+O avatar Ícaro renderizou dentro da WebView e **animou a glosa de ponta a ponta**,
+confirmado visualmente.
+
+#### Tempo de carga: 6 a 9 segundos
+
+```
+UnityLoader.js carregado           ~0,5-0,9 s
+download + descompressão 100%      ~4,0 s
+### UNITY PRONTO ###               9,1 s (primeira vez) / 6,1 s (cache quente)
+```
+
+**Este número decide o ciclo de vida** (§4.2). Não é um detalhe de refinamento.
+
+#### O dicionário remoto funciona, e os tokens com `&` também
+
+O achado que mais muda a tabela de riscos. Com
+`setBaseUrl("https://dicionario2.vlibras.gov.br/2018.3.1/WEBGL/BR/")` e a glosa
+real devolvida pela API, o console do Chromium registrou:
+
+```
+[BundleLoader]: BUNDLE (CONSULTAR&PESQUISAR) CARREGADO COM SUCESSO
+Bundle "MARCAR&REGISTRAR" loaded!
+Bundle "RECEPÇÃO" loaded!
+```
+
+Três coisas ficam provadas de uma vez: **não há problema de CORS** ao buscar o
+dicionário a partir da origem `https://appassets.androidplatform.net`; o player
+resolve sozinho os tokens com `&` de desambiguação, sem nenhum trabalho nosso; e
+acentuação no nome do bundle passa intacta. O risco que a revisão anterior
+classificava como "o mais subestimado" está, em grande parte, **morto**.
+
+#### Os `.unityweb` são servidos como `text/plain`, e isso não importa
+
+```
+SERVE playerweb.json                -> mime=application/json
+SERVE playerweb.data.unityweb       -> mime=text/plain
+SERVE playerweb.wasm.code.unityweb  -> mime=text/plain
+```
+
+O `AssetsPathHandler` não conhece a extensão e devolve `text/plain`. Carregou
+assim mesmo, porque o `UnityLoader` baixa por XHR como *arraybuffer* e descomprime
+sozinho. **Não é preciso handler de MIME customizado nem `Content-Encoding`.**
+
+#### Memória: o número real, por processo
+
+| Processo | PSS em repouso | PSS animando |
+|---|---|---|
+| processo do app | 87–101 MB | ~178 MB |
+| `webview:sandboxed_process0` (Unity) | 307 MB | 335 MB |
+| `webview:webview_service` | 60 MB | 35 MB |
+| **total** | **~455 MB** | **~548 MB** |
+
+O heap Java do app ficou em **3–5 MB de 192 MB** o tempo inteiro. Fica confirmado
+que o Unity **não** pressiona o heap do app: ele vive num processo separado, e
+`destroy()` devolve os 300+ MB de uma vez.
+
+Mas a versão anterior deste plano dizia "256 MB", lendo o `TOTAL_MEMORY` do
+`playerweb.json`. **O custo real de sistema é ~1,8× isso**, somando renderer e
+`webview_service`. Para referência, o emulador tinha `totalMem=1965MB`,
+`availMem=771MB` e `threshold=216MB` (o ponto em que o Android começa a matar
+processos).
+
+#### Dirigir o Unity sem o wrapper gera erros
+
+A sonda chamou `SendMessage("PlayerManager","playNow",glosa)` direto. A animação
+rodou, mas o console acusou, repetidamente:
+
+```
+ReferenceError: CounterGloss is not defined
+ReferenceError: onPlayingStateChange is not defined
+```
+
+O Unity chama de volta funções globais de JS que **só o `vlibras.js` define**
+(via `PlayerManagerAdapter`). Sem elas, os eventos se perdem — inclusive
+`gloss:end`, que é justamente o gancho para saber que ⑦ terminou. **Conclusão:
+usar o wrapper oficial, não dirigir o Unity na mão.**
+
+#### O build do player funciona em Node moderno
+
+Contra a expectativa (webpack 1.12, de 2016), `npm install` (458 pacotes) e
+`npx webpack` rodaram limpos em **Node 24**, produzindo `build/vlibras.js` (72 KB)
+com o `target/` copiado junto. A Fase 2 não precisa de contorno de toolchain.
+
+#### Checagens estáticas no app real: limpas
+
+`AndroidManifest.xml` não declara `android:hardwareAccelerated` — com
+`targetSdk 36` o padrão é `true` — e não existe nenhuma chamada a `setLayerType`
+no código. As duas causas mais comuns de "WebGL não existe na WebView" estão
+descartadas.
+
+---
+
 ## 1. Objetivo
 
 Exibir a resposta falada do atendente em Libras, por um avatar 3D, dentro do app
@@ -219,32 +332,100 @@ aparelho sempre que possível".
 
 ## 4. Detalhes técnicos que decidem a implementação
 
-### 4.1 O formato `.unityweb` e o que ele evita
+### 4.1 O formato `.unityweb` — resolvido, medido
 
 Os três binários começam com os bytes `6b 8d 00 55 6e 69 74 79` — o cabeçalho
-`UnityWeb`, não gzip cru. **O `UnityLoader.js` descomprime em JS**, o que significa
-que não precisamos negociar `Content-Encoding: gzip` no `WebViewAssetLoader`, e que
-a preocupação da versão anterior com o MIME `application/wasm` é menos crítica do
-que parecia: quem instancia o WASM é o loader, a partir de um buffer já
-descomprimido, não o `fetch()` do navegador direto num `.wasm`.
+`UnityWeb`, não gzip cru. O `UnityLoader.js` descomprime em JS, baixando por XHR
+como *arraybuffer*.
 
-O que ainda precisa ser conferido na Fase 3 é que o `AssetsPathHandler` não estrague
-os bytes (nenhuma reescrita de charset) e que sirva `.unityweb` como
-`application/octet-stream`.
+**Confirmado na sonda (§0.7):** o `AssetsPathHandler` serve os `.unityweb` como
+`text/plain` e o Unity carrega normalmente. Não é preciso negociar
+`Content-Encoding: gzip`, nem servir `application/wasm`, nem escrever handler de
+MIME customizado. Este risco está fechado.
 
-### 4.2 Memória
+### 4.2 Memória e ciclo de vida — corrigido pela medição
 
-`playerweb.json` declara `TOTAL_MEMORY: 268435456` — **256 MB de heap** só para o
-Unity, além do custo da própria WebView. Num celular modesto, isso é o suficiente
-para o sistema matar o app em segundo plano. Duas consequências de projeto:
+`playerweb.json` declara `TOTAL_MEMORY: 268435456` (256 MB). **Esse número
+subestima o custo real.** Medido na sonda (§0.7), em três processos:
 
-- a WebView do avatar deve ser criada **sob demanda** (estado ⑦) e destruída ao
-  voltar para ①, não mantida viva a sessão inteira;
-- medir consumo real é critério de aceite da Fase 3, não refinamento da Fase 6.
+| Processo | Repouso | Animando |
+|---|---|---|
+| processo do app | 87–101 MB | ~178 MB |
+| `webview:sandboxed_process0` (Unity) | 307 MB | 335 MB |
+| `webview:webview_service` | 60 MB | 35 MB |
+| **total** | **~455 MB** | **~548 MB** |
 
-O build também exige **WebGL 2.0** (`graphicsAPI` no `playerweb.json`), com
-fallback declarado para 1.0. WebGL em WebView Android é historicamente irregular;
-é o principal risco de compatibilidade do plano.
+Duas consequências, e a segunda corrige um erro da revisão anterior.
+
+**1. O Unity não pressiona o heap do app.** Ele vive num processo separado e
+sandboxado — o heap Java do app ficou em 3–5 MB de 192 MB durante todo o teste.
+Não haverá `OutOfMemoryError`. Em compensação, o sistema pode matar o processo do
+renderer a qualquer momento, e **sem tratamento isso derruba o app inteiro**:
+
+```kotlin
+override fun onRenderProcessGone(v: WebView, detail: RenderProcessGoneDetail): Boolean {
+  (v.parent as? ViewGroup)?.removeView(v); v.destroy()
+  return true   // sem este return, o processo do app é terminado
+}
+```
+
+Isto não é refinamento: é obrigatório desde a primeira linha de WebView.
+
+**2. O ciclo de vida é por atendimento, não por estado.** A revisão anterior dizia
+"criar a WebView em ⑦ e destruir ao sair". **Está errado**, e a medição mostra por
+quê: o Unity leva **6 a 9 segundos** para ficar pronto. O estado ⑦ acontece a cada
+resposta do atendente; destruir e recriar por turno faria a pessoa surda esperar
+esse tempo a cada fala.
+
+A granularidade certa é o atendimento, e o gancho já existe — o encerramento por
+inatividade de 1 minuto que o `DialogOrchestrator` já implementa:
+
+```
+primeiro ⑦ do atendimento    -> cria a WebView e carrega o Unity (custo pago uma vez)
+entre turnos (⑦ -> ① -> ⑦)   -> player.stop() + onPause() + pauseTimers()
+atendimento encerra           -> destroy()  (devolve os 300+ MB de uma vez)
+pressão de memória            -> destroy() via onTrimMemory, se não estiver em ⑦
+```
+
+Três níveis de "parar", e só o terceiro é caro de desfazer:
+
+| Nível | Custo para voltar | Quando |
+|---|---|---|
+| `player.stop()` | zero | entre sinais |
+| `onPause()` + `pauseTimers()` | desprezível | entre turnos do mesmo atendimento |
+| `destroy()` | 6–9 s | fim do atendimento, ou pressão de memória |
+
+**3. O que pode sair de cena para abrir espaço.** A visão já é liberada antes de
+⑦ por construção: na transição ②→③ o orquestrador chama `deactivateCamera` →
+`stopStreaming()` → `landmarkPipeline.stop()`, que fecha MediaPipe, decoder e
+`ImageReader`. MediaPipe e Unity **nunca coexistem**.
+
+O que ainda não é sob demanda são os motores criados no construtor do
+`CameraViewModel` e vivos até `onCleared()`:
+
+| Recurso | Necessário em | Ação sugerida |
+|---|---|---|
+| Vosk (STT, ~40 MB) | ⑤⑥ apenas | **criar em ⑤, liberar ao sair de ⑥** — maior ganho, menor risco |
+| Piper (TTS, ~21 MB) | ③ (e talvez ⑦) | manter: liberar economiza pouco e custa latência de fala |
+| Contextualizador `.tflite` | ②→③ apenas | manter — ver abaixo |
+
+Sobre o contextualizador: **os 46 MB do arquivo não são 46 MB de RAM residente.**
+O `build.gradle.kts` tem `noCompress += "tflite"` justamente para que o
+`Interpreter` o leia por *mmap* — fica mapeado do APK, paginado sob demanda e
+descartável sob pressão. Há ainda um comentário explícito no código pedindo que
+ele não seja recriado por sessão. É o maior número e o menos urgente.
+
+**Onde essa lógica mora.** O `DialogOrchestrator` já é dono das transições e já
+liga/desliga a câmera por dois callbacks injetados. Os análogos entram no mesmo
+padrão, sem espalhar lógica pelo ViewModel:
+
+```kotlin
+private val ensureAvatarReady: suspend () -> Boolean,
+private val releaseAvatar: () -> Unit,
+```
+
+**Medir, não adivinhar.** `adb shell dumpsys meminfo <pacote>` por estado — e
+somando o processo do renderer, senão o Unity fica invisível no relatório.
 
 ### 4.3 A API JS que vamos dirigir
 
@@ -259,6 +440,13 @@ De `Player.js` e `PlayerManagerAdapter.js`:
 | evento `gloss:end` | animação terminou — é o gancho para voltar de ⑦ a ① |
 | evento `load` | player pronto para receber glosa |
 
+**Use o wrapper `vlibras.js`, não o Unity na mão.** A sonda dirigiu o Unity direto
+por `SendMessage` e a animação rodou, mas o console acusou repetidamente
+`ReferenceError: CounterGloss is not defined` e `onPlayingStateChange is not
+defined`: o Unity chama de volta funções globais que só o `PlayerManagerAdapter`
+do wrapper define. Sem elas os eventos se perdem — inclusive `gloss:end`, que é o
+gancho para saber que ⑦ terminou.
+
 **Usamos `play()`, não `translate()`.** Traduzir no Kotlin, e não dentro do player,
 dá três coisas de graça: a URL correta sem editar o `config.js`, cache da glosa
 entre sessões, e um ponto único para tratar a falta de rede.
@@ -269,23 +457,24 @@ Fase 3.5 usa para servir o dicionário local.
 
 ---
 
-## 5. Riscos, na ordem em que podem matar o plano
+## 5. Riscos, recalibrados pela medição
 
-| # | Risco | Probabilidade | Como descobrimos cedo |
-|---|---|---|---|
-| 1 | WebGL 2.0 não funciona na WebView do aparelho de teste | média | Fase 3, primeiro dia |
-| 2 | 256 MB de heap derrubam o app com o pipeline de visão ativo | média | Fase 3, medição obrigatória |
-| 3 | O espelho do dicionário não cobre a glosa que o tradutor devolve | **alta** | Fase 3.5 — a glosa usa formas flexionadas e `&` |
-| 4 | O endpoint público sai do ar ou passa a exigir autenticação | média | contingência §7.3 pronta antes da entrega |
-| 5 | 13,5 MB + dicionário estouram o orçamento de APK | baixa | Fase 3, junto da medição |
-| 6 | LGPLv3 impede a distribuição pretendida | baixa | decisão registrada antes do APK |
+A sonda de §0.7 fechou ou reduziu quatro dos seis riscos da revisão anterior.
 
-O risco 3 é o mais subestimado: `"VOCÊ PRECISAR MARCAR&REGISTRAR CONSULTAR&PESQUISAR
-RECEPÇÃO"` tem cinco tokens, um deles com `&`. Saber **qual arquivo de bundle** cada
-token pede é a primeira coisa a descobrir na Fase 3.5, e não está documentado em
-lugar nenhum — sai de observar as requisições do player.
+| # | Risco | Estado após a sonda |
+|---|---|---|
+| 1 | WebGL 2.0 não funciona na WebView | **muito reduzido** — funcionou (WebGL 2.0, Chromium 148), e as checagens estáticas do app real estão limpas. Resta confirmar em GPU ARM |
+| 2 | Memória derruba o app | **médio, agora quantificado** — ~455 MB em repouso, ~548 MB animando, em 3 processos. Mitigado por ciclo de vida por atendimento e `onRenderProcessGone` (§4.2) |
+| 3 | O espelho do dicionário não cobre a glosa (tokens com `&`) | **em grande parte morto** — o player resolve `MARCAR&REGISTRAR` e `CONSULTAR&PESQUISAR` sozinho, sem CORS, direto de `appassets.androidplatform.net`. Resta medir o comportamento quando um bundle **não existe** localmente |
+| 4 | O endpoint público sai do ar ou passa a exigir autenticação | **inalterado** — contingência §7.3 continua necessária |
+| 5 | MIME/`Content-Encoding` dos `.unityweb` | **fechado** — `text/plain` funciona (§4.1) |
+| 6 | Tamanho do APK e licença LGPLv3 | **inalterados** — decisões, não incógnitas técnicas |
 
----
+O maior risco **remanescente** deixou de ser técnico: é o tempo de carga de 6–9 s
+do Unity contra a expectativa de uma conversa de balcão. O ciclo de vida por
+atendimento resolve entre turnos, mas a **primeira** resposta de cada atendimento
+paga esse custo. Vale decidir se o avatar pré-carrega em ① (custo de memória o
+tempo todo) ou se a primeira resposta aceita a espera com um indicador na tela.
 
 ## 6. Plano de implementação
 
@@ -312,54 +501,65 @@ Substitui a antiga "Fase 1 — Backend local", que saiu de escopo.
 - [ ] Teste JVM puro com respostas gravadas, no padrão de `app/src/test/`.
 - [ ] **Aceite:** teste passa sem emulador e sem rede.
 
-### Fase 2 — Player isolado, no navegador desktop
+### Fase 2 — Player isolado — parcialmente concluída
 
-- [ ] `cd ~/vlibras-player-webjs && npm install && npm run build`.
-- [ ] Servir `demo/index.html` por HTTP local (**não** abrir por `file://`).
-- [ ] No console: `player.play('OI TUDO BEM')` e observar o avatar animar.
-- [ ] Registrar no DevTools **quais URLs de bundle** o player pede, e com que nome
-      exato — é o insumo da Fase 3.5 (risco 3).
-- [ ] **Aceite:** avatar anima no Chrome desktop, e a lista de URLs de bundle está
-      anotada.
+- [x] `npm install` + `npx webpack` em `~/vlibras-player-webjs` — funciona em Node 24,
+      gera `build/vlibras.js` (72 KB) com `target/` copiado.
+- [x] Carregar o Unity e confirmar que o avatar renderiza e anima (feito direto na
+      sonda Android, §0.7 — pulou a etapa de desktop).
+- [x] Registrar quais bundles o player pede: ele monta a URL a partir do
+      `setBaseUrl` mais o token da glosa, **incluindo os tokens com `&` e a
+      acentuação, sem transformação nossa**.
+- [ ] Rodar o `demo/index.html` no Chrome desktop com o DevTools aberto, para ter a
+      **lista completa de URLs** de um vocabulário de atendimento inteiro — é o
+      insumo da Fase 3.5.
 
-### Fase 3 — Empacotamento Android
+### Fase 3 — Empacotamento Android — validada pela sonda
 
-- [ ] `implementation(libs.androidx.webkit)` no `build.gradle.kts` (o projeto ainda
-      não tem dependência de WebView). `INTERNET` já está no manifesto.
-- [ ] Copiar o `dist/` para `app/src/main/assets/vlibras/`.
-- [ ] **Decidir onde os 13,5 MB vivem.** O projeto já tem um padrão para isso:
+O caminho está provado (§0.7); falta trazê-lo para o app real.
+
+- [x] `WebViewAssetLoader` + `AssetsPathHandler` servindo de
+      `https://appassets.androidplatform.net/assets/vlibras/` — funciona, e resolve
+      o MIME dos `.unityweb` sem handler customizado.
+- [x] Medições de carga e memória (§0.7).
+- [ ] `implementation(libs.androidx.webkit)` no `build.gradle.kts` do app real — a
+      dependência ainda não existe lá. `INTERNET` já está no manifesto.
+- [ ] **Decidir onde os 13,5 MB vivem.** O projeto já tem o padrão:
       `download-assets.sh` + `assets/.gitignore`, que mantém fora do git o `.tflite`
       de 46 MB, o Vosk de 40 MB e o TTS de 21 MB. O player deve seguir o mesmo
-      padrão, não entrar no histórico do git.
-- [ ] `WebViewAssetLoader` com `AssetsPathHandler`, servindo de
-      `https://appassets.androidplatform.net/assets/vlibras/` — nunca `file://`.
-- [ ] Conferir que `.unityweb` chega íntegro e que o loader instancia o WASM.
-- [ ] **Medir:** tempo até o avatar aparecer, pico de RAM do processo, e o mesmo com
-      o `LandmarkPipeline` rodando em paralelo.
-- [ ] **Aceite:** avatar carrega dentro do app, sem glosa ainda, com os números
-      medidos anotados. Se WebGL falhar aqui, o plano para e reavalia.
+      caminho e não entrar no histórico.
+- [ ] `onRenderProcessGone` tratado (§4.2) — obrigatório.
+- [ ] **Repetir a medição num celular ARM real**, o que de fato acompanha os óculos.
+      Este é o único item da Fase 3 que a sonda não pode substituir.
 
-### Fase 3.5 — Espelho offline do dicionário (nova)
+### Fase 3.5 — Espelho offline do dicionário
 
 Não existia na versão anterior. É o que reconcilia o avatar com a premissa do
-produto (§0.3).
+produto (§0.3). A sonda simplificou o trabalho: como o player monta a URL a partir
+do `setBaseUrl` mais o token da glosa sem transformação nossa, **espelhar é copiar
+os mesmos caminhos**.
 
-- [ ] A partir das URLs anotadas na Fase 2, escrever `baixar-dicionario-vlibras.sh`
-      no padrão do `download-assets.sh`: recebe uma lista de sinais, baixa os
-      bundles de `dicionario2.vlibras.gov.br`, grava em `assets/vlibras/dic/BR/`.
-- [ ] Derivar a lista de sinais das respostas prováveis do atendente no cenário de
-      balcão — o mesmo trabalho de vocabulário de
-      `docs/vocabulario-mvp-proposta.md`, no sentido inverso.
-- [ ] `player.setBaseUrl('https://appassets.androidplatform.net/assets/vlibras/dic/')`
-      para servir localmente.
-- [ ] **Definir o comportamento quando falta um sinal**: o player provavelmente cai
-      na datilologia (soletrar). Confirmar por observação, não por suposição — é o
-      que decide se um espelho parcial é aceitável.
+- [ ] Escrever `baixar-dicionario-vlibras.sh` no padrão do `download-assets.sh`:
+      recebe uma lista de sinais, baixa de `dicionario2.vlibras.gov.br`, grava em
+      `assets/vlibras/dic/BR/` preservando o nome exato (acentos e `&` inclusos).
+- [ ] Derivar a lista das respostas prováveis do atendente no balcão — o mesmo
+      trabalho de `docs/vocabulario-mvp-proposta.md`, no sentido inverso. Passar as
+      frases pelo `/translate` e coletar os tokens é o caminho mais direto.
+- [ ] Apontar `setBaseUrl` para
+      `https://appassets.androidplatform.net/assets/vlibras/dic/BR/`.
+- [ ] **Medir o que acontece quando o bundle não existe.** É o único ponto do risco
+      3 que a sonda não respondeu, e ele decide se um espelho parcial é aceitável:
+      o player provavelmente cai na datilologia (soletrar), o que "funciona" sem
+      erro e entrega algo muito pior que o sinal. Confirmar por observação.
 - [ ] **Aceite:** avatar anima uma frase inteira com o Wi-Fi desligado.
 
 ### Fase 4 — Bridge Kotlin ↔ JS e bancada de teste
 
-- [ ] `evaluateJavascript("player.play('$glosa')")`, com escape de aspas e acentos.
+- [ ] Embutir o `build/vlibras.js` do wrapper oficial e instanciar `VLibras.Player`
+      — **não** dirigir o Unity por `SendMessage` na mão (§4.3): sem o wrapper, os
+      callbacks globais que o Unity espera não existem e os eventos se perdem.
+- [ ] `evaluateJavascript("player.play('$glosa')")`, com escape de aspas e acentos
+      (a glosa vem acentuada e com `&`).
 - [ ] `addJavascriptInterface` para os eventos `load` e `gloss:end` — este último é o
       sinal de que ⑦ terminou e a sessão pode voltar a ①.
 - [ ] Tela de debug com campo de texto, atrás do mesmo menu do `MockDeviceKit`:
