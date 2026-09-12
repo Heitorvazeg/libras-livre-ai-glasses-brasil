@@ -12,6 +12,7 @@
 #   TTS    — Piper/sherpa-onnx (int8)       tts/pt_br/*
 #   STT    — Vosk pt-BR                     vosk-model-small-pt-0.3/*
 #   Wake   — openWakeWord (fixos)           melspectrogram.onnx, embedding_model.onnx
+#   Avatar — VLibras player (Unity WebGL)   vlibras/vlibras.js + vlibras/target/*
 #
 # NÃO baixados aqui (ver mobile-app-companion/README.md §2.3):
 #   - modelo_contextualizacao.tflite — gerado por
@@ -91,6 +92,33 @@ for f in melspectrogram.onnx embedding_model.onnx; do
     fetch "$OWW/$f" "$ASSETS/$f"
   fi
 done
+
+# ---------------------------------------------------------------------------
+# 5) Avatar — player VLibras (Unity WebGL + wrapper JS)
+#    O repositorio oficial ja traz o build Unity pronto em src/target/ (nenhum Unity Editor
+#    necessario). O wrapper vlibras.js sai de um build com webpack — que roda em Node moderno,
+#    medido em 2026-09-12. Licenca LGPLv3: ver docs/vlibras-webview-plano.md §0.6.
+# ---------------------------------------------------------------------------
+if present "$ASSETS/vlibras/target/playerweb.data.unityweb"; then
+  skip "vlibras/target/"
+else
+  log "Avatar: vlibras-player-webjs (~13,5MB de build Unity)"
+  mkdir -p "$ASSETS/vlibras/target"
+  fetch "https://codeload.github.com/spbgovbr-vlibras/vlibras-player-webjs/tar.gz/refs/heads/master" \
+        "$TMP/player.tar.gz"
+  tar -xzf "$TMP/player.tar.gz" -C "$TMP"
+  SRC="$(find "$TMP" -maxdepth 1 -type d -name 'vlibras-player-webjs-*' | head -1)"
+  cp -a "$SRC"/src/target/. "$ASSETS/vlibras/target/"
+
+  if command -v npm >/dev/null 2>&1; then
+    log "Avatar: buildando o wrapper vlibras.js"
+    (cd "$SRC" && npm install --silent --no-audit --no-fund >/dev/null 2>&1 && npx webpack >/dev/null 2>&1)
+    cp "$SRC/build/vlibras.js" "$ASSETS/vlibras/vlibras.js"
+  else
+    printf '\033[1;33m ! \033[0m npm ausente: vlibras.js NAO foi gerado — o avatar nao sobe.\n'
+    printf '     Instale Node e rode de novo, ou copie build/vlibras.js manualmente.\n'
+  fi
+fi
 
 # ---------------------------------------------------------------------------
 echo

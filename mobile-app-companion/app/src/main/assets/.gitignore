@@ -30,5 +30,13 @@ wakeword/
 # contrato com o modelo — ver docs/contextualizacao-implementacao.md §10, §11).
 *.tflite
 
+# Player VLibras (avatar 3D) — 13,5 MB de build Unity WebGL, baixado do repositório
+# oficial spbgovbr-vlibras/vlibras-player-webjs (LGPLv3). index.html É versionado: é cola
+# nossa. Ver docs/vlibras-webview-plano.md §0.2 e §0.7.
+vlibras/vlibras.js
+vlibras/target/
+# Espelho local do dicionário de sinais (Fase 3.5) — cada sinal é um AssetBundle de ~22 KB.
+vlibras/dic/
+
 # Mantém a pasta no git mesmo vazia.
 !.gitignore
