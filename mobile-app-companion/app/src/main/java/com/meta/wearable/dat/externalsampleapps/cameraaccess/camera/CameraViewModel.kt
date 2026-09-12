@@ -152,11 +152,20 @@ class CameraViewModel(
   private val avatarPlayer =
       AvatarPlayer(
           context = application,
-          onState = { s -> _uiState.update { it.copy(avatarState = s) } },
+          onState = { s ->
+            _uiState.update { it.copy(avatarState = s) }
+            // Falhou no meio da espera do ⑦ (renderer morto, Unity que não ficou pronto): desiste
+            // agora. Sem isto o turno pagaria os AVATAR_TIMEOUT_MS inteiros para chegar à mesma
+            // conclusão que o AvatarPlayer já tinha.
+            if (s == AvatarState.FALHOU) {
+              avatarAnimacaoTerminada?.let { if (it.isActive) it.complete(false) }
+            }
+          },
           onGlossEnd = { avatarAnimacaoTerminada?.let { if (it.isActive) it.complete(true) } },
       )
 
-  // Completado por onGlossEnd — é como playAvatar() sabe que pode devolver o controle ao ⑦.
+  // Completado por onGlossEnd (true) ou pela transição para FALHOU (false) — é como playAvatar()
+  // sabe que pode devolver o controle ao ⑦.
   @Volatile private var avatarAnimacaoTerminada: CompletableDeferred<Boolean>? = null
 
   // Cadeia modelo -> guarda -> template -> passthrough (§3.3). Nasce uma vez e vive até
