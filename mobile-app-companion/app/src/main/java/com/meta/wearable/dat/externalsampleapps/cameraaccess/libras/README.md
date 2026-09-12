@@ -88,6 +88,9 @@ compartilhado (ver `docs/vlibras-webview-plano.md` §0.5).
 | `VLibrasGlosaTranslator.kt` | endpoint público do VLibras + `GlosaCache`, um TSV em disco |
 | `AvatarPlayer.kt` | dono da WebView: `prepare` / `play` / `pause` / `release`, e `AvatarState` |
 
+Quem consome: `CameraViewModel.playAvatar`, chamado pelo `DialogOrchestrator` no ⑦. A View
+em si **ainda não é anexada por ninguém** — ver as lacunas no fim deste arquivo.
+
 O avatar é o player oficial do VLibras — Unity compilado para WebAssembly,
 desenhando por WebGL dentro de uma WebView. **Nada aqui escreve WebGL**; a WebView
 só precisa oferecer o contexto, e o `index.html` em `assets/vlibras/` falha
@@ -199,6 +202,9 @@ pelo script. Sem ele, o `AvatarPlayer` reporta falha e o app cai na legenda.
   "pontos de partida sugeridos" do plano, marcados como tal no código.
 - **A classificação é um placeholder.** O `.tflite` real depende do export do
   ST-GCN, que `computer-vision-model/treino/exportar.py` ainda não cobre.
+- **O avatar ainda não é exibido.** `AvatarPlayer.view` não é anexado por nenhuma tela, e
+  uma WebView fora da hierarquia não ganha superfície — o Unity nem chega a ficar pronto.
+  O caminho do ⑦ roda inteiro e cai na legenda pelo `CARGA_TIMEOUT_MS`.
 - **O avatar depende de rede para traduzir e para buscar os sinais.** É a única
   peça online do fluxo; o cache de glosa cobre repetições, e o espelho local do
   dicionário (Fase 3.5 do plano) ainda não existe.

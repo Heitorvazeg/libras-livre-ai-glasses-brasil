@@ -47,9 +47,13 @@
   });
 
   player.on("load", function () {
-    // O dicionário de sinais é buscado na rede pelo Unity a cada sinal (§0.3 do plano).
-    // Quando o espelho local existir (Fase 3.5), trocar por:
-    //   player.setBaseUrl("https://appassets.androidplatform.net/assets/vlibras/dic/BR/")
+    // O dicionário de sinais é buscado na rede pelo Unity a cada sinal (§0.3 do plano):
+    // https://dicionario2.vlibras.gov.br/2018.3.1/WEBGL/BR/<SINAL>.bundle
+    //
+    // O espelho local (Fase 3.5) NÃO se resolve daqui: Player não expõe setBaseUrl, e o
+    // play() reescreve a base a cada chamada a partir do config do bundle — qualquer URL que
+    // puséssemos duraria um sinal. O caminho é o shouldInterceptRequest que o AvatarPlayer.kt
+    // já tem: servir dicionario2.vlibras.gov.br de assets/vlibras/dic/ quando o arquivo existir.
     bridge("log", "player carregado");
     bridge("onReady");
   });

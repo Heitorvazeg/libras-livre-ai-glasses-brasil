@@ -508,8 +508,9 @@ fazer aqui.
 ### Fase 1 — Tradução em Kotlin — CONCLUÍDA
 
 Implementada em `libras/avatar/`: `VLibrasGlosaTranslator` mais `GlosaCache` (TSV em
-disco, normalização de caixa e espaços, descarte das entradas mais antigas), com
-sete testes JVM contra um `ServerSocket` local. Itens originais abaixo, para registro.
+disco, normalização de caixa e espaços, descarte das entradas mais antigas), com 13
+testes JVM — sete do tradutor, contra um `ServerSocket` local, e seis do cache.
+Itens originais abaixo, para registro.
 
 Substitui a antiga "Fase 1 — Backend local", que saiu de escopo.
 
@@ -574,6 +575,12 @@ os mesmos caminhos**.
       o player provavelmente cai na datilologia (soletrar), o que "funciona" sem
       erro e entrega algo muito pior que o sinal. Confirmar por observação.
 - [ ] **Aceite:** avatar anima uma frase inteira com o Wi-Fi desligado.
+- [ ] **Correção de rota (2026-09-12, lendo o bundle):** o espelho **não** se liga por
+      `setBaseUrl`. `Player` não expõe esse método (só `playerManager`), e
+      `Player.play()` reescreve a base a partir do `config.js` a cada chamada — qualquer
+      URL local duraria um sinal. O caminho é o `shouldInterceptRequest` que o
+      `AvatarPlayer` já instala: servir `dicionario2.vlibras.gov.br/2018.3.1/WEBGL/BR/`
+      de `assets/vlibras/dic/` quando o arquivo existir, e deixar passar quando não.
 
 ### Fase 4 — Bridge Kotlin ↔ JS — implementada, bancada pendente
 
@@ -592,12 +599,21 @@ wrapper oficial. A tela de debug com campo de texto continua pendente.
       digitar → traduzir → animar, sem depender de óculos nem de wake word.
 - [ ] **Aceite:** digitar uma frase na tela de debug anima o avatar correspondente.
 
-### Fase 5 — Ligar no estado ⑦ — implementada
+### Fase 5 — Ligar no estado ⑦ — ligada por dentro, sem tela
 
 `DialogOrchestrator` recebeu `playAvatar` / `prepareAvatar` / `releaseAvatar` /
-`onAvatarUnavailable`, e `CameraViewModel` os implementa. `abrirAvatar()` /
-`fecharAvatar()` expõem o ciclo para os botões de fallback. Falta a decisão de
-apresentação (para onde a tela aponta), que é de produto.
+`onAvatarUnavailable`, e `CameraViewModel` os implementa; `abrirAvatar()` /
+`fecharAvatar()` expõem o ciclo, e o `CameraUiState` já carrega `avatarState`,
+`avatarVisivel` e `avatarLegenda`.
+
+**Falta o último elo, e ele não é só decisão de produto:** nenhum `@Composable`
+anexa o `AvatarPlayer.view` nem lê esses três campos. Enquanto isso não existir, a
+WebView nasce fora da hierarquia de views — e uma WebView sem janela não recebe
+superfície, então o Unity provavelmente nem chega a emitir `onReady`. Ou seja: hoje
+o ⑦ percorre o caminho inteiro (traduz, manda animar) e a pessoa surda não vê nada;
+o `CARGA_TIMEOUT_MS` do `AvatarPlayer` é o que impede isso de virar espera. Fechar a
+fase é um `AndroidView { avatarPlayer.view }` no `CameraScreen`, com a legenda por
+baixo — e aí sim medir em aparelho real.
 
 - [ ] Preencher `onAvatarText` em `CameraViewModel`, substituindo o `Log.d` atual.
 - [ ] Criar a WebView sob demanda e destruí-la ao sair de ⑦ (§4.2).
