@@ -387,6 +387,24 @@ atendimento encerra           -> destroy()  (devolve os 300+ MB de uma vez)
 pressão de memória            -> destroy() via onTrimMemory, se não estiver em ⑦
 ```
 
+**Criar não é mostrar — e é isso que esconde os 9 segundos.** A conversa gasta de
+20 s a 1 minuto entre o início do atendimento e o estado ⑦ (② sinalizando 10–30 s,
+③ falando 3–8 s, ⑤ atendente respondendo 5–15 s, ⑥ transcrevendo 1–2 s). O Unity
+cabe folgado nesse intervalo, carregando escondido:
+
+```
+① atendimento começa   -> cria a WebView INVISÍVEL e manda carregar o Unity
+②③④⑤⑥                  -> Unity carrega em paralelo; ninguém vê, ninguém espera
+⑦                      -> só torna visível: instantâneo, já está pronto
+fim do atendimento     -> destroy()
+```
+
+**O preço, que precisa ser medido antes de adotar:** com pré-carregamento, os
+~300 MB do Unity passam a conviver com o MediaPipe durante o ②, e a afirmação de
+que os dois "nunca coexistem" deixa de valer. Se a medição mostrar que não cabe,
+o plano B é carregar em ③ — a câmera e o MediaPipe já saíram de cena ali, e ainda
+sobram ~15 s até o ⑦.
+
 Três níveis de "parar", e só o terceiro é caro de desfazer:
 
 | Nível | Custo para voltar | Quando |
