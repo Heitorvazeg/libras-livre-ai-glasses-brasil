@@ -142,7 +142,7 @@ def _avaliar(modelo, loader, criterio, dispositivo):
     return perda / max(total, 1), certos / max(total, 1), preds, reais
 
 
-def aplicar_backbone(modelo, caminho: Path, arquitetura: str) -> int:
+def aplicar_backbone(modelo, caminho: Path, arquitetura: str, args=None) -> int:
     """Carrega pesos de pré-treino no corpo da rede, preservando a cabeça nova.
 
     A cabeça (`fc`) do backbone previa as classes do corpus de pré-treino — 1.353
@@ -150,11 +150,37 @@ def aplicar_backbone(modelo, caminho: Path, arquitetura: str) -> int:
     o corpo transfere. `strict=False` é intencional e a contagem devolvida serve
     de conferência: se o número de tensores carregados vier baixo, o backbone é
     de outra arquitetura e o "pré-treino" seria silenciosamente nenhum.
+
+    A REPRESENTAÇÃO PRECISA BATER, NÃO SÓ A ARQUITETURA E O SHAPE. `--ossos` e
+    `--movimento` dobram os canais do MESMO jeito (2→4): um backbone
+    pré-treinado com um carregaria, por contagem de canal, dentro de um
+    fine-tuning que pediu o outro — pesos aprendidos para "vetor de osso"
+    aplicados a "diferença temporal entre quadros", sem erro nenhum.
+    `z_recentrado` é pior: mesma contagem de canais, MESMO canal, referencial
+    diferente. `load_state_dict` não enxerga nada disso — só compara shape.
+    Por isso a checagem abaixo compara as flags de representação salvas no
+    backbone (`meta["args"]`) contra as do fine-tuning, e aborta alto em
+    qualquer divergência, em vez de deixar o operador confiar num carregamento
+    que "funcionou".
     """
     dados = torch.load(caminho, map_location="cpu", weights_only=False)
     if dados.get("arquitetura") != arquitetura:
         raise SystemExit(f"backbone é de '{dados.get('arquitetura')}' mas o treino é "
                          f"'{arquitetura}' — arquiteturas não são intercambiáveis")
+    if args is not None and arquitetura == "gcn":
+        pre = (dados.get("meta") or {}).get("args") or {}
+        CHAVES_REPRESENTACAO = ("com_z", "z_recentrado", "ossos", "movimento")
+        diffs = [(k, bool(pre.get(k)), bool(getattr(args, k, False))) for k in CHAVES_REPRESENTACAO
+                if bool(pre.get(k)) != bool(getattr(args, k, False))]
+        if diffs:
+            detalhe = "; ".join(f"{k}: pré-treino={a} fine-tuning={b}" for k, a, b in diffs)
+            raise SystemExit(
+                f"representação diverge entre pré-treino e fine-tuning ({detalhe}). "
+                "Os shapes podem até bater — --ossos e --movimento dobram os canais "
+                "igual — mas os pesos foram aprendidos para um referencial diferente "
+                "do que vão receber agora. Use exatamente as mesmas flags de "
+                "representação (--com-z/--z-recentrado/--ossos/--movimento) nas duas "
+                "chamadas, ou refaça o pré-treino com a representação do fine-tuning.")
     pesos = dados["backbone"]
     faltando, inesperados = modelo.load_state_dict(pesos, strict=False)
     carregados = len(pesos) - len(inesperados)
@@ -256,7 +282,7 @@ def treinar_rodada(treino, validacao, teste, rotulos, permutacao, args, disposit
     modelo = construtor(len(rotulos), **(canais_gcn(args) if arq == "gcn" else {}))
     semear_pesos(modelo, args, rodada)
     if getattr(args, "inicializar", None):
-        n = aplicar_backbone(modelo, Path(args.inicializar), arq)
+        n = aplicar_backbone(modelo, Path(args.inicializar), arq, args)
         print(f"      backbone de pré-treino aplicado ({n} tensores)")
     modelo = modelo.to(dispositivo)
     criterio = nn.CrossEntropyLoss()

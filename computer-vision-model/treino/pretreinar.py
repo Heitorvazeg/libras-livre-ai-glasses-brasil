@@ -50,7 +50,7 @@ import dados as dd
 import gcn as gg
 import modelo as mm
 import representacao as rp
-from treinar import DatasetSinais
+from treinar import DatasetSinais, canais_gcn
 
 AQUI = Path(__file__).resolve().parent
 sys.path.insert(0, str(AQUI.parent / "datasets"))
@@ -130,12 +130,23 @@ def auditar_corpora(dirs: list[Path], manifesto: Path = pv.MANIFESTO,
 def carregar_corpora(dirs: list[Path], min_clipes_por_classe: int,
                      *, manifesto: Path = pv.MANIFESTO,
                      auditoria: dict | None = None,
-                     fontes: str = "vlibrasil,malta") -> list[dd.Clipe]:
+                     fontes: str = "vlibrasil,malta",
+                     com_z: bool = False, z_recentrado: bool = False,
+                     imputar: bool = True, lacuna_maxima: int = 5) -> list[dd.Clipe]:
     """Junta um ou mais diretórios de landmarks num corpus só.
 
     Classes com pouquíssimos exemplos são descartadas: elas não ensinam
     representação (o modelo decora), inflam a camada de saída e desequilibram o
     treino. O corte é explícito para que a perda apareça no log, não em silêncio.
+
+    `com_z`/`z_recentrado`/`imputar`/`lacuna_maxima` PRECISAM bater com a
+    representação do checkpoint que vai receber este backbone via
+    `--inicializar`. Antes desta função não expunha nenhum dos quatro — o
+    backbone saía sempre em x,y cru (2 canais), e tentar inicializar um GCN
+    `--ossos --com-z --z-recentrado` (6 canais) com ele falharia em
+    `aplicar_backbone` por incompatibilidade de shape na primeira camada, ou
+    pior, carregaria parcialmente e ninguém notaria a diferença de referencial
+    do z entre pré-treino e fine-tuning.
     """
     verificado = auditar_corpora(dirs, manifesto)
     if auditoria is not None:
@@ -148,7 +159,8 @@ def carregar_corpora(dirs: list[Path], min_clipes_por_classe: int,
         # aceitar MALTA, isso virava perda SILENCIOSA: os clipes eram auditados,
         # aprovados, e sumiam na leitura — o pré-treino rodava com menos dado do
         # que o log de auditoria dizia ter.
-        novos = dd.carregar(d, fontes=fontes)
+        novos = dd.carregar(d, fontes=fontes, com_z=com_z, z_recentrado=z_recentrado,
+                            imputar=imputar, lacuna_maxima=lacuna_maxima)
         for c in novos:
             nome = f"pessoa{c.pessoa}_sinal-{c.sinal}_rep{c.rep}.npy"
             c.proveniencia = registros[i, nome]
@@ -274,6 +286,25 @@ def main() -> None:
     ap.add_argument("--fracao-val", type=float, default=0.1)
     ap.add_argument("--semente", type=int, default=0)
     ap.add_argument("--saida", default="resultados-pretreino")
+    # A REPRESENTAÇÃO DO BACKBONE PRECISA BATER COM A DO FINE-TUNING. Faltavam
+    # aqui — o pré-treino só sabia gerar backbone em x,y cru (2 canais), e
+    # inicializar um GCN `--ossos --com-z --z-recentrado` (6 canais) com ele
+    # falharia em `aplicar_backbone` por incompatibilidade de shape, ou pior:
+    # combinações que ainda batem em contagem de canais (ex. --movimento sem
+    # --ossos) carregariam pesos para o canal errado sem avisar. Os nomes e os
+    # defaults espelham exatamente os de `treinar.py`.
+    ap.add_argument("--ossos", action="store_true",
+                    help="GCN: soma vetores de osso aos canais de entrada (dobra)")
+    ap.add_argument("--movimento", action="store_true",
+                    help="GCN: soma a variação temporal dos canais (dobra)")
+    ap.add_argument("--adjacencia-adaptativa", action="store_true")
+    ap.add_argument("--kernel-temporal", type=int, default=9)
+    ap.add_argument("--com-z", action="store_true",
+                    help="mantém a terceira coordenada (z) dos landmarks")
+    ap.add_argument("--z-recentrado", action="store_true",
+                    help="com --com-z: devolve o z da mão ao referencial do punho")
+    ap.add_argument("--sem-imputacao", action="store_true",
+                    help="desliga a imputação de lacunas curtas de mão (ligada por padrão)")
     args = ap.parse_args()
 
     torch.set_num_threads(args.threads)
@@ -286,6 +317,8 @@ def main() -> None:
     try:
         clipes = carregar_corpora(args.corpus, args.min_clipes_por_classe,
                                   fontes=args.fontes,
+                                  com_z=args.com_z, z_recentrado=args.z_recentrado,
+                                  imputar=not args.sem_imputacao,
                                   manifesto=args.manifesto_avaliacao, auditoria=auditoria)
     except (ValueError, OSError) as e:
         raise SystemExit(f"[auditoria] ABORTADO: {e}") from e
@@ -318,7 +351,12 @@ def main() -> None:
     perm = rp.permutacao_espelho(list(cfg["pose_indices"].keys()))
 
     construtor = gg.construir if args.arquitetura == "gcn" else mm.construir
-    modelo = construtor(len(rotulos)).to(disp)
+    # Um lugar só para a conta de canais — `treinar.canais_gcn` — para não
+    # divergir de como o fine-tuning vai construir a mesma arquitetura. Duas
+    # contas que hoje concordam e amanhã divergem por um refactor é exatamente o
+    # tipo de erro que só aparece como shape mismatch no meio de um treino caro.
+    kw_modelo = canais_gcn(args) if args.arquitetura == "gcn" else {}
+    modelo = construtor(len(rotulos), **kw_modelo).to(disp)
     criterio = nn.CrossEntropyLoss()
 
     cabeca = None
@@ -335,7 +373,9 @@ def main() -> None:
 
     def loader(cl, aug, shuffle):
         ds = DatasetSinais(cl, rotulos, perm if aug else None, aug,
-                           arquitetura=args.arquitetura)
+                           arquitetura=args.arquitetura,
+                           ossos=args.arquitetura == "gcn" and args.ossos,
+                           movimento=args.arquitetura == "gcn" and args.movimento)
         if args.objetivo == "contrastivo" and shuffle:
             # Lotes P×K: sem eles, um corpus de 1.353 classes quase nunca colocaria
             # dois clipes da mesma palavra no mesmo lote, e não haveria par positivo.
