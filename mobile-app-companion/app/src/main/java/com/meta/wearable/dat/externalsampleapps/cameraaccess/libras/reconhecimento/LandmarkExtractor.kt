@@ -2,13 +2,13 @@
  * Libras Livre — extração de landmarks com MediaPipe Tasks (Pose + Hands).
  *
  * Recebe um frame decodificado (android.media.Image, YUV_420_888) e devolve os
- * pontos CRUS na convenção que a API espera (ver PoC/api/README.md):
+ * pontos CRUS na convenção do pipeline de referência (computer-vision-model/PoC/src/extract.py):
  *   - pose: os 33 pontos do MediaPipe Pose, cada um [x, y, z, visibility] (0..1)
  *   - left_hand / right_hand: 21 pontos [x, y, z] cada, ou null se a mão não veio
  *
  * A PoC gerou as referências com MediaPipe Holistic; aqui usamos os detectores
  * separados (Pose + Hands), que compartilham os MESMOS índices e convenção de
- * pontos. Como o servidor descarta z (usar_z:false) e normaliza por ombros, o que
+ * pontos. Como o pipeline descarta z e normaliza por ombros, o que
  * importa numericamente é x,y da pose/mãos e a visibility dos ombros — todos
  * diretamente comparáveis. Ressalvas conhecidas (a validar com dado real):
  *   - atribuição esquerda/direita das mãos vem da handedness do MediaPipe;

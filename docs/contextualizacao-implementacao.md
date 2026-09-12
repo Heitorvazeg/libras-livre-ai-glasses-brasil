@@ -1,5 +1,9 @@
 # Implementação do modelo de contextualização — do corpus ao `.tflite`
 
+> **Status (2026-09-12): executado.** Corpus, poda, três rodadas de fine-tuning
+> (`resultados-v1`, `-v2`, `-v3`), export e integração no app estão feitos. O
+> experimento em produção é o **v2** (padrão de `exportacao/para_tflite.py`).
+
 > **Runbook.** O *porquê* de cada decisão está em
 > [`contextualizacao-glosa-seq2seq-plano.md`](./contextualizacao-glosa-seq2seq-plano.md);
 > aqui é o *como*: pastas, scripts, artefatos, ordem de execução e o que

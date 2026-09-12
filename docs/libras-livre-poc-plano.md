@@ -1,5 +1,10 @@
 # Libras Livre — Plano de PoC: Reconhecimento Signer-Independent
 
+> **Status (2026-09-12): concluído.** A PoC foi executada; o resultado e o
+> veredito estão em `computer-vision-model/PoC/results/relatorio.md` e em
+> `computer-vision-model/PoC/README.md` §6.4. Este documento fica como registro do
+> método e do critério de decisão definido antes de medir.
+
 **Equipe 3G1B · Programa AI Glasses Brasil**
 
 ---

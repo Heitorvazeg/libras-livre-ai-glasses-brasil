@@ -1,5 +1,11 @@
 # Orquestração de diálogo bidirecional — wake word, áudio dos óculos e handoff pro avatar
 
+> **Status (2026-09-12): implementado em grande parte.** `libras/dialogo/` tem os
+> sete estados e o orquestrador; `libras/audio/` tem TTS (Piper/sherpa-onnx), STT
+> (Vosk pt-BR) e a troca A2DP/HFP, todos ativos. Duas pendências: o wake word real
+> (`OpenWakeWordDetector`) espera os classificadores pt-BR serem treinados, e o
+> estado ⑦ (handoff para o avatar) depende da branch do player VLibras.
+
 > Plano de implementação da conversa completa: óculos veem a pessoa sinalizando →
 > app reconhece e fala pro atendente → atendente responde de voz, acionado por
 > wake word → resposta é transcrita e vira avatar Libras pra pessoa surda ver.
