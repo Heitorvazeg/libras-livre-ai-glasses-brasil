@@ -1,0 +1,350 @@
+# Sequências de glosas — a "receita" do corpus (Rota B, §5.1.2)
+#
+# Mesmo papel de ../../computer-vision-model/datasets/selecao.yaml: escrito à
+# mão, versionado, e é daqui que o corpus inteiro é derivado.
+#
+# REGRA DURA: toda glosa usada aqui existe em lexico/lexico-glosas.json.
+# corpus/gerar.py valida e falha se alguma escapar.
+#
+# PENDENTE DE REVISÃO: estas sequências são a hipótese de um modelo de linguagem
+# sobre o que alguém sinalizaria num balcão — NÃO são enunciados observados.
+# §5.1.2, ressalva 2: é este arquivo que precisa passar pelo consultor /
+# Associação de Surdos de Goiânia antes de valer alguma coisa.
+#
+# DEPENDE DE VOCABULÁRIO NÃO VERIFICADO: usa os 7 sinais funcionais marcados
+# `camada: 3-proposta` no léxico (eu, você, querer, precisar, onde, quanto,
+# quando). Eles ainda não foram cruzados com as bases públicas. Enquanto isso
+# não acontecer, as sequências que dependem deles treinam um mapeamento que o
+# SignClassifier ainda não consegue alimentar — gerar.py marca cada par com
+# `depende_c3` para que dê para treinar/avaliar com e sem elas.
+
+meta:
+  versao: 0.2.0-rascunho
+  vocabulario: Camadas 1+2 (34) + 7 funcionais propostos = 41 glosas
+  parafrases_por_sequencia: 8
+
+sequencias:
+
+  # ---- abertura e encerramento --------------------------------------------
+  - { glosas: [oi], contexto: abertura }
+  - { glosas: [oi, manhã], contexto: abertura }
+  - { glosas: [oi, noite], contexto: abertura }
+  - { glosas: [oi, eu, precisar, ajuda], contexto: abertura }
+  - { glosas: [oi, eu, querer, ajuda], contexto: abertura }
+  - { glosas: [oi, por-favor], contexto: abertura }
+  - { glosas: [eu, oi, nome], contexto: abertura }
+  - { glosas: [obrigado], contexto: encerramento }
+  - { glosas: [obrigado, ajuda], contexto: encerramento }
+  - { glosas: [eu, obrigado], contexto: encerramento }
+  - { glosas: [sim, obrigado], contexto: encerramento }
+  - { glosas: [não, obrigado], contexto: encerramento }
+  - { glosas: [obrigado, eu, voltar], contexto: encerramento }
+  - { glosas: [obrigado, noite], contexto: encerramento }
+
+  # ---- identificação --------------------------------------------------------
+  - { glosas: [eu, nome], contexto: identificacao }
+  - { glosas: [nome, por-favor], contexto: identificacao }
+  - { glosas: [você, nome], contexto: identificacao }
+  - { glosas: [eu, documento], contexto: identificacao }
+  - { glosas: [documento, sim], contexto: identificacao }
+  - { glosas: [eu, não, documento], contexto: identificacao }
+  - { glosas: [você, querer, documento], contexto: identificacao }
+  - { glosas: [documento, por-favor], contexto: identificacao }
+  - { glosas: [eu, precisar, documento], contexto: identificacao }
+  - { glosas: [documento, onde], contexto: identificacao }
+  - { glosas: [eu, documento, esperar], contexto: identificacao }
+  - { glosas: [eu, voltar, documento], contexto: identificacao }
+  - { glosas: [eu, não, documento, voltar], contexto: identificacao }
+  - { glosas: [nome, filho], contexto: identificacao }
+  - { glosas: [eu, filho, documento], contexto: identificacao }
+  - { glosas: [filho, não, documento], contexto: identificacao }
+  - { glosas: [eu, aluno], contexto: identificacao }
+  - { glosas: [aluno, documento], contexto: identificacao }
+  - { glosas: [eu, não, conhecer, nome], contexto: identificacao }
+
+  # ---- pedido / necessidade -------------------------------------------------
+  - { glosas: [eu, precisar, ajuda], contexto: pedido }
+  - { glosas: [ajuda, por-favor], contexto: pedido }
+  - { glosas: [eu, querer, ajuda], contexto: pedido }
+  - { glosas: [você, ajuda, eu], contexto: pedido }
+  - { glosas: [onde, banheiro], contexto: pedido }
+  - { glosas: [eu, precisar, banheiro], contexto: pedido }
+  - { glosas: [banheiro, onde, por-favor], contexto: pedido }
+  - { glosas: [filho, precisar, banheiro], contexto: pedido }
+  - { glosas: [eu, querer, vacina], contexto: pedido }
+  - { glosas: [eu, precisar, vacina], contexto: pedido }
+  - { glosas: [vacina, por-favor], contexto: pedido }
+  - { glosas: [filho, precisar, vacina], contexto: pedido }
+  - { glosas: [eu, querer, vacina, filho], contexto: pedido }
+  - { glosas: [vacina, quando], contexto: pedido }
+  - { glosas: [vacina, onde], contexto: pedido }
+  - { glosas: [eu, querer, vacina, manhã], contexto: pedido }
+  - { glosas: [você, querer, vacina], contexto: pedido }
+  - { glosas: [eu, medo, vacina], contexto: pedido }
+  - { glosas: [filho, medo, vacina], contexto: pedido }
+  - { glosas: [eu, vontade], contexto: pedido }
+  - { glosas: [eu, querer, voltar], contexto: pedido }
+  - { glosas: [eu, não, querer, esperar], contexto: pedido }
+  - { glosas: [eu, precisar, número], contexto: pedido }
+  - { glosas: [eu, precisar, ajuda, documento], contexto: pedido }
+  - { glosas: [eu, não, conhecer, você, ajuda], contexto: pedido }
+
+  # ---- estado e sintoma -----------------------------------------------------
+  - { glosas: [eu, dor], contexto: sintoma }
+  - { glosas: [eu, dor, ruim], contexto: sintoma }
+  - { glosas: [dor, manhã], contexto: sintoma }
+  - { glosas: [dor, noite], contexto: sintoma }
+  - { glosas: [eu, dor, noite], contexto: sintoma }
+  - { glosas: [filho, dor], contexto: sintoma }
+  - { glosas: [filho, dor, ruim], contexto: sintoma }
+  - { glosas: [dor, quando], contexto: sintoma }
+  - { glosas: [eu, precisar, ajuda, dor], contexto: sintoma }
+  - { glosas: [eu, ruim], contexto: sintoma }
+  - { glosas: [eu, ruim, manhã], contexto: sintoma }
+  - { glosas: [eu, ruim, noite], contexto: sintoma }
+  - { glosas: [filho, ruim], contexto: sintoma }
+  - { glosas: [ruim, acontecer], contexto: sintoma }
+  - { glosas: [eu, medo], contexto: sintoma }
+  - { glosas: [eu, medo, dor], contexto: sintoma }
+  - { glosas: [filho, medo], contexto: sintoma }
+  - { glosas: [acontecer, quando], contexto: sintoma }
+  - { glosas: [acontecer, manhã], contexto: sintoma }
+  - { glosas: [acontecer, noite], contexto: sintoma }
+  - { glosas: [acontecer, ruim], contexto: sintoma }
+  - { glosas: [você, conhecer, acontecer], contexto: sintoma }
+  - { glosas: [eu, dor, precisar, vacina], contexto: sintoma }
+
+  # ---- fila, senha, espera --------------------------------------------------
+  - { glosas: [eu, esperar], contexto: espera }
+  - { glosas: [quanto, esperar], contexto: espera }
+  - { glosas: [eu, precisar, esperar], contexto: espera }
+  - { glosas: [esperar, ruim], contexto: espera }
+  - { glosas: [eu, esperar, manhã], contexto: espera }
+  - { glosas: [esperar, quanto, por-favor], contexto: espera }
+  - { glosas: [você, querer, eu, esperar], contexto: espera }
+  - { glosas: [filho, esperar], contexto: espera }
+  - { glosas: [eu, número], contexto: espera }
+  - { glosas: [número, cinco], contexto: espera }
+  - { glosas: [eu, número, cinco], contexto: espera }
+  - { glosas: [número, onde], contexto: espera }
+  - { glosas: [número, quanto], contexto: espera }
+  - { glosas: [eu, precisar, número, cinco], contexto: espera }
+  - { glosas: [eu, não, conhecer, número], contexto: espera }
+  - { glosas: [cinco], contexto: espera }
+  - { glosas: [cinco, quando], contexto: espera }
+  - { glosas: [eu, voltar], contexto: espera }
+  - { glosas: [eu, voltar, manhã], contexto: espera }
+  - { glosas: [eu, voltar, noite], contexto: espera }
+  - { glosas: [quando, eu, voltar], contexto: espera }
+  - { glosas: [você, querer, eu, voltar], contexto: espera }
+  - { glosas: [eu, voltar, cinco], contexto: espera }
+  - { glosas: [eu, querer, voltar, filho], contexto: espera }
+
+  # ---- localização e direção ------------------------------------------------
+  - { glosas: [onde], contexto: localizacao }
+  - { glosas: [onde, banco], contexto: localizacao }
+  - { glosas: [banco, esquina], contexto: localizacao }
+  - { glosas: [eu, não, conhecer, banco], contexto: localizacao }
+  - { glosas: [onde, esquina], contexto: localizacao }
+  - { glosas: [banheiro, esquina], contexto: localizacao }
+  - { glosas: [eu, precisar, banco], contexto: localizacao }
+  - { glosas: [banco, quando], contexto: localizacao }
+  - { glosas: [você, conhecer, banco], contexto: localizacao }
+  - { glosas: [eu, querer, banco, documento], contexto: localizacao }
+  - { glosas: [onde, vacina], contexto: localizacao }
+  - { glosas: [onde, aluno], contexto: localizacao }
+
+  # ---- resposta curta -------------------------------------------------------
+  - { glosas: [sim], contexto: resposta }
+  - { glosas: [não], contexto: resposta }
+  - { glosas: [sim, por-favor], contexto: resposta }
+  - { glosas: [eu, conhecer], contexto: resposta }
+  - { glosas: [eu, não, conhecer], contexto: resposta }
+  - { glosas: [eu, querer], contexto: resposta }
+  - { glosas: [sim, eu, querer], contexto: resposta }
+  - { glosas: [eu, precisar], contexto: resposta }
+  - { glosas: [você, conhecer], contexto: resposta }
+  - { glosas: [você, querer], contexto: resposta }
+  - { glosas: [eu, esperar, sim], contexto: resposta }
+  - { glosas: [eu, aproveitar], contexto: resposta }
+
+  # ---- NEGAÇÃO (bloco dedicado — §8.1, acerto de negação = 1,00) ------------
+  # A métrica de segurança do §10 exige 1,00 aqui. Sub-representar negação no
+  # corpus é a forma mais direta de reprovar nesse portão.
+  - { glosas: [eu, não, querer, vacina], contexto: negacao }
+  - { glosas: [eu, não, querer], contexto: negacao }
+  - { glosas: [eu, não, querer, esperar, noite], contexto: negacao }
+  - { glosas: [eu, não, precisar, ajuda], contexto: negacao }
+  - { glosas: [eu, não, precisar], contexto: negacao }
+  - { glosas: [eu, não, dor], contexto: negacao }
+  - { glosas: [eu, não, ruim], contexto: negacao }
+  - { glosas: [eu, não, medo], contexto: negacao }
+  - { glosas: [eu, não, medo, vacina], contexto: negacao }
+  - { glosas: [filho, não, vacina], contexto: negacao }
+  - { glosas: [filho, não, ruim], contexto: negacao }
+  - { glosas: [eu, não, conhecer, esquina], contexto: negacao }
+  - { glosas: [eu, não, voltar], contexto: negacao }
+  - { glosas: [eu, não, voltar, manhã], contexto: negacao }
+  - { glosas: [eu, não, querer, voltar], contexto: negacao }
+  - { glosas: [você, não, ajuda], contexto: negacao }
+  - { glosas: [não, barulho, por-favor], contexto: negacao }
+  - { glosas: [eu, não, aluno], contexto: negacao }
+  - { glosas: [eu, não, esperar], contexto: negacao }
+  - { glosas: [não, banheiro], contexto: negacao }
+  - { glosas: [eu, não, querer, número], contexto: negacao }
+  - { glosas: [eu, não, conhecer, você], contexto: negacao }
+
+  # ---- escola / filho -------------------------------------------------------
+  - { glosas: [eu, filho], contexto: escola }
+  - { glosas: [filho, aluno], contexto: escola }
+  - { glosas: [eu, filho, aluno], contexto: escola }
+  - { glosas: [filho, aluno, nome], contexto: escola }
+  - { glosas: [eu, aluno, manhã], contexto: escola }
+  - { glosas: [aluno, onde], contexto: escola }
+  - { glosas: [aluno, quando], contexto: escola }
+  - { glosas: [filho, manhã], contexto: escola }
+  - { glosas: [filho, esperar, manhã], contexto: escola }
+  - { glosas: [eu, querer, filho, vacina], contexto: escola }
+  - { glosas: [filho, quanto], contexto: escola }
+  - { glosas: [eu, precisar, documento, aluno], contexto: escola }
+
+  # ---- ambiente / conforto --------------------------------------------------
+  - { glosas: [barulho], contexto: ambiente }
+  - { glosas: [barulho, ruim], contexto: ambiente }
+  - { glosas: [eu, não, conhecer, barulho], contexto: ambiente }
+  - { glosas: [filho, medo, barulho], contexto: ambiente }
+  - { glosas: [espelho, onde], contexto: ambiente }
+  - { glosas: [espelho, banheiro], contexto: ambiente }
+  - { glosas: [amarelo, documento], contexto: ambiente }
+  - { glosas: [número, amarelo], contexto: ambiente }
+  - { glosas: [eu, querer, amarelo], contexto: ambiente }
+  - { glosas: [barulho, eu, ruim], contexto: ambiente }
+
+  # ---- vocabulário geral (demonstração, não atendimento) --------------------
+  # vocabulario-mvp-proposta.md: parte da Camada 1 "entra como vocabulário geral
+  # de demonstração, não como frase de atendimento". Proporção menor de propósito.
+  - { glosas: [eu, querer, bala], contexto: geral }
+  - { glosas: [filho, querer, bala], contexto: geral }
+  - { glosas: [bala, onde], contexto: geral }
+  - { glosas: [eu, querer, maçã], contexto: geral }
+  - { glosas: [maçã, amarelo], contexto: geral }
+  - { glosas: [sapo], contexto: geral }
+  - { glosas: [eu, medo, sapo], contexto: geral }
+  - { glosas: [filho, medo, sapo], contexto: geral }
+  - { glosas: [america], contexto: geral }
+  - { glosas: [eu, querer, conhecer, america], contexto: geral }
+  - { glosas: [eu, voltar, america], contexto: geral }
+  - { glosas: [eu, aproveitar, manhã], contexto: geral }
+  - { glosas: [aproveitar, noite], contexto: geral }
+  - { glosas: [eu, aproveitar, filho], contexto: geral }
+  - { glosas: [manhã], contexto: geral }
+  - { glosas: [noite], contexto: geral }
+  - { glosas: [quando, manhã], contexto: geral }
+  - { glosas: [espelho], contexto: geral }
+
+  # ---- LOTE 2 (2026-09-11) — padrões que o v1 errou ------------------------
+  # Diagnóstico do relatorio-v1: 6 das 7 falhas foram OMISSÃO, concentradas em
+  # verbo + DOIS substantivos de conteúdo, saudação + substantivo, e três
+  # substantivos. O eixo de paráfrase estava saturado (8 por sequência); o que
+  # faltava eram combinações. Estas são elas.
+  - { glosas: [eu, precisar, documento, banco], contexto: identificacao }
+  - { glosas: [eu, querer, documento, nome], contexto: identificacao }
+  - { glosas: [eu, precisar, nome, documento], contexto: identificacao }
+  - { glosas: [documento, nome, por-favor], contexto: identificacao }
+  - { glosas: [eu, documento, número], contexto: identificacao }
+  - { glosas: [filho, documento, nome], contexto: identificacao }
+  - { glosas: [eu, querer, banco, documento], contexto: identificacao }
+  - { glosas: [aluno, nome, documento], contexto: escola }
+  - { glosas: [filho, aluno, documento], contexto: escola }
+  - { glosas: [eu, filho, aluno, nome], contexto: escola }
+  - { glosas: [eu, precisar, ajuda, documento], contexto: pedido }
+  - { glosas: [eu, precisar, ajuda, banheiro], contexto: pedido }
+  - { glosas: [eu, precisar, ajuda, número], contexto: pedido }
+  - { glosas: [eu, querer, ajuda, vacina], contexto: pedido }
+  - { glosas: [eu, precisar, vacina, número], contexto: pedido }
+  - { glosas: [eu, querer, vacina, documento], contexto: pedido }
+  - { glosas: [filho, precisar, vacina, documento], contexto: pedido }
+  - { glosas: [eu, precisar, banheiro, ajuda], contexto: pedido }
+  - { glosas: [eu, querer, número, esperar], contexto: espera }
+  - { glosas: [eu, esperar, número, cinco], contexto: espera }
+  - { glosas: [eu, voltar, número, manhã], contexto: espera }
+  - { glosas: [eu, esperar, vacina, filho], contexto: espera }
+  - { glosas: [eu, voltar, documento, manhã], contexto: espera }
+  - { glosas: [eu, esperar, banco, documento], contexto: espera }
+  - { glosas: [oi, nome], contexto: abertura }
+  - { glosas: [eu, oi, nome], contexto: abertura }
+  - { glosas: [oi, eu, filho], contexto: abertura }
+  - { glosas: [oi, documento], contexto: abertura }
+  - { glosas: [oi, ajuda, por-favor], contexto: abertura }
+  - { glosas: [oi, eu, precisar, vacina], contexto: abertura }
+  - { glosas: [obrigado, ajuda], contexto: encerramento }
+  - { glosas: [obrigado, vacina], contexto: encerramento }
+  - { glosas: [obrigado, número], contexto: encerramento }
+  - { glosas: [obrigado, documento], contexto: encerramento }
+  - { glosas: [obrigado, eu, voltar, manhã], contexto: encerramento }
+  - { glosas: [eu, não, conhecer, você, ajuda], contexto: negacao }
+  - { glosas: [eu, não, querer, ajuda, você], contexto: negacao }
+  - { glosas: [eu, não, precisar, documento, banco], contexto: negacao }
+  - { glosas: [eu, não, querer, esperar, número], contexto: negacao }
+  - { glosas: [filho, não, ruim], contexto: negacao }
+  - { glosas: [filho, não, dor], contexto: negacao }
+  - { glosas: [filho, não, medo], contexto: negacao }
+  - { glosas: [filho, não, aluno], contexto: negacao }
+  - { glosas: [eu, não, ruim, manhã], contexto: negacao }
+  - { glosas: [eu, não, dor, noite], contexto: negacao }
+  - { glosas: [eu, não, medo, dor], contexto: negacao }
+  - { glosas: [eu, não, voltar, banco], contexto: negacao }
+  - { glosas: [eu, não, conhecer, esquina, banco], contexto: negacao }
+  - { glosas: [eu, não, querer, bala, filho], contexto: negacao }
+  - { glosas: [eu, dor, medo, vacina], contexto: sintoma }
+  - { glosas: [eu, ruim, dor, manhã], contexto: sintoma }
+  - { glosas: [filho, dor, medo], contexto: sintoma }
+  - { glosas: [filho, ruim, dor, noite], contexto: sintoma }
+  - { glosas: [eu, medo, dor, vacina], contexto: sintoma }
+  - { glosas: [eu, dor, precisar, ajuda], contexto: sintoma }
+  - { glosas: [onde, banco, documento], contexto: localizacao }
+  - { glosas: [onde, banheiro, filho], contexto: localizacao }
+  - { glosas: [onde, número, vacina], contexto: localizacao }
+  - { glosas: [quando, vacina, filho], contexto: localizacao }
+  - { glosas: [quanto, esperar, vacina], contexto: espera }
+  - { glosas: [quanto, esperar, número], contexto: espera }
+  - { glosas: [você, conhecer, banco, esquina], contexto: localizacao }
+  - { glosas: [você, querer, documento, nome], contexto: identificacao }
+  - { glosas: [eu, aproveitar, manhã, filho], contexto: geral }
+  - { glosas: [eu, querer, bala, maçã], contexto: geral }
+
+  # ---- LOTE 3 (2026-09-11) — enunciados CURTOS -----------------------------
+  # Diagnóstico do relatorio-v2: o modelo perde do template justamente nas
+  # sequências de 1-2 glosas, por EXCESSO — 'barulho' virava "o barulho vem",
+  # 'obrigado' virava "obrigado, obrigado". Ele só tinha visto 12 enunciados de
+  # uma glosa em 256. Aqui entram os 29 que faltavam, com referências ENXUTAS:
+  # o alvo é ensinar que entrada curta pede saída curta.
+  - { glosas: [eu], contexto: resposta }
+  - { glosas: [você], contexto: resposta }
+  - { glosas: [querer], contexto: resposta }
+  - { glosas: [precisar], contexto: resposta }
+  - { glosas: [vontade], contexto: resposta }
+  - { glosas: [conhecer], contexto: resposta }
+  - { glosas: [esperar], contexto: espera }
+  - { glosas: [voltar], contexto: espera }
+  - { glosas: [acontecer], contexto: sintoma }
+  - { glosas: [aproveitar], contexto: geral }
+  - { glosas: [por-favor], contexto: pedido }
+  - { glosas: [ajuda], contexto: pedido }
+  - { glosas: [banheiro], contexto: pedido }
+  - { glosas: [vacina], contexto: pedido }
+  - { glosas: [documento], contexto: identificacao }
+  - { glosas: [nome], contexto: identificacao }
+  - { glosas: [número], contexto: espera }
+  - { glosas: [filho], contexto: escola }
+  - { glosas: [aluno], contexto: escola }
+  - { glosas: [banco], contexto: localizacao }
+  - { glosas: [esquina], contexto: localizacao }
+  - { glosas: [dor], contexto: sintoma }
+  - { glosas: [medo], contexto: sintoma }
+  - { glosas: [ruim], contexto: sintoma }
+  - { glosas: [quando], contexto: espera }
+  - { glosas: [quanto], contexto: espera }
+  - { glosas: [amarelo], contexto: ambiente }
+  - { glosas: [bala], contexto: geral }
+  - { glosas: [maçã], contexto: geral }

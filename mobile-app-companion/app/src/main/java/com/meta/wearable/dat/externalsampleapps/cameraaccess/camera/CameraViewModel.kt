@@ -20,6 +20,8 @@ import android.app.Application
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Matrix
+import android.media.AudioDeviceInfo
+import android.media.MediaRecorder
 import android.util.Log
 import android.view.Surface
 import androidx.exifinterface.media.ExifInterface
@@ -41,12 +43,21 @@ import com.meta.wearable.dat.core.session.DeviceSession
 import com.meta.wearable.dat.core.session.DeviceSessionState
 import com.meta.wearable.dat.core.types.Permission
 import com.meta.wearable.dat.core.types.PermissionStatus
-import com.meta.wearable.dat.externalsampleapps.cameraaccess.BuildConfig
 import com.meta.wearable.dat.externalsampleapps.cameraaccess.R
-import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.LandmarkApi
-import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.LandmarkPipeline
-import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.Speaker
-import com.meta.wearable.dat.externalsampleapps.cameraaccess.stream.AudioInputHandler
+import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.audio.AudioSessionManager
+import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.audio.PcmMicCapture
+import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.audio.PiperSherpaOnnxTtsEngine
+import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.audio.Speaker
+import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.audio.SpeechRecognizerWakeWordDetector
+import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.audio.SttEngine
+import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.audio.VoskSttEngine
+import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.audio.WakeWord
+import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.audio.WakeWordDetector
+import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.contextualizacao.criarGlossContextualizer
+import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.dialogo.DialogOrchestrator
+import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.dialogo.DialogState
+import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.reconhecimento.LandmarkPipeline
+import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.reconhecimento.PlaceholderSignClassifier
 import com.meta.wearable.dat.externalsampleapps.cameraaccess.stream.HevcDecoder
 import com.meta.wearable.dat.externalsampleapps.cameraaccess.stream.HevcParameterSetCollector
 import com.meta.wearable.dat.externalsampleapps.cameraaccess.stream.RecordingResult
@@ -62,9 +73,11 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 
 class CameraViewModel(
     application: Application,
@@ -76,6 +89,10 @@ class CameraViewModel(
     private const val FRAME_RATE = 24
     private const val KEYFRAME_WAIT_STEP_MS = 25L
     private const val KEYFRAME_WAIT_MAX_MS = 500L
+    // Tempos-limite de ensureCameraActiveForLibras() esperando o DeviceSession/Stream do DAT
+    // convergir — generosos porque envolvem handshake real com os óculos via Bluetooth.
+    private const val CAMERA_SESSION_READY_TIMEOUT_MS = 6000L
+    private const val CAMERA_STREAM_READY_TIMEOUT_MS = 8000L
   }
 
   private val deviceSelector: DeviceSelector = wearablesViewModel.deviceSelector
@@ -88,21 +105,61 @@ class CameraViewModel(
   private var stream: Stream? = null
 
   // Recording pieces. The single compressed-HEVC stream feeds both the on-screen decoder and the
-  // passthrough MP4 writer.
-  private val audioInputHandler = AudioInputHandler(application)
+  // passthrough MP4 writer. Video-only (ver stream/VideoRecorder.kt) — o mic do celular não é
+  // mais usado aqui.
   private val videoRecorder = VideoRecorder(application, viewModelScope)
 
-  // Libras Livre — reconhecimento de sinal via API + voz. O pipeline consome os mesmos frames
-  // HEVC do stream (ver handleVideoFrame), decodifica num ImageReader dedicado, extrai landmarks
-  // com MediaPipe e classifica no servidor (PoC/api). Estado espelhado em uiState.libras.
-  private val speaker = Speaker(application)
+  // Libras Livre — reconhecimento de sinal local + voz, e orquestração da sessão de diálogo
+  // bidirecional (docs/orquestracao-dialogo-audio-plano.md). dialogOrchestrator é referenciado
+  // por lambdas capturadas ANTES de ser inicializado (landmarkPipeline/wakeWordDetector, abaixo)
+  // — seguro porque essas lambdas só são invocadas depois que o init{} abaixo o atribui.
+  private lateinit var dialogOrchestrator: DialogOrchestrator
+
+  // Motor real de TTS: Piper (pt-BR) local via sherpa-onnx (ver docs/orquestracao-dialogo-audio-plano.md
+  // §4 item 10, §8 item 4). Pra voltar ao motor nativo do Android (fallback, sem depender dos
+  // assets de tts/pt_br/), troque por Speaker(application) — construtor usa
+  // AndroidTextToSpeechEngine por padrão quando nenhum TtsEngine é passado.
+  private val speaker = Speaker(application, PiperSherpaOnnxTtsEngine(application))
   private val landmarkPipeline =
       LandmarkPipeline(
           context = application,
           scope = viewModelScope,
-          api = LandmarkApi(BuildConfig.LIBRAS_API_BASE_URL),
-          speaker = speaker,
+          classifier = PlaceholderSignClassifier(),
           onState = { transform -> _uiState.update { it.copy(libras = it.libras.transform()) } },
+          onRecognized = { text -> dialogOrchestrator.onSignRecognized(text) },
+          onRecognitionFailed = { dialogOrchestrator.onSignRecognitionFailed() },
+      )
+  private val audioSessionManager = AudioSessionManager(application)
+
+  // Cadeia modelo -> guarda -> template -> passthrough (§3.3). Nasce uma vez e vive até
+  // onCleared(): o Interpreter do .tflite não deve ser recriado por sessão (§7.1).
+  private val glossContextualizer = criarGlossContextualizer(application)
+
+  // Motor real de STT: Vosk pt-BR local (§4 item 11, §8 item 2) — precisa de PCM cru do mic dos
+  // óculos, capturado por PcmMicCapture configurado pra HFP/SCO (§6.4). Pra voltar ao motor nativo
+  // do Android (fallback, sem depender do asset vosk-model-small-pt-0.3/), troque por
+  // AndroidSpeechRecognizerSttEngine(application).
+  private val attendantAudioCapture =
+      PcmMicCapture(
+          context = application,
+          audioSource = MediaRecorder.AudioSource.VOICE_COMMUNICATION,
+          preferredDeviceType = AudioDeviceInfo.TYPE_BLUETOOTH_SCO,
+      )
+  private val sttEngine: SttEngine = VoskSttEngine(application, attendantAudioCapture)
+
+  // Motor de wake word: ainda SpeechRecognizerWakeWordDetector (motor de destravamento, §4 item
+  // 7), NÃO OpenWakeWordDetector (motor real escolhido, §4 item 9) — este último exige os dois
+  // classificadores .onnx treinados (Fase 3, §7), que não existem neste repo ainda. Trocar pra ele
+  // é só trocar a implementação aqui embaixo por
+  // OpenWakeWordDetector(context = application, onWakeWord = { ... }) depois que os assets
+  // existirem — comparar objetivamente contra este motor antes (§7 Fase 3 critério de sucesso).
+  // Os botões de fallback (DialogControlRow) não passam por aqui — chamam
+  // dialogOrchestrator.onWakeWord diretamente via onWakeWordButton, então continuam funcionando
+  // mesmo se o motor real falhar/estiver sem permissão.
+  private val wakeWordDetector: WakeWordDetector =
+      SpeechRecognizerWakeWordDetector(
+          context = application,
+          onWakeWord = { word -> dialogOrchestrator.onWakeWord(word) },
       )
 
   // Per-frame work (byte copy, NAL parsing, MediaMuxer writes, decoder feed) runs at frame rate and
@@ -131,8 +188,6 @@ class CameraViewModel(
   private var streamErrorJob: Job? = null
 
   init {
-    videoRecorder.setAudioInputHandler(audioInputHandler)
-
     // Mirror the recorder's intent/elapsed into UI state.
     viewModelScope.launch {
       videoRecorder.isRecording.collect { recording ->
@@ -144,14 +199,27 @@ class CameraViewModel(
         _uiState.update { it.copy(recordingElapsedSeconds = seconds) }
       }
     }
-    // Stop a recording gracefully if the mic is interrupted (e.g. a phone call).
+
+    // Libras Livre: orquestrador da sessão de diálogo (ver comentário no campo lateinit acima).
+    dialogOrchestrator =
+        DialogOrchestrator(
+            scope = viewModelScope,
+            landmarkPipeline = landmarkPipeline,
+            speaker = speaker,
+            audioSessionManager = audioSessionManager,
+            sttEngine = sttEngine,
+            contextualizer = glossContextualizer,
+            ensureCameraActive = ::ensureCameraActiveForLibras,
+            deactivateCamera = ::deactivateCameraForLibras,
+            // TODO: handoff pro pipeline texto->glosa->avatar de docs/vlibras-webview-plano.md,
+            // ainda não implementado nesta branch.
+            onAvatarText = { text ->
+              Log.d(TAG, "Texto pronto pro avatar (handoff pendente): \"$text\"")
+            },
+        )
+    dialogOrchestrator.attachWakeWordDetector(wakeWordDetector)
     viewModelScope.launch {
-      audioInputHandler.wasInterrupted.collect { interrupted ->
-        if (interrupted && _uiState.value.isRecording) {
-          Log.w(TAG, "Audio interrupted — stopping recording")
-          stopVideoRecording()
-        }
-      }
+      dialogOrchestrator.state.collect { state -> _uiState.update { it.copy(dialogState = state) } }
     }
   }
 
@@ -491,26 +559,18 @@ class CameraViewModel(
 
   // MARK: - Recording
 
-  fun toggleRecording(requestRecordAudioPermission: suspend () -> Boolean) {
+  fun toggleRecording() {
     if (_uiState.value.isRecording) {
       viewModelScope.launch { stopVideoRecording() }
     } else {
-      startVideoRecording(requestRecordAudioPermission)
+      startVideoRecording()
     }
   }
 
-  fun startVideoRecording(requestRecordAudioPermission: suspend () -> Boolean) {
+  fun startVideoRecording() {
     if (!_uiState.value.isStreaming || _uiState.value.isRecording) return
     viewModelScope.launch {
-      // Request the mic permission only when sound-in-video is on; record video-only if it's off or
-      // the user declines. The prompt appears in context on the first record with the mic on.
-      val includeAudio = _uiState.value.includeAudioInStream && requestRecordAudioPermission()
       if (!_uiState.value.isStreaming || _uiState.value.isRecording) return@launch
-      // If the user wanted sound but denied the mic, reflect it so the mic icon doesn't stay "on".
-      if (_uiState.value.includeAudioInStream && !includeAudio) {
-        _uiState.update { it.copy(includeAudioInStream = false) }
-      }
-      videoRecorder.setIncludeAudio(includeAudio)
       videoRecorder.startRecording(csdCollector.complete())
     }
   }
@@ -538,25 +598,89 @@ class CameraViewModel(
     }
   }
 
-  fun toggleMic() {
-    if (!_uiState.value.isStreaming || _uiState.value.isRecording) return
-    _uiState.update { it.copy(includeAudioInStream = !it.includeAudioInStream) }
-  }
-
-  // MARK: - Libras: captura e reconhecimento de sinal
+  // MARK: - Libras: sessão de diálogo (wake word)
 
   /**
-   * Liga/desliga a captura de um sinal isolado. Ao começar, o pipeline acumula os landmarks de
-   * cada frame; ao parar, envia a sequência para a API e fala a palavra reconhecida (§ segmentação
-   * manual — o usuário marca início e fim, como no record.py da PoC).
+   * Chamado pelos botões de fallback "Iniciar"/"Encerrar" da UI (ver ui/CameraScreen.kt,
+   * DialogControlRow) — chama o orquestrador diretamente, sem passar pelo [wakeWordDetector], por
+   * isso continua funcionando mesmo se o motor real de wake word (SpeechRecognizerWakeWordDetector)
+   * estiver sem permissão, pausado ou falhando. Pede RECORD_AUDIO só no momento em que o
+   * dialogState em curso está prestes a precisar do mic (④→⑤, escuta do atendente via STT) — nos
+   * outros estados o evento não depende de permissão nenhuma.
    */
-  fun toggleSignCapture() {
-    if (!_uiState.value.isStreaming) return
-    if (_uiState.value.libras.isCollecting) {
-      landmarkPipeline.stopCollectingAndClassify()
-    } else {
-      landmarkPipeline.startCollecting()
+  fun onWakeWordButton(word: WakeWord, requestRecordAudioPermission: suspend () -> Boolean) {
+    val needsMic =
+        _uiState.value.dialogState == DialogState.AGUARDANDO_RESPOSTA && word == WakeWord.INICIAR
+    if (!needsMic) {
+      dialogOrchestrator.onWakeWord(word)
+      return
     }
+    viewModelScope.launch {
+      if (requestRecordAudioPermission()) {
+        // RECORD_AUDIO acabou de ser concedido (ou já estava) — garante que o foreground
+        // service já está anunciado como tipo "microphone" antes de escutar de verdade (ver
+        // StreamingService.refreshForegroundServiceType).
+        StreamingService.refreshForegroundServiceType(getApplication())
+        dialogOrchestrator.onWakeWord(word)
+      } else {
+        wearablesViewModel.setRecentError(
+            getApplication<Application>().getString(R.string.error_record_audio_permission_denied)
+        )
+      }
+    }
+  }
+
+  /**
+   * Pede RECORD_AUDIO uma vez, ao abrir a tela (ver ui/CameraScreen.kt, LaunchedEffect), pra
+   * destravar o motor real de wake word sem esperar o primeiro toque em "Iniciar"/"Encerrar" — sem
+   * a permissão, [SpeechRecognizerWakeWordDetector.start] fica mudo e só os botões funcionam.
+   */
+  fun enableWakeWordListening(requestRecordAudioPermission: suspend () -> Boolean) {
+    viewModelScope.launch {
+      if (requestRecordAudioPermission()) {
+        dialogOrchestrator.resumeWakeWordDetectorIfActive()
+      } else {
+        Log.w(TAG, "RECORD_AUDIO negado — wake word real desativada, só os botões funcionam")
+      }
+    }
+  }
+
+  /**
+   * Liga câmera+stream sob demanda pro DialogOrchestrator (①→②, ver docs/orquestracao-dialogo-audio-plano.md)
+   * — reaproveita startSession()/startStreaming() já existentes, só espera o resultado via
+   * [uiState] em vez do fluxo orientado a toque na tela. Devolve false sem lançar se a sessão ou o
+   * stream não ficarem prontos a tempo (sem óculos pareados, permissão de câmera pendente etc.).
+   */
+  private suspend fun ensureCameraActiveForLibras(): Boolean {
+    if (_uiState.value.isStreaming) return true
+    if (!_uiState.value.hasSession) {
+      startSession()
+      val sessionReady =
+          withTimeoutOrNull(CAMERA_SESSION_READY_TIMEOUT_MS) {
+            uiState.first { it.isSessionActive }
+          }
+      if (sessionReady == null) {
+        Log.w(TAG, "Sessão com os óculos não ficou pronta a tempo — câmera não ligada")
+        return false
+      }
+    }
+    startStreaming()
+    val streamReady =
+        withTimeoutOrNull(CAMERA_STREAM_READY_TIMEOUT_MS) { uiState.first { it.isStreaming } }
+    if (streamReady == null) {
+      Log.w(TAG, "Stream não ficou pronto a tempo (permissão pendente ou falha) — câmera não ligada")
+      return false
+    }
+    return true
+  }
+
+  /**
+   * Desliga o stream (câmera+display) pro DialogOrchestrator (②→③) — mantém a [DeviceSession]
+   * conectada aos óculos pra a próxima "Libras Livre, iniciar" não pagar o custo de reconexão
+   * inteiro, só o de religar o stream.
+   */
+  private fun deactivateCameraForLibras() {
+    if (_uiState.value.hasStream) stopStreaming()
   }
 
   // MARK: - Dismissers
@@ -650,10 +774,14 @@ class CameraViewModel(
     clearStreamResources()
     session?.stop()
     cleanupSession()
-    audioInputHandler.cleanup()
     videoRecorder.close()
-    landmarkPipeline.stop()
+    landmarkPipeline.dispose()
+    glossContextualizer.close()
     speaker.shutdown()
+    sttEngine.stop()
+    attendantAudioCapture.cleanup()
+    audioSessionManager.releaseListening()
+    wakeWordDetector.stop()
   }
 
   class Factory(

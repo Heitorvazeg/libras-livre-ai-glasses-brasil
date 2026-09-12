@@ -39,10 +39,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.LinkOff
 import androidx.compose.material.icons.filled.Mic
-import androidx.compose.material.icons.filled.MicOff
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PhotoCamera
-import androidx.compose.material.icons.filled.SignLanguage
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.filled.Videocam
 import androidx.compose.material.icons.filled.Visibility
@@ -54,6 +52,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -83,7 +82,9 @@ import com.meta.wearable.dat.core.types.RegistrationState
 import com.meta.wearable.dat.externalsampleapps.cameraaccess.R
 import com.meta.wearable.dat.externalsampleapps.cameraaccess.camera.CameraUiState
 import com.meta.wearable.dat.externalsampleapps.cameraaccess.camera.CameraViewModel
-import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.LibrasState
+import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.audio.WakeWord
+import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.dialogo.DialogState
+import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.reconhecimento.LibrasState
 import com.meta.wearable.dat.externalsampleapps.cameraaccess.wearables.WearablesViewModel
 
 // Scrims behind the top/bottom bars so the white controls stay legible over the live feed. Hoisted
@@ -113,6 +114,12 @@ fun CameraScreen(
   var showSettingsMenu by remember { mutableStateOf(false) }
 
   val isUpdateRequired = wearablesUi.isFirmwareUpdateRequired
+
+  // Pede RECORD_AUDIO uma vez, ao abrir a tela, pra destravar o motor real de wake word
+  // (SpeechRecognizerWakeWordDetector) sem depender do usuário tocar em "Iniciar"/"Encerrar"
+  // primeiro — ver CameraViewModel.enableWakeWordListening. Se negado, os botões de
+  // DialogControlRow continuam funcionando como fallback.
+  LaunchedEffect(Unit) { cameraViewModel.enableWakeWordListening(onRequestRecordAudioPermission) }
 
   Box(modifier = modifier.fillMaxSize().background(Color.Black)) {
     PreviewBackground(
@@ -158,9 +165,13 @@ fun CameraScreen(
           onStartPreview = cameraViewModel::startStreaming,
           onStopPreview = cameraViewModel::stopStreaming,
           onCapturePhoto = cameraViewModel::capturePhoto,
-          onToggleRecording = { cameraViewModel.toggleRecording(onRequestRecordAudioPermission) },
-          onToggleMic = cameraViewModel::toggleMic,
-          onToggleSignCapture = cameraViewModel::toggleSignCapture,
+          onToggleRecording = cameraViewModel::toggleRecording,
+          onWakeIniciar = {
+            cameraViewModel.onWakeWordButton(WakeWord.INICIAR, onRequestRecordAudioPermission)
+          },
+          onWakeEncerrar = {
+            cameraViewModel.onWakeWordButton(WakeWord.ENCERRAR, onRequestRecordAudioPermission)
+          },
           onUpdateFirmware = { activity?.let { wearablesViewModel.openFirmwareUpdate(it) } },
       )
     }
@@ -431,8 +442,8 @@ private fun BottomBar(
     onStopPreview: () -> Unit,
     onCapturePhoto: () -> Unit,
     onToggleRecording: () -> Unit,
-    onToggleMic: () -> Unit,
-    onToggleSignCapture: () -> Unit,
+    onWakeIniciar: () -> Unit,
+    onWakeEncerrar: () -> Unit,
     onUpdateFirmware: () -> Unit,
 ) {
   Column(
@@ -450,15 +461,15 @@ private fun BottomBar(
           onClick = onUpdateFirmware,
       )
     } else {
-      // Libras Livre: botão de captura de sinal (só quando o stream está ao vivo).
-      LibrasCaptureRow(ui = ui, onToggleSignCapture = onToggleSignCapture)
+      // Libras Livre: botões de fallback da wake word — orquestram a sessão de diálogo (só
+      // quando o stream está ao vivo). Ver libras/WakeWordDetector.kt.
+      DialogControlRow(ui = ui, onWakeIniciar = onWakeIniciar, onWakeEncerrar = onWakeEncerrar)
       CaptureRow(
           ui = ui,
           onStartPreview = onStartPreview,
           onStopPreview = onStopPreview,
           onCapturePhoto = onCapturePhoto,
           onToggleRecording = onToggleRecording,
-          onToggleMic = onToggleMic,
       )
       AnchoredPrimaryButton(
           ui = ui,
@@ -477,7 +488,6 @@ private fun CaptureRow(
     onStopPreview: () -> Unit,
     onCapturePhoto: () -> Unit,
     onToggleRecording: () -> Unit,
-    onToggleMic: () -> Unit,
 ) {
   // previewActive mirrors iOS `previewIsActive`: live, recording, or tearing down. PAUSED is
   // excluded, so while paused the pill reverts to the (inert) start affordance instead of a live
@@ -486,7 +496,6 @@ private fun CaptureRow(
   val previewDisabled =
       if (previewActive) ui.isRecording || ui.isBusy else !ui.isSessionActive || ui.isBusy
   val captureEnabled = ui.isStreaming
-  val micEnabled = ui.isStreaming && !ui.isRecording
   val recordEnabled = ui.isStreaming || ui.isRecording
 
   Row(
@@ -524,18 +533,6 @@ private fun CaptureRow(
         elapsedSeconds = ui.recordingElapsedSeconds,
         enabled = recordEnabled,
         onClick = onToggleRecording,
-    )
-
-    // Sound-in-video toggle.
-    CircleIconButton(
-        modifier = Modifier.testTag("mic_toggle"),
-        icon = if (ui.includeAudioInStream) Icons.Filled.Mic else Icons.Filled.MicOff,
-        contentDescription =
-            if (ui.includeAudioInStream) stringResource(R.string.mic_on)
-            else stringResource(R.string.mic_off),
-        enabled = micEnabled,
-        tint = if (ui.includeAudioInStream) Color.White else Color.White.copy(alpha = 0.45f),
-        onClick = onToggleMic,
     )
   }
 }
@@ -686,51 +683,67 @@ private fun CircleIconButton(
 
 // MARK: - Libras Livre
 
+// Estados em que cada wake word tem uma ação a disparar — ver libras/DialogOrchestrator.kt
+// (onWakeWord). Fora desses estados o botão correspondente fica desabilitado — mesma regra que
+// governa quando o motor real (SpeechRecognizerWakeWordDetector) está ouvindo. Note que NÃO
+// depende de ui.isStreaming: "Libras Livre, iniciar" em AGUARDANDO_SINAL é o próprio gatilho que
+// liga a câmera (ver DialogOrchestrator.beginSignSession/ensureCameraActive) — exigir stream ativo
+// pra habilitar o botão que liga o stream deixaria o fallback preso depois do primeiro ciclo, já
+// que a câmera é desligada de novo ao fechar cada sessão de sinais (endSignSession).
+private val DIALOG_STATES_WHERE_INICIAR_ACTS =
+    setOf(DialogState.AGUARDANDO_SINAL, DialogState.AGUARDANDO_RESPOSTA)
+private val DIALOG_STATES_WHERE_ENCERRAR_ACTS =
+    setOf(DialogState.CAPTURANDO_SINAIS, DialogState.ESCUTANDO_ATENDENTE)
+
+/**
+ * Botões de fallback "Iniciar"/"Encerrar" que orquestram a sessão de diálogo — chamam
+ * dialogOrchestrator.onWakeWord diretamente (ver CameraViewModel.onWakeWordButton), então
+ * continuam funcionando mesmo se o motor real de wake word (ver
+ * libras/SpeechRecognizerWakeWordDetector.kt) estiver sem permissão, pausado ou falhando. Os
+ * rótulos mantêm as palavras da wake word de propósito ("Libras Livre, iniciar"/"encerrar") em vez
+ * de traduzir pra "Start"/"End" — são o mesmo evento que o motor real dispara.
+ */
 @Composable
-private fun LibrasCaptureRow(
+private fun DialogControlRow(
     ui: CameraUiState,
-    onToggleSignCapture: () -> Unit,
+    onWakeIniciar: () -> Unit,
+    onWakeEncerrar: () -> Unit,
 ) {
-  val collecting = ui.libras.isCollecting
-  val classifying = ui.libras.isClassifying
-  val enabled = ui.isStreaming && !classifying
-  Row(
-      modifier = Modifier.fillMaxWidth().alpha(if (ui.isStreaming) 1f else 0f),
-      horizontalArrangement = Arrangement.Center,
-      verticalAlignment = Alignment.CenterVertically,
+  val iniciarEnabled = ui.dialogState in DIALOG_STATES_WHERE_INICIAR_ACTS
+  val encerrarEnabled = ui.dialogState in DIALOG_STATES_WHERE_ENCERRAR_ACTS
+
+  // Visível sempre que há uma sessão com os óculos (mesmo sem stream ativo — ligar o stream é o
+  // que "Libras Livre, iniciar" faz agora); mesma condição de CaptureRow acima.
+  Column(
+      modifier = Modifier.fillMaxWidth().alpha(if (ui.hasSession) 1f else 0f),
+      horizontalAlignment = Alignment.CenterHorizontally,
   ) {
-    val background =
-        if (collecting) AppColor.RecordAccent.copy(alpha = 0.5f)
-        else Color.White.copy(alpha = if (enabled) 0.18f else 0.08f)
+    Text(
+        text = stringResource(R.string.dialog_state_label, ui.dialogState.name.lowercase()),
+        color = Color.White.copy(alpha = 0.7f),
+        fontSize = 12.sp,
+        fontFamily = FontFamily.Monospace,
+    )
+    Spacer(modifier = Modifier.height(6.dp))
     Row(
-        modifier =
-            Modifier.fillMaxWidth()
-                .height(50.dp)
-                .clip(RoundedCornerShape(percent = 50))
-                .background(background)
-                .clickable(enabled = enabled, onClick = onToggleSignCapture)
-                .testTag("libras_capture_button")
-                .padding(horizontal = 16.dp),
-        horizontalArrangement = Arrangement.Center,
-        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
     ) {
-      Icon(
-          imageVector = if (collecting) Icons.Filled.Stop else Icons.Filled.SignLanguage,
-          contentDescription = null,
-          tint = if (enabled) Color.White else Color.White.copy(alpha = 0.45f),
-          modifier = Modifier.size(20.dp),
+      CapturePill(
+          modifier = Modifier.weight(1f).testTag("wake_word_iniciar_button"),
+          icon = Icons.Filled.Mic,
+          label = stringResource(R.string.dialog_wake_iniciar),
+          contentDescription = stringResource(R.string.dialog_wake_iniciar),
+          enabled = iniciarEnabled,
+          onClick = onWakeIniciar,
       )
-      Spacer(modifier = Modifier.width(8.dp))
-      Text(
-          text =
-              when {
-                classifying -> stringResource(R.string.libras_classifying)
-                collecting -> stringResource(R.string.libras_capture_stop)
-                else -> stringResource(R.string.libras_capture_start)
-              },
-          color = if (enabled) Color.White else Color.White.copy(alpha = 0.45f),
-          fontSize = 15.sp,
-          fontWeight = FontWeight.SemiBold,
+      CapturePill(
+          modifier = Modifier.weight(1f).testTag("wake_word_encerrar_button"),
+          icon = Icons.Filled.Stop,
+          label = stringResource(R.string.dialog_wake_encerrar),
+          contentDescription = stringResource(R.string.dialog_wake_encerrar),
+          enabled = encerrarEnabled,
+          onClick = onWakeEncerrar,
       )
     }
   }
@@ -792,7 +805,7 @@ private fun LibrasBanner(
         )
         Spacer(modifier = Modifier.height(2.dp))
         Text(
-            text = libras.lastResult.sinal,
+            text = libras.lastResult,
             color = Color.White,
             fontSize = 26.sp,
             fontWeight = FontWeight.Bold,

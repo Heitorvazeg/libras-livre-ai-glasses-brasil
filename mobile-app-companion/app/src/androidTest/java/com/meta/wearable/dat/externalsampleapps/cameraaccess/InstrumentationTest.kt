@@ -253,28 +253,6 @@ class InstrumentationTest {
     )
   }
 
-  @Test
-  fun videoRecordWithAudioFinalizes() {
-    pairActiveDevice(withCameraFeed = true, withCapturedImage = false)
-    startSessionAndStream()
-
-    // Record with sound-in-video left ON (the default) — do NOT toggle the mic off. The emulator's
-    // virtual mic delivers no PCM, so this exercises the audio-stall fallback: the recording must
-    // still finalize a playable, video-only file instead of hanging on a never-ready audio track.
-    composeTestRule.onNodeWithTag("record_button").performClick()
-    waitForRecordingIndicator()
-
-    Thread.sleep(RECORD_DURATION_MS)
-    composeTestRule.onNodeWithTag("record_button").performClick()
-
-    composeTestRule.waitUntilExactlyOneExists(
-        hasTestTag("close_preview_button"),
-        timeoutMillis = STREAM_TIMEOUT,
-    )
-    assertLatestRecordingIsPlayable()
-    composeTestRule.onNodeWithTag("close_preview_button").performClick()
-  }
-
   // Drives VideoCaptureHandler directly with a valid HEVC CSD but only non-keyframe NALs, so no
   // keyframe is ever detected — the device-camera path that previously stuck at 00:00 (timer never
   // ran) and crashed on stop with "Failed to add the track to the muxer" (0x0 dimensions). The
@@ -287,7 +265,7 @@ class InstrumentationTest {
     val dir = File(targetContext.cacheDir, "recordings").apply { mkdirs() }
     val out = File(dir, "synthetic_${System.currentTimeMillis()}.mp4")
 
-    handler.prepare(out.canonicalPath, includeAudio = false)
+    handler.prepare(out.canonicalPath)
     handler.setInitialCodecConfig(csd)
 
     // Minimal HEVC TRAIL_R (non-keyframe) NAL: start code + header (type 1) + dummy payload.
@@ -297,34 +275,6 @@ class InstrumentationTest {
       if (handler.writeVideoFrame(nonKeyframe, i * 33_333L, width, height)) started = true
     }
     assertTrue("Recording should start via the grace fallback even without a keyframe", started)
-    assertTrue("stopRecording should report a video track", handler.stopRecording())
-    assertFileHasVideoTrackAndSamples(out)
-  }
-
-  // Audio enabled (sound-in-video on, the default) but the mic never delivers audio (no
-  // RECORD_AUDIO permission, or a silent emulator mic). The keyframe opens the video track while
-  // the audio track is still pending, then markAudioUnavailable() switches to video-only. This must
-  // not re-add the video track — the duplicate, sampleless track previously left a 0-byte file
-  // ("No video data was recorded"). Recording must finalize a playable, video-only file.
-  @Test
-  fun recordingFinalizesVideoOnlyWhenMicUnavailable() {
-    val (csd, width, height) = hevcCsdAndSizeFromAsset("plant.mp4")
-    val handler = VideoCaptureHandler()
-    val dir = File(targetContext.cacheDir, "recordings").apply { mkdirs() }
-    val out = File(dir, "synthetic_${System.currentTimeMillis()}.mp4")
-
-    handler.prepare(out.canonicalPath, includeAudio = true)
-    handler.setInitialCodecConfig(csd)
-
-    val keyframe = byteArrayOf(0, 0, 0, 1, 0x2A, 0x01) + ByteArray(64) { 0x37 } // CRA (type 21)
-    val nonKeyframe = byteArrayOf(0, 0, 0, 1, 0x02, 0x01) + ByteArray(64) { 0x42 } // TRAIL_R
-
-    // First frame opens the video track while the audio track is still pending.
-    assertTrue(handler.writeVideoFrame(keyframe, 0L, width, height))
-    // Mic turns out unavailable → switch to video-only (previously double-added the video track).
-    handler.markAudioUnavailable()
-    for (i in 1..5) handler.writeVideoFrame(nonKeyframe, i * 33_333L, width, height)
-
     assertTrue("stopRecording should report a video track", handler.stopRecording())
     assertFileHasVideoTrackAndSamples(out)
   }
@@ -565,16 +515,13 @@ class InstrumentationTest {
     )
   }
 
-  // Turns sound-in-video off, then starts recording, and waits for the recording indicator. The
-  // emulator's virtual microphone is unreliable, so video-only recording keeps these tests stable;
-  // the sound-in-video path is exercised on real devices.
+  // Starts recording (always video-only now — see stream/VideoRecorder.kt) and waits for the
+  // recording indicator.
   private fun recordVideoOnly() {
     composeTestRule.waitUntilExactlyOneExists(
-        hasTestTag("mic_toggle").and(isEnabled()),
+        hasTestTag("record_button").and(isEnabled()),
         timeoutMillis = STREAM_TIMEOUT,
     )
-    composeTestRule.onNodeWithTag("mic_toggle").performClick()
-
     composeTestRule.onNodeWithTag("record_button").performClick()
     waitForRecordingIndicator()
   }

@@ -1,5 +1,19 @@
 # API de validação — classificar sinal a partir de landmarks
 
+> **Documento histórico — esta API saiu do fluxo do aplicativo.**
+>
+> O app já não manda landmarks para lugar nenhum: `LandmarkNormalizer.kt` replica
+> a normalização em Kotlin, com testes de paridade numérica contra
+> `../src/extract.py`, e a classificação roda local (`SignClassifier`). O
+> `LandmarkApi.kt` foi removido. Nenhuma chamada de rede acontece no fluxo de
+> tradução.
+>
+> O texto abaixo fica preservado por dois motivos: registra **por que** a
+> normalização precisa existir num lugar só (o argumento que motivou os testes de
+> paridade do app), e é a fonte original do princípio **on-device/offline** que
+> vários documentos de plano citam. O servidor continua funcionando, e ainda
+> serve como banco de provas do DTW — mas não faz parte da arquitetura do app.
+
 > **Andaime de validação, não produção.** Esta API existe para fechar o loop
 > `app → landmarks → sinal → voz` reusando, sem reimplementar nada, o
 > classificador **DTW 1-NN** já medido pela PoC (§5.3). O objetivo do projeto é
@@ -139,7 +153,7 @@ Não precisa deploy. Com a API rodando na sua máquina:
 host — `localhost` lá seria o próprio emulador. Descubra o IP LAN com `ip addr`
 (Linux) / `ifconfig` (macOS).
 
-> ⚠️ **Android bloqueia HTTP puro (cleartext) por padrão.** Como aqui é `http://`
+> **Android bloqueia HTTP puro (cleartext) por padrão.** Como aqui é `http://`
 > (sem TLS), libere o domínio de dev, senão a request falha. No app, adicione um
 > `res/xml/network_security_config.xml` permitindo `10.0.2.2` (e o IP LAN) e
 > referencie-o em `AndroidManifest.xml` (`android:networkSecurityConfig`).
