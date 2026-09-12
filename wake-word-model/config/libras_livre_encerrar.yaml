@@ -1,0 +1,43 @@
+# Config de treino do classificador "Libras Livre, encerrar" — irmão de
+# libras_livre_iniciar.yaml, mesma estrutura e mesmas ressalvas (ver aquele arquivo).
+
+model_name: "libras_livre_encerrar"
+target_phrase:
+  - "Libras Livre, encerrar"
+custom_negative_phrases: []
+n_samples: 450
+n_samples_val: 100
+tts_batch_size: 50
+piper_sample_generator_path: "./_vendor/piper-sample-generator-stub"
+
+output_dir: "./treino"
+
+rir_paths:
+  - "./ruido/mit_rirs"
+background_paths:
+  - "./ruido/esc50_background"
+background_paths_duplication_rate:
+  - 1
+
+false_positive_validation_data_path: "./ruido/validation_set_features.npy"
+
+augmentation_rounds: 2
+augmentation_batch_size: 16
+
+feature_data_files: {}
+batch_n_per_class:
+  adversarial_negative: 32
+  positive: 32
+
+model_type: "dnn"
+layer_size: 32
+
+steps: 3000
+# Bem abaixo do default (1500, pensado pro ACAV100M: milhões de negativos contra
+# poucos positivos). Com feature_data_files vazio (ver acima) e negativos/positivos
+# na mesma ordem de grandeza, 1500 colapsou o classificador — saída praticamente
+# constante (~0,045) pra QUALQUER entrada, positiva ou negativa (medido: ver
+# resultados/relatorio.md). 3 é a correção mínima que ainda dá alguma prioridade a
+# não falsear.
+max_negative_weight: 3
+target_false_positives_per_hour: 0.2

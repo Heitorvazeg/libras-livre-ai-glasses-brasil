@@ -119,7 +119,7 @@ Três decisões que vieram de medição, não de palpite (`docs/vlibras-webview-
 | `SttEngine.kt` / `VoskSttEngine.kt` / `AndroidSpeechRecognizerSttEngine.kt` | transcrição da resposta do atendente — **Vosk é o motor ativo** (`CameraViewModel`), o `SpeechRecognizer` é fallback |
 | `WakeWordDetector.kt` | interface do gatilho da sessão (`INICIAR`/`ENCERRAR`) |
 | `SpeechRecognizerWakeWordDetector.kt` | **motor ativo** — escuta contínua no mic do celular via `SpeechRecognizer` |
-| `OpenWakeWordDetector.kt` | motor real escolhido; **não ativo** — depende dos classificadores pt-BR treinados |
+| `OpenWakeWordDetector.kt` | motor real escolhido; **não ativo** — classificadores treinados (`../../wake-word-model/`) mas com falso-positivo alto demais pra produção (103–280/h medidos, alvo 0,2/h — ver `wake-word-model/resultados/*/relatorio.md`) |
 | `AudioSessionManager.kt` | troca A2DP↔HFP para escutar a resposta do atendente pelo mic dos óculos |
 | `PcmMicCapture.kt` | captura de PCM cru configurável (fonte e dispositivo); usada pelo `VoskSttEngine` |
 
