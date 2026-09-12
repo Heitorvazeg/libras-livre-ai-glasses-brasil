@@ -87,6 +87,58 @@ TENTATIVAS = 3
 ESPERA_ERRO_S = 5.0
 TIMEOUT_S = 60
 
+# CADEIA INCOMPLETA DA UFSC, E POR QUE ISTO NÃO É `verify=False`.
+#
+# `videos.nals.cce.ufsc.br` envia só o certificado FOLHA, sem o intermediário. A
+# folha é válida (Let's Encrypt YR1), mas o cliente não consegue construir o
+# caminho sozinho e a verificação falha com "unable to get local issuer
+# certificate". Foi por isso que 3.082 vídeos ficaram de fora.
+#
+# A saída NÃO é desligar a verificação, e também não é confiar numa âncora nova:
+# `ISRG Root YR` realmente não está no certifi nem no armazém do sistema. O que
+# resolve é que essa raiz é CROSS-ASSINADA por `ISRG Root X1`, que ESTÁ nos dois.
+# Buscando os dois intermediários pelo campo AIA de cada certificado, a cadeia
+# fecha num root já confiável — verificado com `openssl verify -untrusted`, que
+# trata os intermediários como material de construção, não como confiança:
+#
+#     folha.pem: OK
+#
+# Ou seja: continua sendo verificação completa, contra o armazém intocado. A
+# única coisa que mudou é que passamos a entregar ao cliente o pedaço da cadeia
+# que o servidor deveria ter enviado.
+AIA_UFSC = ("http://yr1.i.lencr.org/", "http://yr.i.lencr.org/")
+_CACHE_CADEIA = AQUI.parent / "PoC" / "data" / ".cadeia-ufsc.pem"
+
+
+def bundle_com_cadeia(destino: Path = _CACHE_CADEIA) -> str:
+    """CAfile = armazém padrão + os intermediários que a UFSC omite.
+
+    Idempotente e cacheado: só vai à rede na primeira vez. Se qualquer etapa
+    falhar, levanta — baixar sem verificar não é alternativa aceitável aqui.
+    """
+    if destino.is_file() and destino.stat().st_size > 0:
+        return str(destino)
+    import ssl
+    import certifi
+    from cryptography import x509
+    from cryptography.hazmat.primitives.serialization import Encoding
+
+    partes = [Path(certifi.where()).read_text(encoding="utf-8")]
+    for url in AIA_UFSC:
+        r = requests.get(url, timeout=TIMEOUT_S)
+        r.raise_for_status()
+        cert = x509.load_der_x509_certificate(r.content)
+        partes.append(cert.public_bytes(Encoding.PEM).decode())
+    destino.parent.mkdir(parents=True, exist_ok=True)
+    destino.write_text("".join(partes), encoding="utf-8")
+    # Prova de que o resultado verifica de fato, antes de qualquer download.
+    ctx = ssl.create_default_context(cafile=str(destino))
+    with ctx.wrap_socket(__import__("socket").create_connection(
+            ("videos.nals.cce.ufsc.br", 443), timeout=TIMEOUT_S),
+            server_hostname="videos.nals.cce.ufsc.br"):
+        pass
+    return str(destino)
+
 
 def slug(palavra: str) -> str:
     s = unicodedata.normalize("NFKD", str(palavra)).encode("ascii", "ignore").decode()
@@ -233,6 +285,10 @@ def baixar(clipes: list[Clipe], destino: Path, manifesto: Path) -> tuple[int, in
 
     sessao = requests.Session()
     sessao.headers["User-Agent"] = "libras-livre/pesquisa (CEIA-UFG)"
+    # Vale para todos os hosts: é o armazém padrão MAIS os intermediários da UFSC.
+    # Nenhuma outra fonte perde verificação por isso.
+    if any(c.fonte == "ufsc" for c in pendentes):
+        sessao.verify = bundle_com_cadeia()
     inicio, ok, falhas = time.time(), 0, 0
     for i, c in enumerate(pendentes, 1):
         alvo = destino / c.destino
