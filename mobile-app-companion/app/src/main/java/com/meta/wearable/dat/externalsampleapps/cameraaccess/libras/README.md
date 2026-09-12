@@ -41,7 +41,7 @@ Organizado em 3 subpacotes, por domínio (não por tipo de arquivo):
 | `audio/SpeechRecognizerWakeWordDetector.kt` | motor real — escuta contínua no mic do celular via `SpeechRecognizer` (mesma API do `SttEngine`) |
 | `audio/AudioSessionManager.kt` | troca A2DP↔HFP pra escutar a resposta do atendente pelo mic dos óculos |
 | `audio/SttEngine.kt` | transcrição da resposta do atendente |
-| `audio/AudioInputHandler.kt` | fonte de PCM contínuo do mic do celular — pronta pra um motor que consuma PCM cru (Porcupine, TFLite); o motor real hoje (`SpeechRecognizerWakeWordDetector`) usa a API de mais alto nível do Android direto, não usa esta classe |
+| `audio/PcmMicCapture.kt` | captura de PCM cru configurável (fonte + dispositivo). Hoje usada pelo `VoskSttEngine` (mic dos óculos, HFP/SCO); a mesma classe serve um futuro motor de wake word por PCM cru (mic do celular) — ver header do arquivo |
 
 O estado (capturando / reconhecendo / resultado / erro) fica em
 `CameraUiState.libras` e é desenhado por `LibrasBanner` em `ui/CameraScreen.kt` — agora
@@ -69,15 +69,39 @@ chamada de rede acontece mais nesse fluxo.
 **2 canais (x, y), não 3.** O modelo em treino (`treino/gcn.py`) usa `canais_ent=2` de
 verdade — `LandmarkNormalizer` não carrega nem normaliza z.
 
-## Pré-requisito: modelos do MediaPipe em `app/src/main/assets/`
+## Pré-requisito: assets pesados em `app/src/main/assets/` (baixar sob-demanda)
 
-Baixe os dois `.task` e coloque em `app/src/main/assets/`:
+**Nenhum** modelo/asset pesado entra no git (ver `app/src/main/assets/.gitignore`) —
+todos são baixáveis. Baixe tudo de uma vez, a partir de `mobile-app-companion/`:
 
-- `pose_landmarker_lite.task` — https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/latest/pose_landmarker_lite.task
-- `hand_landmarker.task` — https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/latest/hand_landmarker.task
+```
+./download-assets.sh
+```
 
-Sem eles, o pipeline sobe mas a captura mostra o erro "Modelos do MediaPipe não
-encontrados". (Os `.task` não entram no git — são baixáveis e pesados.)
+O script é idempotente (pula o que já existe) e popula `app/src/main/assets/`:
+
+| Grupo | Arquivos | Origem |
+|---|---|---|
+| Visão (MediaPipe) | `pose_landmarker_lite.task`, `hand_landmarker.task` | Google (`storage.googleapis.com/mediapipe-models`) |
+| TTS (Piper/sherpa-onnx, int8) | `tts/pt_br/pt_BR-edresson-low.onnx` + `.onnx.json`, `tokens.txt`, `espeak-ng-data/` | release `tts-models` do `k2-fsa/sherpa-onnx` |
+| STT (Vosk pt-BR) | `vosk-model-small-pt-0.3/` | `alphacephei.com/vosk/models` |
+| Wake word — fixos | `melspectrogram.onnx`, `embedding_model.onnx` | release `v0.5.1` do `dscripka/openWakeWord` |
+
+Sem os `.task`, o pipeline sobe mas a captura mostra o erro "Modelos do MediaPipe
+não encontrados".
+
+**Wake word — classificadores custom (pendentes, NÃO baixáveis):**
+`wakeword/libras_livre_iniciar.onnx` e `wakeword/libras_livre_encerrar.onnx` precisam
+ser **treinados** — o openWakeWord só publica modelos prontos em inglês (`alexa`,
+`hey jarvis`, `hey mycroft`, `hey rhasspy`, ...), nada em pt-BR. Treine as duas frases
+via `automatic_model_training.ipynb` do openWakeWord (ver
+`docs/orquestracao-dialogo-audio-plano.md` §7 Fase 3) e coloque os `.onnx` em
+`app/src/main/assets/wakeword/`. Enquanto não existirem, o motor real
+(`OpenWakeWordDetector`) não sobe — o fallback é o `SpeechRecognizerWakeWordDetector`
+e os botões Iniciar/Encerrar.
+
+**STT (Vosk):** baixado por conveniência, mas o motor Vosk **ainda não está plugado**
+— hoje o STT ativo é o `AndroidSpeechRecognizer` (ver header de `audio/SttEngine.kt`).
 
 Não precisa mais de servidor nenhum rodando — a classificação é local (hoje, via
 `PlaceholderSignClassifier`, enquanto o `.tflite` de verdade não existe — ver

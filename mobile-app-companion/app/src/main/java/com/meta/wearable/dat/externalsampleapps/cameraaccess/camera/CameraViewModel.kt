@@ -20,6 +20,8 @@ import android.app.Application
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Matrix
+import android.media.AudioDeviceInfo
+import android.media.MediaRecorder
 import android.util.Log
 import android.view.Surface
 import androidx.exifinterface.media.ExifInterface
@@ -42,8 +44,8 @@ import com.meta.wearable.dat.core.session.DeviceSessionState
 import com.meta.wearable.dat.core.types.Permission
 import com.meta.wearable.dat.core.types.PermissionStatus
 import com.meta.wearable.dat.externalsampleapps.cameraaccess.R
-import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.audio.AttendantAudioCapture
 import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.audio.AudioSessionManager
+import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.audio.PcmMicCapture
 import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.audio.PiperSherpaOnnxTtsEngine
 import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.audio.Speaker
 import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.audio.SpeechRecognizerWakeWordDetector
@@ -129,10 +131,15 @@ class CameraViewModel(
   private val audioSessionManager = AudioSessionManager(application)
 
   // Motor real de STT: Vosk pt-BR local (§4 item 11, §8 item 2) — precisa de PCM cru do mic dos
-  // óculos, capturado por AttendantAudioCapture (§6.4). Pra voltar ao motor nativo do Android
-  // (fallback, sem depender do asset vosk-model-small-pt-0.3/), troque por
+  // óculos, capturado por PcmMicCapture configurado pra HFP/SCO (§6.4). Pra voltar ao motor nativo
+  // do Android (fallback, sem depender do asset vosk-model-small-pt-0.3/), troque por
   // AndroidSpeechRecognizerSttEngine(application).
-  private val attendantAudioCapture = AttendantAudioCapture(application)
+  private val attendantAudioCapture =
+      PcmMicCapture(
+          context = application,
+          audioSource = MediaRecorder.AudioSource.VOICE_COMMUNICATION,
+          preferredDeviceType = AudioDeviceInfo.TYPE_BLUETOOTH_SCO,
+      )
   private val sttEngine: SttEngine = VoskSttEngine(application, attendantAudioCapture)
 
   // Motor de wake word: ainda SpeechRecognizerWakeWordDetector (motor de destravamento, §4 item

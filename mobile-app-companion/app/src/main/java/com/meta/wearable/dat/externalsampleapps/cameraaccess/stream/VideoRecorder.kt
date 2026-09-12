@@ -13,7 +13,7 @@
 // sinal roda só sobre landmarks (ver libras/LandmarkPipeline.kt), então esta gravação (usada só
 // pelo botão de captura/preview/share, sem relação com a sessão de diálogo) não precisa de
 // áudio — o mic do celular ficou livre pra virar a fonte da wake word (ver
-// libras/AudioInputHandler.kt). The track opens on the first detectable keyframe (falling back to
+// libras/audio/PcmMicCapture.kt). The track opens on the first detectable keyframe (falling back to
 // any frame so recording always starts). The finished file is exposed as a FileProvider
 // Uri for preview/share and is deleted by the caller once previewed.
 

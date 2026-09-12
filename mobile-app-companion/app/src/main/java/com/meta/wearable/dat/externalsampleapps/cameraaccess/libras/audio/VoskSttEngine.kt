@@ -15,7 +15,7 @@
 //
 // Diferente de AndroidSpeechRecognizerSttEngine (que não expõe captura própria porque
 // android.speech.SpeechRecognizer gerencia o mic internamente), Vosk consome PCM cru — por isso
-// depende de AttendantAudioCapture.kt pra captura do mic dos óculos (HFP/SCO).
+// depende de PcmMicCapture.kt (configurado pro mic dos óculos, HFP/SCO) pra captura.
 //
 // Asset esperado: app/src/main/assets/vosk-model-small-pt-0.3/ (baixar de
 // https://alphacephei.com/vosk/models/vosk-model-small-pt-0.3.zip, ~31MB, extrair o CONTEÚDO do
@@ -46,7 +46,7 @@ import org.vosk.Recognizer
 
 class VoskSttEngine(
     context: Context,
-    private val audioCapture: AttendantAudioCapture,
+    private val audioCapture: PcmMicCapture,
 ) : SttEngine {
 
   private val context: Context = context.applicationContext
@@ -83,7 +83,7 @@ class VoskSttEngine(
 
       val rec =
           try {
-            Recognizer(loadedModel, AttendantAudioCapture.SAMPLE_RATE.toFloat())
+            Recognizer(loadedModel, PcmMicCapture.SAMPLE_RATE.toFloat())
           } catch (e: IOException) {
             dispatchError(e)
             return@launch
@@ -91,7 +91,7 @@ class VoskSttEngine(
       recognizer = rec
 
       audioCapture.pcmDataCallback = { buffer, offset, size ->
-        // Roda na thread de captura (AttendantAudioCapture), não na main — acceptWaveForm é só
+        // Roda na thread de captura (PcmMicCapture), não na main — acceptWaveForm é só
         // uma chamada JNA sobre o ponteiro nativo do recognizer, sem estado compartilhado com a
         // main thread além do próprio `rec`.
         val chunk = if (offset == 0 && size == buffer.size) buffer else buffer.copyOfRange(offset, offset + size)

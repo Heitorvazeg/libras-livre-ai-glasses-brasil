@@ -30,8 +30,8 @@
 //    Android em si.
 //
 // Gerencia o próprio mic (AudioRecorder vendorizado, MediaRecorder.AudioSource.MIC, 16kHz mono) —
-// não aceita PCM externo, então não reaproveita AudioInputHandler.kt (que segue sem consumidor
-// plugado). Mesmo mic do celular usado por SpeechRecognizerWakeWordDetector (§4 item 1).
+// não aceita PCM externo, então não reaproveita PcmMicCapture.kt (a captura de PCM configurável
+// usada pelo STT). Mesmo mic do celular usado por SpeechRecognizerWakeWordDetector (§4 item 1).
 
 package com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.audio
 

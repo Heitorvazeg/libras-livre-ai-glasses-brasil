@@ -36,7 +36,7 @@ Os óculos entregam dados por **dois caminhos diferentes** (guia §2.2):
 **Ponto crítico do áudio:** A2DP e HFP são mutuamente exclusivos. Ligar HFP
 (necessário para o microfone) derruba a saída de áudio para 8 kHz mono durante a
 sessão inteira. O sample base **não** usa o mic dos óculos — sua captura de áudio
-(`AudioInputHandler`) é do **microfone do celular**. Usar o mic dos óculos exige
+(`PcmMicCapture`) é do **microfone do celular**. Usar o mic dos óculos exige
 rotear via HFP (`AudioManager.setCommunicationDevice`), o que não é coberto pelo
 sample. Para Libras (língua visual), o canal que importa é o **vídeo**.
 
@@ -96,7 +96,6 @@ app/src/main/java/com/meta/wearable/dat/externalsampleapps/cameraaccess/
 │   ├── HevcDecoder.kt         decode HEVC → Surface (preview) via MediaCodec
 │   ├── VideoRecorder.kt       orquestra gravação
 │   ├── VideoCaptureHandler.kt frames HEVC → MP4 (MediaMuxer)
-│   ├── AudioInputHandler.kt   captura do MIC DO CELULAR (não dos óculos)
 │   └── StreamingService.kt    foreground service (mantém stream em background)
 ├── ui/                      telas Compose (CameraScreen, HomeScreen…)
 ├── wearables/               WearablesViewModel ← conexão/registro dos óculos
