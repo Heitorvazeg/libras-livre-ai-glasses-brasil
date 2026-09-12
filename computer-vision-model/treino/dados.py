@@ -48,9 +48,44 @@ def parse_nome(stem: str) -> tuple[str, str, str]:
     return m.group("pessoa"), m.group("sinal"), m.group("rep")
 
 
+def recentrar_z(seq: np.ndarray) -> np.ndarray:
+    """Devolve o z de cada mão ao referencial do próprio punho.
+
+    O QUE ESTÁ QUEBRADO. Em `extract.py`, a origem subtraída de TODOS os pontos é
+    o ponto médio dos ombros, um vetor de 3 dimensões — z incluído. Para a pose
+    isso é coerente: o z do MediaPipe para pose é relativo ao quadril, e recentrar
+    no ombro só troca uma referência corporal por outra.
+
+    Para as mãos, não é. O z de mão do MediaPipe já vem relativo ao PUNHO daquela
+    mão. Subtrair dele o z do ombro mistura dois referenciais: o valor resultante
+    não é profundidade em relação a nada em particular. É exatamente a "soma de
+    referenciais diferentes" que o comentário do config.yaml descreve — só que
+    descrita como propriedade inevitável do z, quando é consequência de como
+    normalizamos.
+
+    O CONSERTO. Subtrair de cada bloco de mão o z do nó 0 dele (o punho da própria
+    mão) devolve o bloco ao referencial em que o MediaPipe o produziu, mantendo a
+    escala em unidades de ombro.
+
+    Por que isso importa para o experimento: medir "z ligado vs desligado" com o z
+    quebrado mediria o defeito, não a informação. Se o resultado for negativo nas
+    duas variantes, aí sim o z não serve; se for negativo só na crua, o problema
+    era a normalização.
+
+    Mão ausente é um bloco de zeros — subtrair o zero do nó 0 preserva isso.
+    """
+    if seq.shape[2] < 3:
+        return seq
+    saida = seq.copy()
+    for a, b in BLOCOS_MAO:
+        saida[:, a:b, 2] -= seq[:, a:a + 1, 2]
+    return saida
+
+
 def carregar(lm_dir: Path, fontes: str = "minds", min_frames: int = 3,
-             imputar: bool = True, lacuna_maxima: int = 5) -> list[Clipe]:
-    """Lê os .npy de `lm_dir`, ficando só com x,y.
+             imputar: bool = True, lacuna_maxima: int = 5,
+             com_z: bool = False, z_recentrado: bool = False) -> list[Clipe]:
+    """Lê os .npy de `lm_dir`, ficando com x,y (e z, se `com_z`).
 
     `fontes`: 'minds' (pessoas M*), 'vlibrasil' (V*) ou 'todas'. O padrão é
     MINDS porque é a única fonte com pessoas suficientes por sinal para a
@@ -61,6 +96,10 @@ def carregar(lm_dir: Path, fontes: str = "minds", min_frames: int = 3,
     É feito na LEITURA, não na extração: o .npy guarda a verdade crua, custa horas
     de MediaPipe para refazer, e assim a imputação é reversível e comparável com
     um `--sem-imputacao`.
+
+    `com_z` mantém a terceira coordenada; `z_recentrado` além disso devolve o z das
+    mãos ao referencial do punho (ver recentrar_z). O .npy sempre tem as 3 dims, então
+    trocar de variante NÃO exige reextrair — são horas de MediaPipe economizadas.
     """
     prefixos = {"minds": ("M",), "vlibrasil": ("V",), "todas": ("M", "V")}
     if fontes not in prefixos:
@@ -81,7 +120,14 @@ def carregar(lm_dir: Path, fontes: str = "minds", min_frames: int = 3,
             # quase sempre um vídeo em que o MediaPipe não achou o tronco.
             curtos.append(arquivo.name)
             continue
-        seq = arr[:, :, :2].astype(np.float32)
+        # Padrão x,y — decisão HERDADA da PoC, não medida neste pipeline: os 4-6
+        # pontos de ganho ao desligar o z (PoC/config.yaml) foram medidos no DTW
+        # 1-NN, que soma distâncias cruas e não tem como se defender de um canal
+        # com escala incoerente. ResNet e GCN têm peso aprendido e podem ponderar
+        # o canal. `--com-z` existe para medir isso. Ver PLANO-CORRECOES.md (B5).
+        seq = arr[:, :, :3 if com_z else 2].astype(np.float32)
+        if com_z and z_recentrado:
+            seq = recentrar_z(seq)
         if imputar:
             seq = imputar_maos(seq, lacuna_maxima)
         clipes.append(Clipe(pessoa, sinal, rep, seq))
@@ -104,8 +150,12 @@ def maos_ausentes(seq: np.ndarray) -> list[np.ndarray]:
     (ponto médio dos ombros), então a ausência não é neutra: ela teleporta a mão
     para o meio do peito. Detectamos pelo bloco inteiro exatamente zerado — 42
     coordenadas darem 0.0 por acaso não acontece.
+
+    Olha só x,y de propósito: com `--com-z --z-recentrado`, o z do punho vira 0 por
+    construção em TODO frame, e incluir o z aqui aproximaria uma mão presente do
+    critério de ausência. x,y decide sozinho e não depende da variante de canais.
     """
-    return [np.abs(seq[:, a:b, :]).sum(axis=(1, 2)) == 0 for a, b in BLOCOS_MAO]
+    return [np.abs(seq[:, a:b, :2]).sum(axis=(1, 2)) == 0 for a, b in BLOCOS_MAO]
 
 
 def imputar_maos(seq: np.ndarray, lacuna_maxima: int = 5) -> np.ndarray:

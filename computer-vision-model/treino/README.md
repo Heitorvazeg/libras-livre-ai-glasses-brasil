@@ -34,6 +34,30 @@ grande — ver [`../../docs/investigacao-expansao-dataset.md`](../../docs/invest
 | Alves et al. 2024 | MINDS-Libras | LOSO | Skeleton-DML + ResNet-18 | **0,93** |
 | *nossa PoC* | MINDS + V-LIBRASIL | LOSO | DTW 1-NN | *0,70* |
 
+### O que NÓS medimos, e em qual arquitetura
+
+Os 0,93-0,94 acima são da **ResNet-18**, na literatura e reproduzidos aqui. Não são
+do ST-GCN, e a diferença é grande demais para a atribuição errada passar batida:
+
+| Arquitetura | LOSO medido aqui | Parâmetros | Onde |
+|---|---|---|---|
+| **Skeleton-DML + ResNet-18** | **0,934 / 0,935 / 0,918** | 11,2M | `resultados-resnet/relatorio.md` |
+| ST-GCN (orçamento de treino justo) | 0,739 | 0,46M | [`decisao-arquitetura-modelo.md`](../../docs/decisao-arquitetura-modelo.md) |
+| ST-GCN (config de fine-tuning) | 0,446 | 0,46M | subtreinado — não é veredito de arquitetura |
+
+**A ResNet-18 é o modelo do MVP.** O ST-GCN está ~19 pontos atrás e existe para ser
+medido, não como candidato de entrega.
+
+Sobre o argumento "o GCN é o único que cabe no celular": ele economiza 24× em
+parâmetros, mas isso só decide se o tamanho for o gargalo. Por aritmética, 11,2M
+parâmetros dão ~11 MB em `.tflite` int8 (~22 MB em float16) — ordem de grandeza
+comum em app. **O que NÃO está medido, para nenhuma das duas: se a conversão para
+TFLite funciona e qual a latência no aparelho.** Nada aqui autoriza afirmar que a
+ResNet roda em tempo real nos óculos; autoriza dizer que descartá-la por tamanho,
+sem medir, é decidir cedo demais.
+
+⚠️ **Variância entre execuções: ~1,7 ponto.** Diferença menor que ~2 pontos é ruído.
+
 Com ~1.000 clipes, treinar uma recorrente do zero disputa com uma CNN que já vem
 pré-treinada em milhões de imagens. **Skeleton-DML** é o truque que permite usar
 essa CNN: empilha a matriz `pontos × frames` (x e y) como se fosse uma imagem RGB
@@ -52,7 +76,7 @@ justamente a que cabe no celular depois.
 | `representacao.py` | landmarks → imagem Skeleton-DML; augmentação (rotação, zoom, translação, espelhamento) |
 | `dados.py` | carga dos `.npy`, partições leave-one-signer-out |
 | `modelo.py` | ResNet-18 ImageNet com a cabeça trocada; salvar/carregar checkpoint |
-| `gcn.py` | alternativa ST-GCN para clipes isolados, sobre o grafo de 57 pontos |
+| `gcn.py` | alternativa ST-GCN (0,739 — **não é o modelo do MVP**), sobre o grafo de 57 pontos |
 | `treinar.py` | laço LOSO, relatório e checkpoint final |
 | `selftest.py` | valida o pipeline inteiro com dados sintéticos, em segundos |
 
@@ -79,10 +103,101 @@ confundidos), `matriz_confusao.npy` e `modelo_final.pt`.
 ImageNet. Checkpoints novos guardam também a configuração do GCN (largura,
 canais, nós e dropout); os checkpoints antigos do treino continuam aceitos.
 
-O ST-GCN atual consome coordenadas x/y reamostradas para 64 frames: não calcula
-ossos/ângulos e não é causal. É um experimento para sinais isolados, não a rede
-de streaming com atenção descrita na arquitetura de produto. Exportação para
-TFLite e robustez a mudanças de ponto de vista ainda precisam ser validadas.
+O ST-GCN consome coordenadas x/y reamostradas para 64 frames; com `--ossos`,
+acrescenta os vetores de osso aos canais (2 → 4). Não é causal: é um experimento
+para sinais isolados, não a rede de streaming com atenção descrita na arquitetura
+de produto. Robustez a mudanças de ponto de vista continua não medida — nenhuma
+base pública nossa tem vídeo fora do frontal de estúdio.
+
+## Exportação para TFLite (`exportar.py`)
+
+O caminho PyTorch → `.tflite` existe e está validado para a **ResNet-18** (o modelo
+do MVP, pelos números da tabela acima). O ST-GCN ainda não tem export.
+
+```bash
+python exportar.py --checkpoint resultados-resnet/modelo_final.pt \
+                   --saida ../models/sinal_classifier.tflite
+python exportar.py --smoke                      # valida o toolchain, sem checkpoint
+python exportar.py --checkpoint ... --quantizacao float16
+```
+
+Requer `pip install "torch<2.10" ai-edge-torch` — com torch mais novo o pip resolve
+`ai-edge-torch` para a 0.2.0, que depende de `torch_xla` e quebra com
+`undefined symbol`.
+
+**O contrato de entrada é `landmarks`, não imagem.** O `.tflite` recebe
+`(1, T, P, 2)`, com **P derivado do checkpoint** (mapa ordenado de pose + 42 pontos
+de mãos; atualmente 15 + 21 + 21 = **57**) — e devolve
+os logits: a montagem do Skeleton-DML vai **dentro do grafo**. O modo `--modo imagem`
+existe, mas joga para o app a tarefa de reproduzir transposição, empilhamento de 3
+frames por canal, clip em ±2,0, mapeamento para [0,1] e resize; errar qualquer um
+desses passos não gera erro, só piora a classificação em silêncio.
+
+`--pontos` é opcional e serve como conferência: se discordar do mapa do checkpoint,
+o export aborta antes de converter. Checkpoints antigos com mapa de sete pontos de
+pose continuam com 49, sem reinterpretá-los pela configuração atual. Sem mapa,
+o export exige `--pontos` explícito e marca o layout como **não verificado**, pois
+contagem não demonstra ordem. Apenas `--smoke` usa o YAML atual como referência.
+
+O JSON registra a pose **em uma lista ordenada**, os índices das mãos, as coordenadas,
+o limite de escala e o contrato temporal. O shape/dtype efetivos do interpretador
+TFLite precisam concordar com esse contrato e a saída precisa ter um logit por rótulo.
+Arquivos só devem ser entregues se o comando terminar com sucesso.
+
+**Exportação 3D ainda não suportada:** checkpoints com `com_z`, `z_recentrado`
+ou limite de z são recusados nos dois modos. A cabeça também rejeita diretamente
+entrada com três coordenadas; não corta z silenciosamente. Os três canais da imagem
+ResNet não permitem deduzir quantas coordenadas havia no treino. Quando a PoC 3D
+for incorporada, será necessário portar sua escala de z e pré-processamento e
+validar novamente a paridade. `normalizacao.usar_z` do DTW não decide isso.
+
+Medido com `--smoke` (pesos aleatórios, 20 classes), comparando cada saída contra o
+PyTorch no mesmo tensor de entrada:
+
+| `--quantizacao` | Tamanho | Tensores de peso | Maior diferença de logit | Top-1 discordante |
+|---|---|---|---|---|
+| `nenhuma` (padrão) | 45,0 MB | float32 | 1,8e-07 | 0/8 |
+| `float16` | 22,5 MB | 22 em float16 | 4,1e-04 | 0/8 |
+| `dinamica` | 11,3 MB | 22 em int8 | 5,5e-03 | 0/8 |
+
+`dinamica` é int8 **só nos pesos** (ativações em float), por isso não precisa de
+dataset de calibração; a quantização inteira completa precisa, e por isso ficou de
+fora. Os tamanhos batem com a aritmética de 11,2M parâmetros.
+
+⚠️ **Tamanho é fato; efeito na acurácia não foi medido.** `--smoke` usa pesos
+aleatórios. Antes de mandar um modelo quantizado para o aparelho, rode a LOSO com
+ele. Latência no aparelho também segue não medida.
+
+⚠️ **T é fixo no grafo exportado** (padrão 96 frames). No treino T varia por clipe
+(70 a 232) e o resize para 224 absorve; na exportação o app precisa entregar
+exatamente T frames. Se isso mexe na acurácia, é medição com dado real.
+
+O contrato contém `temporal.dinamico=false`, `reamostragem_embutida=false` e
+`frames_fixos`. O app deve conferir o shape do tensor contra o JSON e recusar
+amostras com T/P/D incompatíveis. **Não há padding, recorte de sinais nem
+reamostragem de clipes embutidos no grafo.** Escolher uma janela de 96 frames não
+equivale a validar segmentação de sinais; a política de adaptação temporal precisa
+ser medida antes do deploy. Normalização e imputação também ficam fora do grafo.
+Veja o [contrato de integração no companion](../../mobile-app-companion/README.md#contrato-do-classificador-tflite).
+
+As regressões em `test_export_contrato.py` exercitam `main()` com checkpoints reais
+e backend **simulado**: defaults, legado 49, conflitos, ordem, z, T e serialização
+do JSON. A exportação da cabeça via `torch.export` e sua paridade NumPy/PyTorch
+são verificadas separadamente. Isso não substitui nova conversão TFLite nem avaliação
+com dados reais. Os números da tabela abaixo pertencem ao smoke dos commits anteriores,
+não a uma nova medição com 57 pontos.
+
+Duas armadilhas encontradas e barradas no código, ambas do tipo "converte, roda e
+classifica errado sem avisar":
+
+1. **`--backend onnx` com `--modo landmarks`** é recusado. O `onnx2tf` converte tudo
+   para NHWC e elimina o `permute` da cabeça achando que é troca de layout — a ResNet
+   passa a convoluir nos eixos trocados (medido: logits divergem 3,6e-01, top-1
+   muda). A ResNet sozinha converte bem por ONNX (4,8e-07); o defeito é a cola.
+2. **Flag de quantização ignorada.** Pedir float16 pela chave aninhada
+   `target_spec.supported_types` não surte efeito e devolve int8 dinâmico. Por isso
+   `_conferir_precisao` abre o arquivo gerado e confere os tipos dos tensores contra
+   o que foi pedido.
 
 ### Custo nesta máquina (CPU, 12 núcleos, sem GPU)
 

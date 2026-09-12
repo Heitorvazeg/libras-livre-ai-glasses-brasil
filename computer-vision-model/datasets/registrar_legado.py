@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import zlib
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -16,24 +17,45 @@ from ingest_pretreino import _RE_MEMBRO, slug
 from remote_zip import Membro
 
 
+def resolver_origem(video: Path, candidatos: set[str], membros: dict[str, Membro]) -> str:
+    """Colisão de slug legado: só aceita um membro compatível em tamanho/CRC.
+
+    Avó/Avô perderam o acento na ingestão antiga. A ordem do índice ou o nome
+    local não provam qual vídeo ficou em disco. Empate continua sendo erro.
+    O registrador confere novamente o membro escolhido e calcula SHA-256.
+    """
+    if len(candidatos) == 1:
+        return next(iter(candidatos))
+    crc, tamanho = 0, 0
+    with video.open("rb") as f:
+        for bloco in iter(lambda: f.read(1 << 20), b""):
+            crc = zlib.crc32(bloco, crc)
+            tamanho += len(bloco)
+    compativeis = [n for n in sorted(candidatos)
+                  if membros[n].tamanho == tamanho and membros[n].crc == crc]
+    if not compativeis:
+        raise ValueError(f"nenhuma origem compatível em tamanho/CRC para {video.name}")
+    if len(compativeis) != 1:
+        raise ValueError(f"origem ambígua para {video.name}, mesmo após tamanho/CRC")
+    return compativeis[0]
+
+
 def registrar(videos: Path, indice: Path, fonte: str, landmarks: Path | None = None,
               config: dict | None = None) -> int:
     dados = json.loads(indice.read_text(encoding="utf-8"))
     z = SimpleNamespace(membros={m["nome"]: Membro(**m) for m in dados["membros"]})
     bundle = pv.descrever_bundle(z, fonte)
-    mapa: dict[str, str] = {}
+    mapa: dict[str, set[str]] = {}
     for r in pv.ler_reservas():
         if r["fonte"] == fonte and r["origem"] in z.membros:
-            mapa[r["arquivo"]] = r["origem"]
+            mapa.setdefault(r["arquivo"], set()).add(r["origem"])
     if fonte == "vlibrasil":
         for origem in z.membros:
             m = _RE_MEMBRO.match(origem)
             if not m:
                 continue
             nome = f"pessoaV{int(m['pessoa']):02d}_sinal-{slug(m['palavra'])}_rep01.mp4"
-            if nome in mapa and mapa[nome] != origem:
-                raise ValueError(f"origem ambígua para {nome}")
-            mapa[nome] = origem
+            mapa.setdefault(nome, set()).add(origem)
     if landmarks is not None:
         arquivos = [videos / (p.stem + ".mp4") for p in sorted(landmarks.glob("*.npy"))]
         if config is None:
@@ -45,8 +67,10 @@ def registrar(videos: Path, indice: Path, fonte: str, landmarks: Path | None = N
     for v in arquivos:
         if not v.is_file() or v.name not in mapa:
             raise ValueError(f"vídeo/origem indisponível para {v.name}; não é seguro inferir")
+    # Resolver somente os arquivos solicitados e antes de gravar sidecars.
+    origens = {v.name: resolver_origem(v, mapa[v.name], z.membros) for v in arquivos}
     for v in arquivos:
-        origem = mapa[v.name]
+        origem = origens[v.name]
         m = z.membros[origem]
         pv.registrar_video(v, fonte=fonte, origem=origem, bundle=bundle,
                            tamanho=m.tamanho, crc32=m.crc)

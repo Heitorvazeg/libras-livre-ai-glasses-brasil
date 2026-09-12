@@ -53,6 +53,7 @@ import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.audio.SttEng
 import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.audio.VoskSttEngine
 import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.audio.WakeWord
 import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.audio.WakeWordDetector
+import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.contextualizacao.criarGlossContextualizer
 import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.dialogo.DialogOrchestrator
 import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.dialogo.DialogState
 import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.reconhecimento.LandmarkPipeline
@@ -130,6 +131,10 @@ class CameraViewModel(
       )
   private val audioSessionManager = AudioSessionManager(application)
 
+  // Cadeia modelo -> guarda -> template -> passthrough (§3.3). Nasce uma vez e vive até
+  // onCleared(): o Interpreter do .tflite não deve ser recriado por sessão (§7.1).
+  private val glossContextualizer = criarGlossContextualizer(application)
+
   // Motor real de STT: Vosk pt-BR local (§4 item 11, §8 item 2) — precisa de PCM cru do mic dos
   // óculos, capturado por PcmMicCapture configurado pra HFP/SCO (§6.4). Pra voltar ao motor nativo
   // do Android (fallback, sem depender do asset vosk-model-small-pt-0.3/), troque por
@@ -203,6 +208,7 @@ class CameraViewModel(
             speaker = speaker,
             audioSessionManager = audioSessionManager,
             sttEngine = sttEngine,
+            contextualizer = glossContextualizer,
             ensureCameraActive = ::ensureCameraActiveForLibras,
             deactivateCamera = ::deactivateCameraForLibras,
             // TODO: handoff pro pipeline texto->glosa->avatar de docs/vlibras-webview-plano.md,
@@ -770,6 +776,7 @@ class CameraViewModel(
     cleanupSession()
     videoRecorder.close()
     landmarkPipeline.dispose()
+    glossContextualizer.close()
     speaker.shutdown()
     sttEngine.stop()
     attendantAudioCapture.cleanup()

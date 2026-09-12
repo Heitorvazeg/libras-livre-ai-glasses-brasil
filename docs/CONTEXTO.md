@@ -4,9 +4,9 @@ Este documento existe para quem chega no meio: outra pessoa do time, um assisten
 IA em outra sessão, ou nós mesmos daqui a duas semanas. Ele responde **o que já está
 resolvido, o que está em aberto e por quê** — sem exigir a leitura do histórico.
 
-**Última atualização:** 2026-09-09
+**Última atualização:** 2026-09-11
 **Prazo do hackathon:** 16/09/2026
-**Branch de trabalho:** `claude/libras-detection-model-53kd30`
+**Branch de trabalho:** `poc/tres-coordenadas` (a partir de `claude/libras-detection-model-53kd30`)
 
 ---
 
@@ -28,17 +28,28 @@ pré-treino. Diagnósticos com pessoas conhecidas não sustentam essa alegação
 
 ## 2. Onde o modelo está (números medidos)
 
-| Modelo | Acurácia signer-independent | Observação |
+| Modelo | LOSO signer-independent | Parâmetros |
 |---|---|---|
-| Chance aleatória | 5,0% | 20 classes |
-| Baseline DTW 1-NN (PoC) | 70,0% | 10 sinais — tarefa **mais fácil** |
-| **Skeleton-DML + ResNet-18** | **93,4% / 93,5% / 91,8%** | três execuções; **variância ~1,7 ponto** |
-| ST-GCN (config de fine-tuning) | 44,6% | subtreinado — ver §5 |
-| ST-GCN (config de treino do zero) | 73,9% | +29 pontos com orçamento adequado |
-| Literatura (mesma base, mesmo protocolo) | 93-94% | Alves 2024; dos Santos 2025 |
+| Chance aleatória | 5,0% | — |
+| Baseline DTW 1-NN (PoC) | 70,0% | — |
+| ST-GCN x,y (orçamento justo) | 72,1% | 0,46M |
+| ST-GCN + ossos | 91,0% / 92,5% | 0,46M |
+| **ST-GCN + ossos + z** | **94,6% / 94,9%** | **0,47M** |
+| Skeleton-DML + ResNet-18 | 93,0 / 93,4 / 93,5 / 91,8% | 11,25M |
+| **ResNet-18 + imputação** | **95,1%** | 11,25M |
+| Literatura (mesma base, mesmo protocolo) | 93-94% | — |
 
-**A ResNet-18 é o modelo do MVP.** Está no teto do que a literatura reporta e foi
-reproduzida em CPU e GPU.
+**O ST-GCN é o modelo de entrega** (decidido em 11/09). Ele **empatou** com a melhor
+ResNet — 94,6/94,9 contra 95,1 — usando **24× menos parâmetros**. Exportado dá ~1,9 MB em
+float32 e 0,47 MB em int8, contra 45 MB e 11,2 MB da ResNet.
+
+⚠️ Uma versão anterior deste documento afirmava que o GCN **superou** a ResNet. Estava
+errado: comparava contra a ResNet de 93,0% ignorando a de 95,1% do próprio repositório.
+Ver [`decisao-arquitetura-modelo.md`](decisao-arquitetura-modelo.md).
+
+**O que fez o GCN sair de 72% para 94%:** ossos (+18,9 pp, 8 de 8 folds) e z recentrado
+(+2,1 pp, confirmado em segunda semente). Ambos são features derivadas dos landmarks que
+já tínhamos — nenhum dado novo foi coletado.
 
 ⚠️ **Leia a variância antes de comparar qualquer coisa:** a mesma configuração oscila
 ~1,7 ponto entre execuções. Diferenças menores que ~2 pontos são ruído, não resultado.
@@ -53,9 +64,17 @@ controlado. É teto otimista. O número de balcão só sai com coleta própria.
 | Conjunto | Clipes | Classes | Pessoas | Papel |
 |---|---|---|---|---|
 | **MINDS-Libras** | 800 | 20 sinais | 8 | **treino + avaliação LOSO** |
-| V-LIBRASIL (curada) | 30 | 10 sinais | 3 | clipes reservados, sem sobreposição exata; articuladores/domínio conhecidos após pré-treino |
-| V-LIBRASIL (corpus pós-exclusão) | 4.053 | 1.353 palavras | 3 | pré-treino; os 30 reservados já foram excluídos desta contagem |
+| V-LIBRASIL (auditada) | 4.025 | 1.349 palavras | 3 (sempre os mesmos) | pré-treino |
+| **MALTA-LIBRAS** | 6.353 | 5.958 rótulos | 8 (uma delas é 90%) | pré-treino |
 | WLASL100 (ASL) | 1.013 | 100 | 64 | pré-treino |
+| V-LIBRASIL (curada) | 30 | 10 sinais | 3 | clipes reservados |
+
+⚠️ **MALTA e WLASL ainda NÃO estão habilitados no código.** `dados.carregar` aceita só
+`M` e `V`; a auditoria do pré-treino rejeita qualquer coisa que não seja `V`. Habilitá-los
+preservando o bloqueio do MINDS é trabalho pendente.
+
+Detalhes de licença, o que falhou no download do MALTA e por que ele serve só para
+pré-treino: [`decisao-datasets-e-licencas.md`](decisao-datasets-e-licencas.md).
 
 **Os papéis não se misturam, e isso é deliberado.** Um clipe que entra no pré-treino não
 pode aparecer na avaliação — senão o número de generalização deixa de significar o que
@@ -119,20 +138,22 @@ respeitar os termos. Não há autorização de uso comercial ou redistribuição
 ### Convenção de nome — é a fonte de verdade
 
 `pessoaXX_sinal-YYY_repNN.npy`. Todo o pipeline extrai pessoa/sinal/repetição daí.
-Prefixos: `M` = MINDS, `V` = V-LIBRASIL, `W` = WLASL. Isso garante que pessoas de bases
+Prefixos: `M` = MINDS, `V` = V-LIBRASIL, `W` = WLASL, `T` = MALTA. Isso garante que pessoas de bases
 diferentes nunca colidam.
 
 ---
 
 ## 5. Decisões em aberto e o que as decide
 
-### ResNet-18 vs ST-GCN
-A ResNet vence hoje por ~18 pontos. O GCN tem duas vantagens que não dependem de
-acurácia: **24× menos parâmetros** (importa para o `.tflite` no celular) e ângulos/ossos
-como representação nativa (endereçaria a robustez a ângulo de câmera). Ver
-[`decisao-arquitetura-modelo.md`](decisao-arquitetura-modelo.md).
+### ResNet-18 vs ST-GCN — decidido: ST-GCN
 
-**Para o MVP: ResNet, decidido.** Para o produto: em aberto.
+Empataram em acurácia (94,6/94,9 contra 95,1), e o GCN tem **24× menos parâmetros**. Para
+um modelo que precisa virar `.tflite` no celular, empatar com 1/24 do tamanho decide.
+
+**O que a decisão custa:** o `exportar.py` cobre **só a ResNet** e recusa checkpoint GCN
+explicitamente. Escrever o export do GCN — incluindo calcular os ossos **dentro do grafo**,
+já que hoje isso acontece em Python no `DatasetSinais` — é a maior dependência entre a
+decisão e ter algo rodando no aparelho. É trabalho novo, não uma flag.
 
 ### O pré-treino ajuda?
 Em teste. O primeiro pré-treino (classificação na V-LIBRASIL) **falhou**: validação em
@@ -200,7 +221,9 @@ possível aqui, porque produz um número bonito e falso.
 
 | Documento | Assunto |
 |---|---|
-| [`investigacao-expansao-dataset.md`](investigacao-expansao-dataset.md) | de onde vêm os dados, licenças, estado da arte |
+| [`decisao-datasets-e-licencas.md`](decisao-datasets-e-licencas.md) | quais datasets, sob qual enquadramento legal, e o que o MALTA rendeu |
+| [`protocolo-treinamento.md`](protocolo-treinamento.md) | o procedimento de treino ponta a ponta |
+| [`investigacao-expansao-dataset.md`](investigacao-expansao-dataset.md) | investigação original das bases, estado da arte |
 | [`decisao-arquitetura-modelo.md`](decisao-arquitetura-modelo.md) | ResNet vs GCN, com números e ressalvas |
 | [`vocabulario-mvp-proposta.md`](vocabulario-mvp-proposta.md) | vocabulário em 3 camadas, para o consultor de Libras |
 | [`libras-livre-arquitetura.md`](libras-livre-arquitetura.md) | arquitetura de produto (visão longa) |

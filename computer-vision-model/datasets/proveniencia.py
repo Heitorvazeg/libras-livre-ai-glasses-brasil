@@ -17,8 +17,19 @@ from pathlib import Path
 AQUI = Path(__file__).resolve().parent
 MANIFESTO = AQUI / "manifest.csv"
 BUNDLES = {"vlibrasil": "davimedio01/v-librasil", "minds": "j0aopsantos/minds-libras",
-           "wlasl": "risangbaskoro/wlasl-processed"}
-PREFIXOS = {"vlibrasil": "V", "minds": "M", "wlasl": "W"}
+           "wlasl": "risangbaskoro/wlasl-processed",
+           # MALTA não é um bundle do Kaggle: é um agregador de dicionários
+           # baixados por HTTP direto. O "índice" equivalente são os CSVs de
+           # links do toolkit, e o sha256 deles pina exatamente qual lista de
+           # URLs produziu estes arquivos.
+           "malta": "Malta-Lab/ISLR_LIBRAS"}
+PREFIXOS = {"vlibrasil": "V", "minds": "M", "wlasl": "W", "malta": "T"}
+# Fontes sem checksum publicado na origem. Para bundle do Kaggle conferimos o
+# CRC do membro do ZIP e sabemos que o byte que temos é o byte que o publicador
+# tinha. Em HTTP direto isso não existe: o sha256 que gravamos prova apenas que
+# o arquivo não mudou DEPOIS de chegar aqui. É garantia mais fraca, e o sidecar
+# diz isso em vez de deixar parecer equivalente.
+SEM_CHECKSUM_DE_ORIGEM = {"malta"}
 
 
 def hash_json(objeto) -> str:
@@ -105,6 +116,46 @@ def registrar_video(caminho: Path, *, fonte: str, origem: str, bundle: dict,
         anterior = json.loads(sidecar(caminho).read_text(encoding="utf-8"))
         if any(anterior.get(k) != registro[k] for k in ("fonte", "origem", "video", "bundle")):
             raise ValueError(f"proveniência anterior incompatível: {caminho.name}; não sobrescrita")
+    escrever(sidecar(caminho), registro)
+    return registro
+
+
+def registrar_video_http(caminho: Path, *, fonte: str, origem: str,
+                        indice_sha256: str) -> dict:
+    """Proveniência de vídeo baixado por HTTP direto, sem checksum de origem.
+
+    Diferença que importa em relação a `registrar_video`: lá o tamanho e o CRC
+    vêm do índice do ZIP publicado, então a conferência prova que recebemos o
+    mesmo byte que o publicador tinha. Aqui não há com o que comparar — o
+    servidor devolve o arquivo e pronto. O sha256 gravado prova que nada mudou
+    depois da chegada, e é só isso que ele prova.
+
+    Registrar essa diferença é o ponto. Um sidecar que não a declarasse deixaria
+    alguém, meses depois, tratar dado de dicionário universitário baixado por
+    HTTP como se tivesse a mesma cadeia de custódia de um bundle versionado.
+    """
+    if fonte not in PREFIXOS:
+        raise ValueError(f"fonte desconhecida: {fonte}")
+    pessoa, sinal, rep = identidade_nome(caminho)
+    if not pessoa.startswith(PREFIXOS[fonte]):
+        raise ValueError(f"prefixo de pessoa não é de {fonte}: {caminho.name}")
+    if not re.fullmatch(r"[0-9a-f]{64}", indice_sha256):
+        raise ValueError("indice_sha256 precisa ser sha256 hexadecimal")
+    if not origem:
+        raise ValueError("origem (URL) obrigatória")
+    h, total = hashlib.sha256(), 0
+    with caminho.open("rb") as f:
+        for bloco in iter(lambda: f.read(1 << 20), b""):
+            h.update(bloco)
+            total += len(bloco)
+    if total == 0:
+        raise ValueError(f"arquivo vazio: {caminho.name}")
+    registro = {"schema": 1, "tipo": "video", "fonte": fonte,
+                "bundle": {"id": BUNDLES[fonte], "indice_sha256": indice_sha256},
+                "origem": origem, "pessoa": pessoa, "sinal": sinal, "rep": rep,
+                "video": {"arquivo": caminho.name, "sha256": h.hexdigest(),
+                          "bytes": total,
+                          "verificacao": "sha256 local; origem sem checksum publicado"}}
     escrever(sidecar(caminho), registro)
     return registro
 

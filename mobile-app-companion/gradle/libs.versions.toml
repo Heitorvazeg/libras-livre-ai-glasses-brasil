@@ -11,10 +11,12 @@ testRules = "1.7.0"
 uiJunit4 = "1.11.2"
 exifInterface = "1.4.2"
 mediapipeTasksVision = "0.10.14"
+litert = "2.2.0"
 junit = "4.13.2"
 onnxRuntimeAndroid = "1.22.0"
 voskAndroid = "0.3.75"
 jna = "5.18.1"
+orgJson = "20250517"
 
 [libraries]
 androidx-activity-compose = { group = "androidx.activity", name = "activity-compose", version.ref = "activityCompose" }
@@ -32,6 +34,8 @@ androidx-test-rules = { group = "androidx.test", name = "rules", version.ref = "
 androidx-ui-test-junit4 = { group = "androidx.compose.ui", name = "ui-test-junit4", version.ref = "uiJunit4" }
 androidx-exifinterface = { group = "androidx.exifinterface", name = "exifinterface", version.ref = "exifInterface" }
 mediapipe-tasks-vision = { group = "com.google.mediapipe", name = "tasks-vision", version.ref = "mediapipeTasksVision" }
+# Runtime do .tflite (LiteRT é o nome atual do TensorFlow Lite; mesmo formato de arquivo).
+litert = { group = "com.google.ai.edge.litert", name = "litert", version.ref = "litert" }
 junit = { group = "junit", name = "junit", version.ref = "junit" }
 # Motor real de wake word (docs/orquestracao-dialogo-audio-plano.md §4 item 9) — usado por
 # OpenWakeWordDetector.kt via com.rementia.openwakeword.lib (vendorizado, não é dependência Maven).
@@ -40,6 +44,9 @@ onnxruntime-android = { group = "com.microsoft.onnxruntime", name = "onnxruntime
 # com classifier "@aar" (ex. "com.alphacephei:vosk-android:0.3.75@aar"), que o schema padrão do
 # catálogo de versões não representa — declarados como string literal direto em
 # app/build.gradle.kts, interpolando voskAndroid/jna deste bloco [versions].
+# org.json real para os testes unitários: o do Android é um stub que lança
+# "not mocked" fora do device (LexicoGlosas lê o léxico com ele).
+org-json = { group = "org.json", name = "json", version.ref = "orgJson" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }

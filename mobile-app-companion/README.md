@@ -1,3 +1,28 @@
+# Contrato do classificador TFLite
+
+O exportador do treinamento produz um modelo e um JSON de contrato ao lado dele.
+Esta seção define os requisitos de integração; **não afirma que o app já os implemente**.
+
+- Conferir o SHA-256 do modelo e a ordem dos rótulos do JSON antes de usá-lo.
+- Conferir `contrato_entrada.shape` e `dtype` contra os tensores do interpretador.
+  No modo landmarks, o shape é **[1, T, P, 2]**, não imagem RGB. O checkpoint atual
+  usa **57 pontos** (15 pose + 21 mão esquerda + 21 mão direita); ler P e a lista
+  `layout_landmarks.pose_ordenada` do JSON, sem fixar 49 no aplicativo.
+- T é **fixo por artefato**, por padrão **96 frames**. O aplicativo precisa entregar
+  exatamente `frames_fixos`; não redimensionar o tensor para aceitar outro T.
+  O grafo não faz padding nem reamostragem temporal. Escolher/adaptar uma janela
+  de captura é trabalho pendente de integração e validação com sinais reais,
+  não uma propriedade já validada pelo teste numérico do conversor.
+- Entregar x/y na ordem declarada, normalizados em unidades de ombro. A cabeça
+  embute apenas Skeleton-DML + resize; normalização e imputação não estão nela.
+  Reproduzir o pré-processamento do checkpoint antes da chamada ao modelo.
+- Recusar checkpoints/layouts não verificados para entrega. A exportação 3D está
+  bloqueada até portar e testar o pré-processamento específico de z.
+- A saída contém logits, com um índice por rótulo. A paridade em entradas aleatórias
+  verifica conversão, não acurácia, segmentação temporal nem latência no aparelho.
+
+Detalhes: [exportação no treinamento](../computer-vision-model/treino/README.md#exportação-para-tflite-exportarpy).
+
 # Mobile App Companion — Libras Livre
 
 > Trilha **Mobile** do Libras Livre. App Android que conecta aos óculos Ray-Ban
