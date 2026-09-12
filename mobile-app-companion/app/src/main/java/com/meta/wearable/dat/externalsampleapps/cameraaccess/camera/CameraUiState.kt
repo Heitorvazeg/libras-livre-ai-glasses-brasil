@@ -17,7 +17,9 @@ import android.graphics.Bitmap
 import android.net.Uri
 import com.meta.wearable.dat.camera.types.StreamState
 import com.meta.wearable.dat.core.session.DeviceSessionState
-import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.LibrasState
+import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.avatar.AvatarState
+import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.dialogo.DialogState
+import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.reconhecimento.LibrasState
 
 /** A capture awaiting preview/share — a still photo or a recorded video file. */
 sealed interface CapturePreview {
@@ -28,6 +30,13 @@ sealed interface CapturePreview {
 
 data class CameraUiState(
     // Bound directly to the SDK state machines.
+    // Libras Livre — avatar VLibras (docs/vlibras-webview-plano.md). Carrega escondido durante
+    // a conversa e só aparece no estado ⑦; a legenda é o caminho degradado quando ele não sobe.
+    val avatarState: AvatarState = AvatarState.OCIOSO,
+    // Controlado por botão (abrirAvatar/fecharAvatar), não pela máquina de estados: o avatar só
+    // tem o que mostrar no ⑦, e fora dele seguraria ~300 MB à toa.
+    val avatarVisivel: Boolean = false,
+    val avatarLegenda: String? = null,
     val sessionState: DeviceSessionState = DeviceSessionState.IDLE,
     val streamState: StreamState = StreamState.STOPPED,
     // Flips once when the first preview frame arrives; drives the loading→preview swap. A one-shot
@@ -38,8 +47,6 @@ data class CameraUiState(
     val isCapturingPhoto: Boolean = false,
     val isRecording: Boolean = false,
     val recordingElapsedSeconds: Long = 0L,
-    // Sound-in-video toggle (phone mic), locked once recording starts.
-    val includeAudioInStream: Boolean = true,
     // The capture currently shown in the shared preview/share sheet (photo or video).
     val activePreview: CapturePreview? = null,
     // Drives the confirm prompt shown before the camera-permission redirect to the Meta AI app.
@@ -50,6 +57,8 @@ data class CameraUiState(
     val isStartingStream: Boolean = false,
     // Libras Livre: estado do reconhecimento de sinal (captura, classificação, resultado, erro).
     val libras: LibrasState = LibrasState(),
+    // Libras Livre: estado da sessão de diálogo bidirecional (ver libras/DialogOrchestrator.kt).
+    val dialogState: DialogState = DialogState.AGUARDANDO_SINAL,
 ) {
   /** A session exists and is connected (or connecting); a stream can be started. */
   val hasSession: Boolean

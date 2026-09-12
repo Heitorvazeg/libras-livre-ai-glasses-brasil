@@ -1,0 +1,68 @@
+# Snapshot semântico do PoC/config.yaml em bbf7b2b1b7ee483a9b2a9056dc28b6332d3d9505.
+# Migração declarada de legado, NÃO um log retrospectivo do extrator.
+# Os arrays de pré-treino têm mtime em 2026-09-08, 15:29–21:03 (-03:00),
+# após o commit (11:22). Todos têm 57 pontos, 3 coordenadas e dtype float32.
+# O extrator desse commit grava dims=3 mesmo com normalizacao.usar_z=false.
+vocabulario:
+  - acontecer
+  - amarelo
+  - banheiro
+  - barulho
+  - espelho
+  - filho
+  - maca
+  - medo
+  - ruim
+  - sapo
+  - aluno
+  - america
+  - aproveitar
+  - bala
+  - banco
+  - cinco
+  - conhecer
+  - esquina
+  - vacina
+  - vontade
+participantes_esperados: 11
+repeticoes_por_sinal: 5
+paths:
+  raw_videos: data/raw
+  landmarks: data/landmarks
+  results: results
+pose_indices:
+  nariz: 0
+  olho_esq: 2
+  olho_dir: 5
+  orelha_esq: 7
+  orelha_dir: 8
+  boca_esq: 9
+  boca_dir: 10
+  ombro_esq: 11
+  ombro_dir: 12
+  cotovelo_esq: 13
+  cotovelo_dir: 14
+  pulso_esq: 15
+  pulso_dir: 16
+  quadril_esq: 23
+  quadril_dir: 24
+normalizacao:
+  ref_a: 11
+  ref_b: 12
+  usar_z: false
+  min_visibilidade: 0.5
+holistic:
+  model_complexity: 1
+  min_detection_confidence: 0.5
+  min_tracking_confidence: 0.5
+gravacao:
+  fps_fallback: 30
+  duracao_minima_s: 0.5
+dtw:
+  backend: auto
+  janela: 20
+  normalizar_por_comprimento: false
+  paralelo: true
+avaliacao:
+  limiar_verde: 0.80
+  limiar_atencao: 0.60

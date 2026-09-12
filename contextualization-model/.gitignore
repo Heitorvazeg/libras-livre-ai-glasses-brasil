@@ -1,0 +1,17 @@
+# Artefatos regeneráveis; o relatório é entregável (mesma regra de
+# ../computer-vision-model/treino/.gitignore)
+resultados-*/*
+!resultados-*/relatorio.md
+# Log cru do treino: o relatório é o entregável, o log é ruído regenerável.
+resultados-*.log
+
+# artefatos/: só o que é CONTRATO com o app fica versionado (ver
+# docs/contextualizacao-implementacao.md §10)
+artefatos/*
+!artefatos/.gitkeep
+!artefatos/glosa_ids.json
+!artefatos/destokenizar.json
+!artefatos/*.proveniencia.json
+
+__pycache__/
+*.pyc
