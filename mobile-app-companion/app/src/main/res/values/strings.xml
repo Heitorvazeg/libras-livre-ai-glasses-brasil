@@ -57,6 +57,15 @@
     <string name="dialog_wake_iniciar" description="Fallback button that triggers the INICIAR wake word — deliberately not translated, it stands in for the literal Portuguese wake phrase \'Libras Livre, iniciar\'" translatable="false">Iniciar</string>
     <string name="dialog_wake_encerrar" description="Fallback button that triggers the ENCERRAR wake word — deliberately not translated, it stands in for the literal Portuguese wake phrase \'Libras Livre, encerrar\'" translatable="false">Encerrar</string>
 
+    <!-- Libras Livre: avatar VLibras, estado 7 (docs/vlibras-webview-plano.md) -->
+    <string name="avatar_open" description="Button that opens the Libras avatar screen">Avatar</string>
+    <string name="avatar_close" description="Content description of the button that closes the Libras avatar screen">Fechar o avatar</string>
+    <string name="avatar_loading" description="Shown while the VLibras player loads — it takes 6 to 9 seconds">Preparando o avatar…</string>
+    <string name="avatar_failed" description="Shown when the VLibras player could not start; the caption below is the fallback">O avatar não pôde ser carregado. A resposta está escrita abaixo.</string>
+    <string name="avatar_retry" description="Button that retries loading the VLibras player">Tentar de novo</string>
+    <string name="avatar_caption_label" description="Label above the written form of what the hearing person said">O atendente disse</string>
+    <string name="avatar_waiting" description="Shown on the avatar screen while no answer has been signed yet">Aguardando a resposta do atendente…</string>
+
     <!-- Update required -->
     <string name="update_firmware_button_title" description="Open firmware update">Update firmware</string>
     <string name="update_required_title" description="Update required warning title">Update required</string>

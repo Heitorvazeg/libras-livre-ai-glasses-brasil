@@ -192,10 +192,16 @@ class AvatarPlayer(
     wv.evaluateJavascript("window.avatarPlay($literal.g);", null)
   }
 
-  /** Entre turnos do mesmo atendimento: congela sem descarregar. Voltar custa ~nada. */
+  /**
+   * App em background: congela sem descarregar. Voltar custa ~nada.
+   *
+   * NÃO chama `avatarStop`: parar a animação aqui mataria o `gloss:end` no meio do caminho, e
+   * quem espera o fim do ⑦ ficaria pendurado até o teto de tempo — trocar de app por um segundo
+   * não deve custar um turno. Interromper de verdade continua sendo `window.avatarStop`, para
+   * quem quiser chamar.
+   */
   fun pause() {
     webView?.let {
-      it.evaluateJavascript("window.avatarStop && window.avatarStop();", null)
       it.onPause()
       it.pauseTimers()
     }
