@@ -158,6 +158,7 @@ app/src/main/java/com/meta/wearable/dat/externalsampleapps/cameraaccess/
     ├── dialogo/               máquina de estados da sessão bidirecional
     ├── contextualizacao/      glosas -> frase em português (surdo -> ouvinte)
     ├── avatar/                frase -> glosa VLibras -> avatar 3D (ouvinte -> surdo)
+    │                          a tela em si é ui/AvatarScreen.kt
     └── audio/                 wake word, TTS, STT, troca A2DP/HFP
 
 app/src/main/java/com/rementia/openwakeword/
@@ -220,8 +221,6 @@ Todos rodam localmente. Nenhuma chamada de rede acontece no fluxo de tradução.
 | Tradução PT → glosa | endpoint público do VLibras, com cache em disco | legenda em texto |
 | Avatar em Libras | player VLibras (Unity/WebGL) em WebView | legenda em texto |
 
-O avatar é a exceção da tabela acima em um ponto: **ele ainda não aparece na tela.**
-
 Duas lacunas importantes, ambas com trabalho conhecido pela frente:
 
 - **A classificação de sinal ainda é um placeholder.** O `.tflite` real depende do
@@ -231,11 +230,6 @@ Duas lacunas importantes, ambas com trabalho conhecido pela frente:
 - **O wake word real (`OpenWakeWordDetector`) não está ativo.** O motor está
   implementado e a dependência de ONNX Runtime já está no build; falta treinar os
   dois classificadores pt-BR (§2.3).
-- **O avatar ainda não tem tela.** O pipeline do ⑦ está inteiro (transcrição → glosa →
-  `AvatarPlayer.play`), e o `CameraUiState` já expõe `avatarState`/`avatarVisivel`/
-  `avatarLegenda` — mas nenhum `@Composable` anexa a WebView nem lê esses campos, então
-  a pessoa surda não vê nada ainda. É o próximo passo, e é pequeno: um `AndroidView` no
-  `CameraScreen`.
 - **O avatar é a única peça que depende de rede.** Traduzir a frase exige o endpoint
   público do VLibras, e o Unity busca cada sinal do dicionário na hora. O cache de
   glosa cobre repetições; o espelho local do dicionário ainda não existe
@@ -296,11 +290,10 @@ Detalhes do lado do treino:
 - [ ] Calibração dos parâmetros do `SignBoundaryDetector` com dado real
 - [ ] Treino dos classificadores pt-BR de wake word e ativação do `OpenWakeWordDetector`
 - [ ] Medição da taxa de fallback da contextualização em campo
-- [ ] **Tela do avatar** — `AndroidView` com `AvatarPlayer.view` e a legenda por baixo
-- [ ] Entrega da legenda para a pessoa surda (estado ⑦, avatar VLibras)
+- [x] Entrega da resposta para a pessoa surda (estado ⑦: avatar VLibras + legenda)
 - [ ] Espelho local do dicionário de sinais, para o avatar funcionar sem internet
 - [ ] Medir o avatar (WebGL e memória) no celular que acompanha os óculos
-- [ ] **Reduzir o tamanho do APK** — o debug com todos os assets está em **473 MB**.
+- [ ] **Reduzir o tamanho do APK** — o debug com todos os assets está em **474 MB**.
       Avaliar Play Asset Delivery e a variante de release com minify
 - [ ] Ajuste dinâmico de fps por bateria e limite térmico
 - [ ] Validação do pipeline completo com pessoas surdas no cenário de balcão
@@ -316,7 +309,7 @@ Detalhes do lado do treino:
 | Log "modelo_contextualizacao.tflite indisponível" | esperado; o app usa o template (§2.3) |
 | Avatar não aparece e o log diz "sem WebGL nesta WebView" | WebView sem aceleração; o app cai na legenda |
 | Avatar não aparece e o log diz "vlibras.js ausente" | `./download-assets.sh` não rodou, ou rodou sem npm |
-| Avatar não aparece e o log diz "Unity não ficou pronto" | esperado por ora: sem tela, a WebView não recebe superfície (§ lacunas) |
+| Avatar abre e fica no spinner até "Unity não ficou pronto" | WebView sem aceleração ou aparelho sem fôlego para o Unity; use **Tentar de novo** |
 | Os botões Iniciar/Encerrar funcionam, mas a voz não dispara a sessão | permissão de microfone negada, ou wake word real ausente |
 | Áudio some ao entrar no estado ⑤ | esperado: o HFP derruba o A2DP enquanto o mic dos óculos está ativo |
 

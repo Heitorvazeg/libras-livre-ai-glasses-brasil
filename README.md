@@ -166,7 +166,7 @@ Duas ressalvas que precisam acompanhar qualquer citação desses números:
 | Classificação de sinal no app | **placeholder** — o export TFLite do ST-GCN não existe |
 | Contextualização glosa → português | pronta e integrada (`.tflite` sob guarda, template como piso) |
 | Fala (TTS Piper/sherpa-onnx) e transcrição (Vosk pt-BR) | prontas |
-| Avatar em Libras para a pessoa surda (VLibras em WebView) | pipeline pronto, **sem tela ainda** — nenhuma View exibe o avatar; depende de rede |
+| Avatar em Libras para a pessoa surda (VLibras em WebView) | implementado, da transcrição à tela; **depende de rede** e não medido em aparelho ARM |
 | Wake word "Libras Livre, iniciar/encerrar" | **fallback ativo** — os classificadores pt-BR precisam ser treinados |
 | Coleta própria no cenário de balcão | pendente |
 | Validação de vocabulário com consultor de Libras | pendente |

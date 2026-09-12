@@ -599,24 +599,33 @@ wrapper oficial. A tela de debug com campo de texto continua pendente.
       digitar → traduzir → animar, sem depender de óculos nem de wake word.
 - [ ] **Aceite:** digitar uma frase na tela de debug anima o avatar correspondente.
 
-### Fase 5 — Ligar no estado ⑦ — ligada por dentro, sem tela
+### Fase 5 — Ligar no estado ⑦ — CONCLUÍDA
 
 `DialogOrchestrator` recebeu `playAvatar` / `prepareAvatar` / `releaseAvatar` /
-`onAvatarUnavailable`, e `CameraViewModel` os implementa; `abrirAvatar()` /
-`fecharAvatar()` expõem o ciclo, e o `CameraUiState` já carrega `avatarState`,
-`avatarVisivel` e `avatarLegenda`.
+`onAvatarUnavailable`, e `CameraViewModel` os implementa. A tela é
+`ui/AvatarScreen.kt`: um `Dialog` em tela cheia, no mesmo padrão do
+`CapturePreviewScreen`, com o `AndroidView` que anexa a WebView do `AvatarPlayer`, a
+legenda fixa embaixo e o botão de fechar — o voltar do sistema fecha junto, sem
+`NavHost` (o app não tem um).
 
-**Falta o último elo, e ele não é só decisão de produto:** nenhum `@Composable`
-anexa o `AvatarPlayer.view` nem lê esses três campos. Enquanto isso não existir, a
-WebView nasce fora da hierarquia de views — e uma WebView sem janela não recebe
-superfície, então o Unity provavelmente nem chega a emitir `onReady`. Ou seja: hoje
-o ⑦ percorre o caminho inteiro (traduz, manda animar) e a pessoa surda não vê nada;
-o `CARGA_TIMEOUT_MS` do `AvatarPlayer` é o que impede isso de virar espera. Fechar a
-fase é um `AndroidView { avatarPlayer.view }` no `CameraScreen`, com a legenda por
-baixo — e aí sim medir em aparelho real.
+Duas decisões de apresentação, tomadas com o dono do produto:
 
-- [ ] Preencher `onAvatarText` em `CameraViewModel`, substituindo o `Log.d` atual.
-- [ ] Criar a WebView sob demanda e destruí-la ao sair de ⑦ (§4.2).
+- **abre sozinha no ⑦ e fica aberta** até o operador fechar ou o atendimento encerrar
+  por inatividade. Fechar e reabrir a cada turno desanexaria a WebView, com risco de
+  perder o contexto WebGL e repagar os 6-9 s;
+- **a legenda fica sempre visível**, não só quando o avatar falha: cobre quem lê
+  português com mais conforto que Libras e serve de registro do turno.
+
+O que a tela mostra por estado: spinner em `CARREGANDO`, avatar em
+`PRONTO`/`ANIMANDO`, e em `FALHOU` a legenda mais um botão **Tentar de novo** (que só
+funciona por causa da correção no `prepare()` — antes, retentar era um no-op). Um
+botão **Avatar** na linha dos controles abre a tela à mão, para conferir o player sem
+percorrer o fluxo inteiro.
+
+Falta medir em aparelho ARM real: a sonda rodou em emulador com GPU de desktop.
+
+- [x] Preencher `onAvatarText` em `CameraViewModel`, substituindo o `Log.d` atual.
+- [x] Criar a WebView sob demanda e destruí-la ao sair de ⑦ (§4.2).
 - [ ] Decidir a apresentação: o avatar é para a **pessoa surda**, e o celular está
       com o atendente — a mesma tensão que `docs/libras-livre-arquitetura.md` §5 já
       levanta. Virar a tela para a pessoa surda é o caminho mais simples e deve ser
@@ -629,8 +638,8 @@ baixo — e aí sim medir em aparelho real.
 ### Fase 6 — Refinamento
 
 - [ ] **Reavaliar Play Asset Delivery: o APK de debug com todos os assets mediu
-      473 MB** (2026-09-12). Medir também a variante de release com minify antes de
-      concluir.
+      474 MB** (2026-09-12, já com a tela). Medir também a variante de release com
+      minify antes de concluir.
 - [ ] Testar em aparelho com WebView antiga.
 - [ ] Decisão de licença LGPLv3 registrada (§0.6).
 - [ ] Medir quantas vezes, em uso real, a glosa vem do cache e não da rede.
