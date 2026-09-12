@@ -1,8 +1,34 @@
-# Modelos do MediaPipe (Libras Livre) — baixáveis e pesados, não versionados.
-# Baixe-os para cá antes de rodar (ver ../java/.../libras/README.md):
-#   pose_landmarker_lite.task
-#   hand_landmarker.task
+# Modelos/assets pesados do Libras Livre — todos baixáveis, NÃO versionados.
+# Baixe tudo de uma vez com:  ../../../../download-assets.sh
+# (a partir de mobile-app-companion/:  ./download-assets.sh)
+# Detalhes e origens: ../java/com/.../libras/README.md
+
+# Visão — MediaPipe (raiz de assets/)
+#   pose_landmarker_lite.task, hand_landmarker.task
 *.task
+
+# TTS — Piper/sherpa-onnx (vits-piper-pt_BR-edresson-low-int8)
+tts/pt_br/pt_BR-edresson-low.onnx
+tts/pt_br/pt_BR-edresson-low.onnx.json
+tts/pt_br/tokens.txt
+tts/pt_br/MODEL_CARD
+tts/pt_br/espeak-ng-data/
+
+# STT — Vosk pt-BR (obs.: motor Vosk ainda não plugado, ver SttEngine.kt)
+vosk-model-small-pt-0.3/
+
+# Wake word — openWakeWord (raiz de assets/ + wakeword/)
+#   melspectrogram.onnx e embedding_model.onnx: fixos, baixáveis prontos
+#   wakeword/libras_livre_{iniciar,encerrar}.onnx: classificadores custom, exigem treino
+melspectrogram.onnx
+embedding_model.onnx
+wakeword/
+
+# Modelo de contextualização glosa->PT (Libras Livre) — 46 MB, regenerável.
+# Gere com: cd ../contextualization-model && python exportacao/para_tflite.py --experimento v2
+# e copie para cá junto de glosa_ids.json / destokenizar.json (que SÃO versionados: são
+# contrato com o modelo — ver docs/contextualizacao-implementacao.md §10, §11).
+*.tflite
 
 # Mantém a pasta no git mesmo vazia.
 !.gitignore
