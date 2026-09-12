@@ -18,3 +18,13 @@ __pycache__/
 .venv311/
 venv/
 .ipynb_checkpoints/
+
+# Manifesto do download do MALTA: lista de URLs do acervo de origem. Não é fonte
+# — regenera rodando a ingestão — e publicar a proveniência completa de um acervo
+# cuja autorização de uso segue pendente é decisão diferente de tê-lo em disco
+# para pesquisa. Ver docs/decisao-datasets-e-licencas.md.
+computer-vision-model/PoC/data/manifest-malta.csv
+# Cache dos intermediários TLS da UFSC: buscado por AIA na primeira execução.
+computer-vision-model/PoC/data/.cadeia-ufsc.pem
+# Configuração de editor com caminho absoluto da máquina de quem escreveu.
+.vscode/
