@@ -3,11 +3,13 @@
 > **Status (2026-09-12): implementado em grande parte.** `libras/dialogo/` tem os
 > sete estados e o orquestrador; `libras/audio/` tem TTS (Piper/sherpa-onnx), STT
 > (Vosk pt-BR) e a troca A2DP/HFP, todos ativos. Duas pendências: o wake word real
-> (`OpenWakeWordDetector`) já tem classificadores pt-BR treinados — pipeline em
+> (`OpenWakeWordDetector`) já tem classificadores pt-BR treinados, agora com o pool
+> de negativos ACAV100M — pipeline em
 > [`../wake-word-model/`](../wake-word-model/README.md), decisões em
-> [`wake-word-treino-plano.md`](./wake-word-treino-plano.md) — **mas com
-> falso-positivo alto demais pra produção** (103–280/h medidos, alvo 0,2/h — pool de
-> negativos ACAV100M pulado nesta rodada), então `SpeechRecognizerWakeWordDetector`
+> [`wake-word-treino-plano.md`](./wake-word-treino-plano.md). Falso-positivo caiu
+> de 103–280/h pra **1,48/h (`iniciar`) e 0,00/h (`encerrar`)** — `encerrar` já bate
+> o alvo do config (0,2/h), `iniciar` está a 7,4× dele — mas o recall caiu junto
+> (0,63/0,40), ainda sem validação em hardware real. `SpeechRecognizerWakeWordDetector`
 > continua sendo o motor ativo; e o estado ⑦ (handoff para o avatar) depende da
 > branch do player VLibras.
 
@@ -530,16 +532,18 @@ validar cada camada isolada antes de integrar.
   (2026-09-12, `wake-word-model/treinar.sh`) — o próprio pipeline de treino do
   `openWakeWord` já exporta `.onnx` nativamente (`.tflite` é que exigiria
   conversão extra, e nem é o formato que a integração Android abaixo espera — ver
-  correção em §4 item 9). **Pulado o pool de negativos pré-computado do ACAV100M
-  (~17 GB) nesta rodada** — inviável sem GPU/banda nesta sessão, maior fator de
-  risco do resultado (ver `docs/wake-word-treino-plano.md` §3).
-  **Resultado medido** (`wake-word-model/resultados/*/relatorio.md`): os dois
-  classificadores aprenderam a tarefa (recall 0,84/0,56, precisão 0,91/0,77 no
-  split sintético — não é um treino quebrado), mas com **103 a 280
-  falsos-positivos/hora** em áudio genérico (alvo do config: 0,2/h) — exatamente o
-  risco que pular o ACAV100M previa. **Não é aceitável pra produção nesta forma**;
-  ver `wake-word-treino-plano.md` §4 pro detalhe e pros próximos passos pra reduzir
-  o falso-positivo antes do item de validação abaixo.
+  correção em §4 item 9). Duas rodadas na mesma sessão: a primeira pulou o pool de
+  negativos pré-computado do ACAV100M (~17 GB) por achar inviável sem medir; a
+  segunda mediu a banda real (~14 MB/s, ~20 min pro arquivo inteiro) e baixou
+  (ver `docs/wake-word-treino-plano.md` §3).
+  **Resultado medido** (`wake-word-model/resultados/*/relatorio.md`):
+  falso-positivo caiu de 103-280/h (Rodada 1) pra **1,48/h (`iniciar`) e 0,00/h
+  (`encerrar`)** (Rodada 2, alvo: 0,2/h) — `encerrar` já bate o alvo, `iniciar`
+  está a 7,4× dele. Trade-off: recall caiu de 0,84/0,56 pra 0,63/0,40. Nenhuma das
+  duas rodadas colapsou o treino (compare com `max_negative_weight: 1500` sem
+  ACAV100M — esse sim dava TP=0 em tudo). **Ainda sem validação em hardware
+  real**; ver `wake-word-treino-plano.md` §4 pro detalhe e pros próximos passos
+  (ajuste de limiar antes de mexer em `max_negative_weight` de novo).
 - [x] Vendorizar `Re-MENTIA/openwakeword-android-kt` em
   `app/src/main/java/com/rementia/openwakeword/lib/` (não publicada em
   Maven/JitPack — ver §4 item 9) e implementar `OpenWakeWordDetector.kt`
@@ -547,8 +551,8 @@ validar cada camada isolada antes de integrar.
   de `wake-word-model/treino/libras_livre_{iniciar,encerrar}.onnx` (mais
   `melspectrogram.onnx`/`embedding_model.onnx`, fixos, via
   `download-assets.sh`) pra `app/src/main/assets/` — mas ver o item acima antes
-  de fazer isso pra testar de verdade: o falso-positivo medido não passa no
-  critério de sucesso abaixo. Não wireado como motor padrão no
+  de fazer isso pra testar de verdade: falta a validação em hardware do critério
+  de sucesso abaixo. Não wireado como motor padrão no
   `CameraViewModel` ainda — depende da validação abaixo.
 - [ ] Validar taxa de falso-positivo/falso-negativo num ambiente ruidoso
   parecido com um balcão de atendimento (não silêncio de laboratório),

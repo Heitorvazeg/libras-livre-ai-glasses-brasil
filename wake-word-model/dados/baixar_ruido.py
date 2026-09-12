@@ -1,24 +1,30 @@
 #!/usr/bin/env python3
-"""Baixa RIR (respostas ao impulso, pra simular reverberação de ambiente) e ruído de
-fundo, mais o conjunto de validação de falso-positivo do próprio openWakeWord.
+"""Baixa RIR (respostas ao impulso, pra simular reverberação de ambiente), ruído de
+fundo, o conjunto de validação de falso-positivo e — por padrão — o pool de
+negativos pré-computado do openWakeWord (ACAV100M, ~17,3 GB).
 
-Ver docs/wake-word-treino-plano.md §3. Deliberadamente pequeno (dezenas de MB, não os
-data sets de GBs que o notebook oficial do openWakeWord baixa) — troca robustez
-marginal contra ruído por rodar numa sessão sem GPU e sem horas de banda. Ver
-README.md "O que fica de fora desta rodada" pro custo dessa escolha.
+Ver docs/wake-word-treino-plano.md §3. A primeira rodada desta pasta pulou o
+ACAV100M por achar 17 GB inviável; medindo a banda real da sessão (~14 MB/s) dá uns
+20 min, então virou o padrão — é a fonte de robustez contra falso-positivo que
+faltava (medido: 103-280 falsos-positivos/hora sem ele, ver
+resultados/*/relatorio.md do treino sem esta fonte). Use `--pular-acav100m` se
+preferir não baixar (banda/disco limitados) — o treino ainda funciona, só sem essa
+fonte de negativos.
 
 Licenças (nada aqui entra no git — só working tree, mesma regra dos outros assets
 pesados do projeto, ver mobile-app-companion/download-assets.sh):
   - MIT environmental impulse responses: domínio público (MIT McDermott Lab).
   - ESC-50: CC BY-NC 3.0 — uso de treino/augmentation aqui, NUNCA embarcado no app.
-  - Validação de falso-positivo do openWakeWord: Apache 2.0 (mesmo projeto).
+  - Features do openWakeWord (validação e ACAV100M): Apache 2.0 (mesmo projeto).
 """
 
 from __future__ import annotations
 
+import argparse
 import concurrent.futures as cf
 import json
 import random
+import subprocess
 import urllib.request
 from pathlib import Path
 
@@ -50,6 +56,12 @@ VAL_FEATURES_URL = (
     "https://huggingface.co/datasets/davidscripka/openwakeword_features/"
     "resolve/main/validation_set_features.npy"
 )
+ACAV100M_FEATURES = RUIDO / "openwakeword_features_ACAV100M_2000_hrs_16bit.npy"
+ACAV100M_URL = (
+    "https://huggingface.co/datasets/davidscripka/openwakeword_features/"
+    "resolve/main/openwakeword_features_ACAV100M_2000_hrs_16bit.npy"
+)
+ACAV100M_BYTES = 17_280_000_128  # tamanho exato do arquivo, verificado por HEAD
 
 SAMPLE_RATE = 16000
 N_BACKGROUND = 120
@@ -146,7 +158,41 @@ def baixar_validacao() -> None:
     print(f"Validação: {VAL_FEATURES} — recortado de {len(completo)} pra {len(recorte)} frames (~{horas:.1f}h)")
 
 
+def baixar_acav100m() -> None:
+    """Pool de negativos pré-computado do openWakeWord: ~2.000h do ACAV100M, já
+    convertidas pra features (não é áudio cru). É a fonte de robustez contra
+    falso-positivo que a Fase 3 do plano original previa — ver
+    docs/wake-word-treino-plano.md §3 pro porquê da primeira rodada ter pulado isto.
+
+    `-C -` retoma um download interrompido em vez de recomeçar do zero — relevante
+    pra 17,3 GB numa conexão que pode cair no meio.
+    """
+    if ACAV100M_FEATURES.exists() and ACAV100M_FEATURES.stat().st_size >= ACAV100M_BYTES:
+        print("ACAV100M: já existe, pulando")
+        return
+    print("ACAV100M (openWakeWord, ~17,3 GB, ~2.000h de áudio genérico) — maior download desta pasta...")
+    ACAV100M_FEATURES.parent.mkdir(parents=True, exist_ok=True)
+    subprocess.run(
+        [
+            "curl", "-fSL", "--retry", "5", "--retry-delay", "5", "-C", "-",
+            "-o", str(ACAV100M_FEATURES), ACAV100M_URL,
+        ],
+        check=True,
+    )
+    print(f"ACAV100M: {ACAV100M_FEATURES}")
+
+
 if __name__ == "__main__":
+    ap = argparse.ArgumentParser(description=__doc__)
+    ap.add_argument(
+        "--pular-acav100m",
+        action="store_true",
+        help="não baixa o pool de negativos ACAV100M (~17,3 GB) — treino ainda funciona, com mais falso-positivo",
+    )
+    args = ap.parse_args()
+
     baixar_rir()
     baixar_background()
     baixar_validacao()
+    if not args.pular_acav100m:
+        baixar_acav100m()

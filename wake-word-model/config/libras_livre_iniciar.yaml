@@ -33,11 +33,16 @@ false_positive_validation_data_path: "./ruido/validation_set_features.npy"
 augmentation_rounds: 2
 augmentation_batch_size: 16
 
-# Vazio de propósito: pulamos o pool de negativos pré-computado do ACAV100M (~17 GB,
-# inviável nesta sessão sem GPU — ver docs/wake-word-treino-plano.md §3). Os negativos
-# vêm só de dados/sintetizar.py (confusáveis pt-BR + frase irmã + ruído ambiente).
-feature_data_files: {}
+# ACAV100M: pool de negativos pré-computado do openWakeWord (~2.000h, ~17,3 GB —
+# ver dados/baixar_ruido.py). A primeira rodada pulou isto (achava inviável); com
+# 103-280 falsos-positivos/hora medidos sem ele (ver resultados/*/relatorio.md),
+# virou prioridade — é a fonte de robustez contra falso-positivo que faltava (ver
+# docs/wake-word-treino-plano.md §3/§4). Os outros negativos continuam vindo de
+# dados/sintetizar.py (confusáveis pt-BR + frase irmã + ruído ambiente).
+feature_data_files:
+  ACAV100M_sample: "./ruido/openwakeword_features_ACAV100M_2000_hrs_16bit.npy"
 batch_n_per_class:
+  ACAV100M_sample: 1024
   adversarial_negative: 32
   positive: 32
 
@@ -47,11 +52,12 @@ layer_size: 32
 # Bem abaixo do default (50000) — dataset pequeno, mais que isso é só overfitting sem
 # ganho real. auto_train já faz early-stopping/checkpoint-averaging por conta própria.
 steps: 3000
-# Bem abaixo do default (1500, pensado pro ACAV100M: milhões de negativos contra
-# poucos positivos). Com feature_data_files vazio (ver acima) e negativos/positivos
-# na mesma ordem de grandeza, 1500 colapsou o classificador — saída praticamente
-# constante (~0,045) pra QUALQUER entrada, positiva ou negativa (medido: ver
-# resultados/relatorio.md). 3 é a correção mínima que ainda dá alguma prioridade a
-# não falsear.
+# Bem abaixo do default (1500). Com feature_data_files vazio (rodada anterior) e
+# negativos/positivos na mesma ordem de grandeza, 1500 colapsou o classificador —
+# saída praticamente constante (~0,045) pra QUALQUER entrada (medido: ver
+# resultados/relatorio.md da rodada sem ACAV100M). Mantido em 3 nesta rodada
+# mesmo já tendo ACAV100M (acima) — mudar uma variável de cada vez: se o
+# falso-positivo ainda estiver alto com o ACAV100M sozinho, subir isto é o próximo
+# passo, não o primeiro.
 max_negative_weight: 3
 target_false_positives_per_hour: 0.2

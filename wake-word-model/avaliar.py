@@ -70,15 +70,17 @@ def main() -> None:
     m = metricas_binarias(scores, labels)
 
     fp_geral = None
+    scores_val = None
+    horas_val = 0.0
     val_path = RAIZ / "ruido" / "validation_set_features.npy"
     if val_path.exists():
         val = np.load(val_path)
         n = pos.shape[1]
         janelas = np.array([val[i : i + n] for i in range(0, val.shape[0] - n, n)])
         scores_val = prever(sess, janelas)
-        horas = (janelas.shape[0] * 1280) / 1000 / 3600  # 1280 ms por passo de feature, ver train.py
+        horas_val = (janelas.shape[0] * 1280) / 1000 / 3600  # 1280 ms por passo de feature, ver train.py
         falsos = int((scores_val >= 0.5).sum())
-        fp_geral = {"horas": horas, "falsos": falsos, "fp_por_hora": falsos / max(horas, 1e-6)}
+        fp_geral = {"horas": horas_val, "falsos": falsos, "fp_por_hora": falsos / max(horas_val, 1e-6)}
 
     linhas = [
         f"# Relatório — {modelo}",
@@ -104,14 +106,42 @@ def main() -> None:
             f"- Falsos positivos por hora: {fp_geral['fp_por_hora']:.2f} (alvo do config: 0.2)",
             "",
         ]
+
+    linhas += [
+        "## Curva de limiar (sem retreinar)",
+        "",
+        "Os mesmos scores acima, recalculados em vários limiares de decisão — "
+        "`OpenWakeWordDetector.kt` usa `threshold` por `WakeWordModel` (ver "
+        "`DEFAULT_THRESHOLD` em `OpenWakeWordDetector.kt`), então isto é só trocar um "
+        "número, sem exportar `.onnx` de novo. `0.5` é o ponto usado nas seções acima.",
+        "",
+        "| Limiar | Recall | Precisão | FP/hora (genérico) |",
+        "|---|---|---|---|",
+    ]
+    for limiar in (0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9):
+        m_lim = metricas_binarias(scores, labels, limiar=limiar)
+        if scores_val is not None:
+            fp_lim = int((scores_val >= limiar).sum()) / max(horas_val, 1e-6)
+            fp_txt = f"{fp_lim:.2f}"
+        else:
+            fp_txt = "n/d"
+        marca = " **(atual)**" if limiar == 0.5 else ""
+        linhas.append(f"| {limiar:.1f}{marca} | {m_lim['recall']:.3f} | {m_lim['precisao']:.3f} | {fp_txt} |")
+    linhas.append("")
+    acav100m_usado = (RAIZ / "ruido" / "openwakeword_features_ACAV100M_2000_hrs_16bit.npy").exists()
     linhas += [
         "## O que este número NÃO mede",
         "",
         "- Generalização pra vozes/sotaques fora das 6 vozes Piper pt-BR usadas no treino.",
         "- Ambiente real de balcão (ruído de fala cruzada, distância variável do mic dos óculos/celular).",
         "- Confusão com fala pt-BR genérica fora dos confusáveis que escrevemos à mão em dados/frases.py.",
-        "- O pool de negativos pré-computado do ACAV100M (~17 GB) foi deliberadamente pulado nesta "
-        "rodada — ver docs/wake-word-treino-plano.md §3.",
+        (
+            "- O pool de negativos pré-computado do ACAV100M foi usado neste treino (ver "
+            "config/*.yaml) — os números de falso-positivo acima já refletem isso."
+            if acav100m_usado
+            else "- O pool de negativos pré-computado do ACAV100M (~17 GB) foi deliberadamente pulado "
+            "nesta rodada — ver docs/wake-word-treino-plano.md §3."
+        ),
         "",
         "**Critério de aceite real continua sendo o da Fase 3 do plano** "
         "(`docs/orquestracao-dialogo-audio-plano.md`): testar em hardware, com o app em foreground, "

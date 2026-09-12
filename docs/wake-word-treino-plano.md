@@ -61,7 +61,7 @@ Se um checkpoint pt-BR compatível aparecer publicado no futuro, o pipeline ofic
 `_vendor/piper-sample-generator-stub/` deixa de ser necessário (ver a docstring
 dele pro motivo de existir).
 
-## 3. O corte: sem o pool de negativos pré-computado (ACAV100M)
+## 3. O pool de negativos pré-computado (ACAV100M)
 
 O treino oficial usa negativos de duas fontes complementares:
 
@@ -77,43 +77,46 @@ O treino oficial usa negativos de duas fontes complementares:
 2. **Features pré-computadas de ~2.000 horas de áudio genérico** (dataset
    `davidscripka/openwakeword_features`, ACAV100M) — é isto que dá ao classificador
    uma noção ampla de "como é o áudio do cotidiano que não tem nada a ver com a
-   frase". **O arquivo tem 17,3 GB.** Verificado por HTTP HEAD ao escrever isto —
-   inviável nesta sessão (sem GPU, sem esse volume de banda/tempo disponível).
+   frase".
 
-**Decisão: pular a fonte 2 nesta rodada**, com compensação parcial:
+### Rodada 1 (2026-09-12): pulada por achar 17 GB inviável
 
-- RIR real (MIT, domínio público, ~8 MB, 270 respostas ao impulso) — reverberação
-  de ambiente na augmentation.
-- Ruído ambiente real (ESC-50, CC BY-NC 3.0, ~120 clipes de 5 s, resample pra
-  16 kHz) — mixado como fundo na augmentation E usado diretamente como negativo
-  extra ("não é fala nenhuma").
-- O conjunto de validação de falso-positivo (também do próprio
-  `openwakeword_features`, mas só 185 MB — esse sim baixado) mede falso-positivo
-  em áudio genérico durante o treino/avaliação, mesmo sem entrar como dado de
-  treino. **Recortado de ~11 h pras primeiras ~2,7 h** (`dados/baixar_ruido.py`,
-  `MAX_FRAMES_VALIDACAO`): `train.py` monta uma janela deslizante de passo 1 sobre
-  o arquivo inteiro pra checagem periódica de falso-positivo durante o treino — pro
-  tamanho de janela do nosso modelo, as 11 h originais viram uma matriz de ~3,9 GB
-  em RAM, repetida a cada checagem, e isso derrubou o processo por OOM nesta sessão
-  (12 CPUs, 15 GB de RAM, compartilhados com o resto do desktop). Mais uma
-  compensação de recursos, não de metodologia — aumentar de volta é só mudar a
-  constante numa máquina com mais RAM disponível.
+**Decisão inicial: pular a fonte 2**, com compensação parcial — RIR real (MIT,
+domínio público, ~8 MB, 270 respostas ao impulso) na augmentation, ruído ambiente
+real (ESC-50, CC BY-NC 3.0, ~120 clipes de 5 s, resample pra 16 kHz) mixado como
+fundo E usado como negativo extra, e o conjunto de validação de falso-positivo
+(também do `openwakeword_features`, mas só 185 MB — esse sim baixado) recortado
+de ~11 h pras primeiras ~2,7 h (`MAX_FRAMES_VALIDACAO` em `dados/baixar_ruido.py`
+— `train.py` monta uma janela deslizante de passo 1 sobre o arquivo inteiro pra
+checagem periódica de falso-positivo durante o treino, e as 11 h originais viravam
+uma matriz de ~3,9 GB em RAM repetida a cada checagem, o que já tinha derrubado o
+processo por OOM nesta sessão de 12 CPUs/15 GB compartilhados com o resto do
+desktop).
 
-**Isto é o maior fator de risco do classificador resultante.** Sem a fonte 2, o
-modelo nunca vê a enorme variedade de "áudio do cotidiano" que não é a frase — só
-os confusáveis que pensamos em escrever à mão. Falso-positivo em situações não
-antecipadas é esperado até que a Fase 3 (validação em hardware real) meça o
-contrário. Ver `wake-word-model/README.md` "O que fica de fora desta rodada" pra
-como isso se conecta ao critério de aceite.
+**Resultado (confirmou o risco previsto):** os dois classificadores aprenderam a
+distinguir a frase-alvo dos confusáveis (recall 0,84/0,56, precisão 0,91/0,77 no
+split sintético — não um treino quebrado), mas com **103 a 280 falsos-positivos
+por hora** em áudio genérico (alvo do config: 0,2/h) — 500 a 1.400× o alvo.
+Exatamente o padrão de falha esperado quando o modelo nunca viu "áudio do
+cotidiano" em volume.
 
-**Confirmado, não só previsto** (treino de 2026-09-12, ver §4 abaixo pros números
-completos): os dois classificadores aprenderam a distinguir a frase-alvo dos
-confusáveis (84%/56% de recall, 91%/77% de precisão no split sintético — não é um
-classificador quebrado), mas erram entre **103 e 280 falsos positivos por hora**
-no áudio genérico de validação — 500 a 1.400× o alvo de 0,2/h do config. Exatamente
-o padrão de falha esperado quando o modelo nunca viu "áudio do cotidiano" em
-volume: ele aprendeu bem a tarefa que ensinamos, mas essa tarefa não cobre o que o
-mundo real vai jogar nele.
+### Rodada 2 (2026-09-12, mesma sessão): revisada — 17 GB não era inviável
+
+O "inviável" da Rodada 1 vinha de uma suposição, não de uma medição. Com o
+falso-positivo real medido e a banda desta sessão observada em ~14 MB/s (medida
+baixando as vozes Piper, bem antes desta decisão), os 17,3 GB do ACAV100M dão
+**~20 minutos de download** — nada perto de inviável. Revertido:
+`dados/baixar_ruido.py` agora baixa o ACAV100M por padrão (`--pular-acav100m` pra
+quem preferir não baixar), e os dois `config/*.yaml` apontam `feature_data_files`
+pra ele (`batch_n_per_class.ACAV100M_sample: 1024`, valor do `custom_model.yml`
+original). Carregado via `np.load(..., mmap_mode='r')` — memory-mapped, não aloca
+17 GB em RAM, só as páginas efetivamente lidas pelo sampling aleatório de cada
+batch, evitando repetir o OOM da Rodada 1.
+
+**`max_negative_weight` mantido em 3** (não voltou pro default 1.500) de
+propósito: mudar uma variável de cada vez — ver §6 pro colapso que 1.500 causou
+sem o ACAV100M na Rodada 1. Resultado da Rodada 2, com ACAV100M mas peso ainda
+baixo, no §4 abaixo.
 
 **Licença do ESC-50 (CC BY-NC 3.0):** uso restrito a treino/augmentation nesta
 pasta — os clipes não entram no git (`wake-word-model/.gitignore`) e nunca são
@@ -136,35 +139,53 @@ sobre o corpus sintético dele: número medido no gerador que também gerou o tr
 não é evidência de generalização. Não deve aparecer em apresentação sem esta
 ressalva.
 
-### Resultado medido (treino de 2026-09-12)
+### Resultado medido — Rodada 1 (sem ACAV100M) vs. Rodada 2 (com ACAV100M)
 
-| | `libras_livre_iniciar` | `libras_livre_encerrar` |
+| | Rodada 1 (`iniciar` / `encerrar`) | Rodada 2 (`iniciar` / `encerrar`) |
 |---|---|---|
-| Recall (split sintético) | 0,840 | 0,560 |
-| Precisão (split sintético) | 0,913 | 0,767 |
-| Acurácia (split sintético) | 0,886 | 0,710 |
-| Falso-positivo/hora (áudio genérico) | 103,4 | 280,1 |
-| Alvo de falso-positivo/hora (config) | 0,2 | 0,2 |
+| Recall (split sintético) | 0,840 / 0,560 | 0,630 / 0,400 |
+| Precisão (split sintético) | 0,913 / 0,767 | 0,955 / 1,000 |
+| Acurácia (split sintético) | 0,886 / 0,710 | 0,810 / 0,714 |
+| Falso-positivo/hora (áudio genérico) | 103,4 / 280,1 | **1,48 / 0,00** |
+| Alvo de falso-positivo/hora (config) | 0,2 / 0,2 | 0,2 / 0,2 |
 
-Os dois classificadores **aprenderam a tarefa que ensinamos** — distinguir a frase-alvo
-dos confusáveis que escrevemos e da frase irmã, com recall e precisão razoáveis pra
-um v1 com ~550 clipes por classe. Não é um treino quebrado (compare com o
-`max_negative_weight: 1500` original, §6: aquele sim colapsava pra saída
-constante, TP=0 em tudo). O problema é o previsto no §3: **500 a 1.400× o alvo de
-falso-positivo** em áudio genérico, porque o modelo nunca viu esse tipo de áudio em
-volume — só os confusáveis manuscritos. `libras_livre_encerrar` saiu pior nos dois
-eixos (menos recall, mais falso-positivo), consistente com seus confusáveis terem
-mais sobreposição fonética com fala comum em pt-BR ("terminar", "finalizar") do que
-os de `libras_livre_iniciar`.
+**O ACAV100M funcionou exatamente como o pipeline promete.** Falso-positivo caiu
+70× (`iniciar`) e foi a zero no proxy medido (`encerrar`) — `encerrar` já bate o
+alvo do config, `iniciar` está a 7,4× dele (ante 517× na Rodada 1). O preço foi
+recall: caiu de 0,84→0,63 e de 0,56→0,40. **É a troca esperada, não um efeito
+colateral estranho:** mais pressão contra falso-positivo — vindo de negativos de
+verdade agora, não só do peso da loss — empurra o limiar de decisão pra cima, e
+menos positivos passam. Nenhum dos dois classificadores colapsou (compare com
+`max_negative_weight: 1.500` sem ACAV100M, §6 — aquele sim dava TP=0 em tudo).
 
-**Não wireado como motor padrão.** `SpeechRecognizerWakeWordDetector` continua
-ativo — ver `docs/orquestracao-dialogo-audio-plano.md` Fase 3, critério de sucesso.
-Este resultado é o que a Fase 3 pede pra comparar contra ele, não um substituto
-pronto: nesta forma, o motor `openWakeWord` dispararia constantemente em qualquer
-ambiente com fala de fundo. Próximo passo mais direto pra reduzir o
-falso-positivo, nesta ordem: (1) o pool ACAV100M (§3) — é literalmente pra isto que
-ele existe; (2) mais confusáveis/contexto pt-BR manuscritos, principalmente pros
-que `libras_livre_encerrar` erra; (3) só depois disso, testar em hardware real.
+**Ainda não wireado como motor padrão.** `SpeechRecognizerWakeWordDetector`
+continua ativo — ver `docs/orquestracao-dialogo-audio-plano.md` Fase 3, critério
+de sucesso.
+
+### Curva de limiar (sem retreinar) — `resultados/*/relatorio.md`
+
+`avaliar.py` recalcula os mesmos scores em 9 limiares (0,1 a 0,9) — trocar
+`DEFAULT_THRESHOLD` em `OpenWakeWordDetector.kt` não exige exportar `.onnx` de
+novo. Achado central: **os dois classificadores respondem de jeitos opostos ao
+limiar**, o que muda o próximo passo de cada um.
+
+- **`iniciar` tem uma folga real.** Descendo de 0,5 pra 0,3: recall 0,63→0,71,
+  precisão só cai 0,955→0,947, FP/h sobe 1,48→1,97 — ainda ~50× melhor que antes
+  do ACAV100M. É ganho de recall "de graça", sem retreinar.
+- **`encerrar` não se move com o limiar.** Recall fica entre 0,40 e 0,47 em
+  QUALQUER limiar de 0,1 a 0,9, com precisão 1,000 constante. Isso não é uma
+  questão de calibração — é sinal de que os scores dos positivos são
+  **bimodais**: uma parte cai bem alto (sempre detectada), outra bem baixo
+  (nunca detectada, em nenhum limiar), sem meio-termo. Aponta pra falta de
+  diversidade nos positivos ou nos confusáveis de `encerrar`
+  ("terminar"/"finalizar" têm mais sobreposição com fala comum em pt-BR — ver
+  hipótese já registrada acima), não pra `max_negative_weight` nem pro limiar.
+
+Próximos passos, nesta ordem: (1) considerar `DEFAULT_THRESHOLD` mais baixo pra
+`iniciar` especificamente (0,3-0,4); (2) pra `encerrar`, mais dado/diversidade
+antes de mexer em limiar ou peso — o problema não está aí; (3) testar os dois em
+hardware real, que é o único jeito de saber se isto dá uma experiência de uso
+aceitável.
 
 ## 5. Critério de aceite real
 
@@ -187,5 +208,5 @@ por conta própria:
 |---|---|---|---|
 | Clipes positivos (treino+validação) | 20.000+ | 550 por frase | tempo de síntese numa sessão sem GPU (~0,3 s/clipe) |
 | `steps` | 50.000 | 3.000 | dataset pequeno; mais passos não ajudam sem mais dado |
-| Negativos pré-computados | ACAV100M (~17 GB) | nenhum — só sintético + ESC-50 | inviável nesta sessão, ver §3 |
-| `max_negative_weight` | 1.500 | 3 | **medido, não estimado:** 1.500 é calibrado pro ACAV100M (milhões de negativos contra poucos positivos); com `feature_data_files` vazio (linha acima) e classes na mesma ordem de grandeza, 1.500 colapsou os dois classificadores pra saída constante (~0,045 pra qualquer entrada, TP=0 em tudo — ver `wake-word-model/config/*.yaml` pro comentário completo) |
+| Negativos pré-computados | ACAV100M (~17 GB) | ACAV100M completo | achado inviável na Rodada 1 (§3) por suposição, não medição — revertido na Rodada 2 depois de medir ~14 MB/s de banda real (~20 min) |
+| `max_negative_weight` | 1.500 | 3 | **medido, não estimado:** 1.500 é calibrado pro ACAV100M assumindo volume MUITO maior de negativos por batch do que positivos; mesmo com o ACAV100M ativo (Rodada 2), mantido baixo de propósito — mudar uma variável de cada vez (ver §3, §4). Sem ACAV100M (Rodada 1), 1.500 colapsava os dois classificadores pra saída constante (~0,045 pra qualquer entrada, TP=0 em tudo — ver `wake-word-model/config/*.yaml` pro comentário completo) |

@@ -24,8 +24,12 @@ false_positive_validation_data_path: "./ruido/validation_set_features.npy"
 augmentation_rounds: 2
 augmentation_batch_size: 16
 
-feature_data_files: {}
+# Ver libras_livre_iniciar.yaml pra explicação completa do ACAV100M e do
+# max_negative_weight abaixo.
+feature_data_files:
+  ACAV100M_sample: "./ruido/openwakeword_features_ACAV100M_2000_hrs_16bit.npy"
 batch_n_per_class:
+  ACAV100M_sample: 1024
   adversarial_negative: 32
   positive: 32
 
@@ -33,11 +37,5 @@ model_type: "dnn"
 layer_size: 32
 
 steps: 3000
-# Bem abaixo do default (1500, pensado pro ACAV100M: milhões de negativos contra
-# poucos positivos). Com feature_data_files vazio (ver acima) e negativos/positivos
-# na mesma ordem de grandeza, 1500 colapsou o classificador — saída praticamente
-# constante (~0,045) pra QUALQUER entrada, positiva ou negativa (medido: ver
-# resultados/relatorio.md). 3 é a correção mínima que ainda dá alguma prioridade a
-# não falsear.
 max_negative_weight: 3
 target_false_positives_per_hour: 0.2

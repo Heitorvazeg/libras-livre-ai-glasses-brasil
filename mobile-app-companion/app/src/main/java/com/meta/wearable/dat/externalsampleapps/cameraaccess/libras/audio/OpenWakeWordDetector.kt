@@ -69,9 +69,12 @@ class OpenWakeWordDetector(
     private const val MODEL_INICIAR = "wakeword/libras_livre_iniciar.onnx"
     private const val MODEL_ENCERRAR = "wakeword/libras_livre_encerrar.onnx"
 
-    // Ponto de partida pra calibração — ajustar depois de medir falso-positivo/negativo em
-    // ambiente real (Fase 3, §7; "Threshold Guidelines" em WakeWordModel.kt vendorizado).
-    private const val DEFAULT_THRESHOLD = 0.5f
+    // Calibrado na curva de limiar de wake-word-model/resultados/*/relatorio.md (medida no
+    // split sintético + validação genérica, sem ambiente real ainda — Fase 3, §7): 0,3 dá a
+    // "iniciar" mais recall (0,63->0,71) por pouca precisão a menos (0,955->0,947), e não piora
+    // "encerrar" (recall só sobe, falso-positivo genérico continua 0,00/h). Reavaliar depois de
+    // medir em hardware real — "Threshold Guidelines" em WakeWordModel.kt vendorizado.
+    private const val DEFAULT_THRESHOLD = 0.3f
   }
 
   @Volatile private var active = false
