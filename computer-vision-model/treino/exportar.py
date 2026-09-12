@@ -514,7 +514,7 @@ def escrever_sidecar(destino: Path, rotulos: list[str], origem: dict, modo: str,
     e falar a palavra errada.
     """
     sidecar = destino.with_suffix(".json")
-    contrato = _contrato(modo, args)
+    contrato = _contrato(modo, args, origem.get("cabeca"))
     if (paridade["shape_entrada"] != contrato["shape"]
             or paridade["dtype_entrada"] != contrato["dtype"]
             or paridade["shape_saida"] != [1, len(rotulos)]):
@@ -530,19 +530,38 @@ def escrever_sidecar(destino: Path, rotulos: list[str], origem: dict, modo: str,
     return sidecar
 
 
-def _contrato(modo: str, args: dict) -> dict:
+def _contrato(modo: str, args: dict, cabeca: dict | None = None) -> dict:
     layout = args["layout"]
     if modo == "landmarks":
         gcn = args.get("arquitetura") == "gcn"
+        # POR FLAG, NÃO SÓ PELA ARQUITETURA. `imputacao_embutida: gcn` mentia
+        # para um checkpoint `--sem-imputacao`: a cabeça saía sem imputar
+        # (`origem["cabeca"]["imputar"] is False`) e o sidecar continuava
+        # declarando `true` — no MESMO arquivo que já carrega a config real em
+        # `origem.cabeca`. Cada flag agora reflete o que a cabeça de fato monta.
+        cabeca = cabeca or {}
+        imputa = gcn and bool(cabeca.get("imputar", True))
+        recentra = gcn and bool(cabeca.get("z_recentrado"))
+        tem_ossos = gcn and bool(cabeca.get("ossos"))
+        partes = []
+        if gcn:
+            if recentra:
+                partes.append("recentragem do z")
+            if imputa:
+                partes.append("imputação de lacunas curtas")
+            if tem_ossos:
+                partes.append("ossos")
+            partes.append("reamostragem temporal")
+            pre = ("O pré-processamento do ST-GCN (" + ", ".join(partes)
+                  + ") está dentro do grafo.")
+        else:
+            pre = "O pré-processamento Skeleton-DML está dentro do grafo."
         return {"shape": [1, args["frames"], layout["pontos"], layout["dimensoes"]],
                 "dtype": "float32", "layout_landmarks": layout,
                 "descricao": "landmarks normalizados em unidades de ombro (origem no "
                              "ponto médio dos ombros, escala = distância entre eles), "
                              "ordem [pose | mão esquerda 21 | mão direita 21]; mão "
-                             "ausente = zeros. " + ("O pré-processamento do ST-GCN "
-                             "(recentragem do z, imputação de lacunas curtas, ossos e "
-                             "reamostragem temporal) está dentro do grafo." if gcn else
-                             "O pré-processamento Skeleton-DML está dentro do grafo."),
+                             "ausente = zeros. " + pre,
                 "frames_fixos": args["frames"],
                 "temporal": {"frames": args["frames"], "dinamico": False,
                              "reamostragem_embutida": gcn,
@@ -551,8 +570,9 @@ def _contrato(modo: str, args: dict) -> dict:
                 "normalizacao_embutida": False,
                 # O app NÃO deve imputar quando o grafo já imputa: imputar duas
                 # vezes não é idempotente, a segunda passada interpola sobre valores
-                # que a primeira inventou.
-                "imputacao_embutida": gcn}
+                # que a primeira inventou. Para um checkpoint `--sem-imputacao`
+                # isto agora sai False, e o app É responsável por imputar.
+                "imputacao_embutida": imputa}
     return {"shape": [1, 3, LADO, LADO], "dtype": "float32",
             "layout_landmarks_preprocessamento": layout,
             "descricao": "imagem Skeleton-DML já montada, em [0,1] (SEM normalização "
