@@ -1,0 +1,71 @@
+<!doctype html>
+<!--
+  Libras Livre — cola entre o player oficial do VLibras e o AvatarPlayer.kt.
+
+  Este arquivo É versionado; vlibras.js e target/* NÃO são (13,5 MB, baixados por
+  ../../../../download-assets.sh — ver assets/.gitignore).
+
+  Usa o wrapper oficial (VLibras.Player) de propósito: dirigir o Unity direto por
+  SendMessage funciona, mas o Unity chama de volta globais de JS que só o wrapper define
+  (CounterGloss, onPlayingStateChange). Sem elas o evento gloss:end some — e ele é o sinal
+  de que o estado ⑦ terminou. Medido em 2026-09-12, docs/vlibras-webview-plano.md §0.7.
+-->
+<html lang="pt-BR">
+<head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no">
+<title>Avatar Libras</title>
+<style>
+  html,body{margin:0;height:100%;background:#fff;overflow:hidden}
+  #wrapper,#gameContainer,canvas{width:100%!important;height:100%!important;display:block}
+</style>
+</head>
+<body>
+<div id="wrapper"></div>
+<script src="vlibras.js"></script>
+<script>
+(function () {
+  function bridge(fn, arg) { try { AvatarBridge[fn](arg); } catch (e) {} }
+
+  if (typeof VLibras === "undefined") {
+    bridge("onError", "vlibras.js ausente — rode ./download-assets.sh");
+    return;
+  }
+
+  // Sem WebGL o Unity não tem como desenhar. Falhar aqui, explicitamente, é melhor que
+  // uma tela branca: o AvatarPlayer cai para o fallback (falar + legenda).
+  var c = document.createElement("canvas");
+  if (!(c.getContext("webgl2") || c.getContext("webgl"))) {
+    bridge("onError", "sem WebGL nesta WebView");
+    return;
+  }
+
+  var player = new VLibras.Player({
+    targetPath: "target",
+    // translator NÃO é usado: quem traduz é o VLibrasGlosaTranslator.kt, porque o config.js
+    // do player aponta para uma URL morta (§0.1 do plano). Só chamamos player.play(glosa).
+    onLoad: function () {}
+  });
+
+  player.on("load", function () {
+    // O dicionário de sinais é buscado na rede pelo Unity a cada sinal (§0.3 do plano).
+    // Quando o espelho local existir (Fase 3.5), trocar por:
+    //   player.setBaseUrl("https://appassets.androidplatform.net/assets/vlibras/dic/BR/")
+    bridge("log", "player carregado");
+    bridge("onReady");
+  });
+
+  player.on("gloss:end", function () { bridge("onGlossEnd"); });
+  player.on("error", function (e) { bridge("onError", String(e)); });
+
+  player.load(document.getElementById("wrapper"));
+
+  // Superfície que o AvatarPlayer.kt chama por evaluateJavascript.
+  window.avatarPlay = function (glosa) {
+    bridge("log", "play: " + glosa);
+    player.play(glosa);
+  };
+  window.avatarStop = function () { player.stop(); };
+})();
+</script>
+</body>
+</html>

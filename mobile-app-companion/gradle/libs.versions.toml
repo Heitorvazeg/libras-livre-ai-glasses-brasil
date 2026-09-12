@@ -17,6 +17,7 @@ onnxRuntimeAndroid = "1.22.0"
 voskAndroid = "0.3.75"
 jna = "5.18.1"
 orgJson = "20250517"
+webkit = "1.12.1"
 
 [libraries]
 androidx-activity-compose = { group = "androidx.activity", name = "activity-compose", version.ref = "activityCompose" }
@@ -37,6 +38,9 @@ mediapipe-tasks-vision = { group = "com.google.mediapipe", name = "tasks-vision"
 # Runtime do .tflite (LiteRT é o nome atual do TensorFlow Lite; mesmo formato de arquivo).
 litert = { group = "com.google.ai.edge.litert", name = "litert", version.ref = "litert" }
 junit = { group = "junit", name = "junit", version.ref = "junit" }
+# WebViewAssetLoader: serve os assets do player VLibras por https://appassets.androidplatform.net
+# em vez de file://, que quebra o loader do WASM (docs/vlibras-webview-plano.md §4.1).
+androidx-webkit = { group = "androidx.webkit", name = "webkit", version.ref = "webkit" }
 # Motor real de wake word (docs/orquestracao-dialogo-audio-plano.md §4 item 9) — usado por
 # OpenWakeWordDetector.kt via com.rementia.openwakeword.lib (vendorizado, não é dependência Maven).
 onnxruntime-android = { group = "com.microsoft.onnxruntime", name = "onnxruntime-android", version.ref = "onnxRuntimeAndroid" }
