@@ -99,8 +99,11 @@ done
 #    necessario). O wrapper vlibras.js sai de um build com webpack — que roda em Node moderno,
 #    medido em 2026-09-12. Licenca LGPLv3: ver docs/vlibras-webview-plano.md §0.6.
 # ---------------------------------------------------------------------------
-if present "$ASSETS/vlibras/target/playerweb.data.unityweb"; then
-  skip "vlibras/target/"
+# As duas metades sao verificadas SEPARADAMENTE de proposito: quem roda sem npm fica com o
+# target/ completo e sem o vlibras.js, e a mensagem manda rodar de novo depois de instalar o
+# Node — uma guarda unica sobre o target/ faria essa segunda rodada nao fazer nada.
+if present "$ASSETS/vlibras/target/playerweb.data.unityweb" && present "$ASSETS/vlibras/vlibras.js"; then
+  skip "vlibras/ (player + wrapper)"
 else
   log "Avatar: vlibras-player-webjs (~13,5MB de build Unity)"
   mkdir -p "$ASSETS/vlibras/target"
@@ -112,11 +115,16 @@ else
 
   if command -v npm >/dev/null 2>&1; then
     log "Avatar: buildando o wrapper vlibras.js"
-    (cd "$SRC" && npm install --silent --no-audit --no-fund >/dev/null 2>&1 && npx webpack >/dev/null 2>&1)
-    cp "$SRC/build/vlibras.js" "$ASSETS/vlibras/vlibras.js"
+    # Sem `set -e` aqui: um webpack que falha nao pode abortar o script inteiro e levar junto os
+    # assets que ja baixaram — o avatar cai na legenda, o resto do app funciona.
+    if (cd "$SRC" && npm install --silent --no-audit --no-fund >/dev/null 2>&1 && npx webpack >/dev/null 2>&1); then
+      cp "$SRC/build/vlibras.js" "$ASSETS/vlibras/vlibras.js"
+    else
+      printf '\033[1;33m ! \033[0m build do vlibras.js falhou — o avatar nao sobe (o resto segue).\n'
+    fi
   else
     printf '\033[1;33m ! \033[0m npm ausente: vlibras.js NAO foi gerado — o avatar nao sobe.\n'
-    printf '     Instale Node e rode de novo, ou copie build/vlibras.js manualmente.\n'
+    printf '     Instale Node e rode de novo (o script retoma so esta parte).\n'
   fi
 fi
 
