@@ -57,6 +57,13 @@ sys.path.insert(0, str(AQUI.parent / "datasets"))
 import proveniencia as pv
 
 
+# Fontes que PODEM entrar no pré-treino. `M` está fora por construção e tem
+# guarda própria; WLASL entra aqui porque a auditoria só valida isolamento e
+# proveniência — se ele participa de um pré-treino concreto é decisão do comando,
+# não desta lista.
+PREFIXOS_PRETREINO = ("V", "T", "W")
+
+
 def auditar_corpora(dirs: list[Path], manifesto: Path = pv.MANIFESTO,
                     avaliacao: Path | None = None) -> dict:
     """Valida TODOS os arquivos, antes de filtros de classe/frames ou modelo.
@@ -73,12 +80,20 @@ def auditar_corpora(dirs: list[Path], manifesto: Path = pv.MANIFESTO,
             raise ValueError(f"diretório de corpus inexistente ou vazio: {d}")
         for p in sorted(d.glob("*.npy")):
             pessoa, _, _ = dd.parse_nome(p.stem)
+            # O BLOQUEIO DO MINDS É DENY-LIST, E CONTINUA SENDO. Ele é a única
+            # coisa que impede o conjunto de avaliação de entrar no pré-treino, e
+            # errar aqui não dá erro: dá um número de LOSO bom demais. Por isso
+            # ele é uma condição própria e explícita, e não uma consequência de
+            # `M` faltar numa lista de permitidos — onde acrescentá-lo por engano
+            # passaria despercebido.
             if pessoa.startswith("M"):
                 raise ValueError(f"MINDS (prefixo M) proibido no pré-treino: {p.name}")
-            # dados.carregar ainda não suporta W. Não deixar o filtro descartá-lo
-            # silenciosamente; a habilitação de WLASL é um experimento separado.
-            if not pessoa.startswith("V"):
-                raise ValueError(f"fonte não suportada no pré-treino atual: {p.name}; use V-LIBRASIL")
+            # Prefixo desconhecido também é erro: um arquivo fora da convenção
+            # entraria como classe fantasma sem ninguém notar.
+            if not pessoa.startswith(PREFIXOS_PRETREINO):
+                raise ValueError(
+                    f"prefixo não reconhecido no pré-treino: {p.name}; "
+                    f"esperado um de {PREFIXOS_PRETREINO} (V-LIBRASIL, MALTA, WLASL)")
             arquivos.append((i, p))
     reservas = pv.ler_reservas(manifesto)
     if not any(r["fonte"] == "vlibrasil" for r in reservas):
@@ -114,7 +129,8 @@ def auditar_corpora(dirs: list[Path], manifesto: Path = pv.MANIFESTO,
 
 def carregar_corpora(dirs: list[Path], min_clipes_por_classe: int,
                      *, manifesto: Path = pv.MANIFESTO,
-                     auditoria: dict | None = None) -> list[dd.Clipe]:
+                     auditoria: dict | None = None,
+                     fontes: str = "vlibrasil,malta") -> list[dd.Clipe]:
     """Junta um ou mais diretórios de landmarks num corpus só.
 
     Classes com pouquíssimos exemplos são descartadas: elas não ensinam
@@ -128,12 +144,40 @@ def carregar_corpora(dirs: list[Path], min_clipes_por_classe: int,
     clipes: list[dd.Clipe] = []
     for i, d in enumerate(dirs):
         antes = len(clipes)
-        novos = dd.carregar(d, fontes="vlibrasil")
+        # Tinha `fontes="vlibrasil"` fixo aqui. Depois de a auditoria passar a
+        # aceitar MALTA, isso virava perda SILENCIOSA: os clipes eram auditados,
+        # aprovados, e sumiam na leitura — o pré-treino rodava com menos dado do
+        # que o log de auditoria dizia ter.
+        novos = dd.carregar(d, fontes=fontes)
         for c in novos:
             nome = f"pessoa{c.pessoa}_sinal-{c.sinal}_rep{c.rep}.npy"
             c.proveniencia = registros[i, nome]
         clipes += novos
         print(f"[pretreino] {d.name}: {len(clipes) - antes} clipes")
+
+    # A AUDITORIA E A CONFIGURAÇÃO DE LEITURA PRECISAM CONCORDAR. A auditoria
+    # aceita V, T e W; `fontes` decide o que é lido. Quando divergem, o arquivo é
+    # auditado, aprovado, contado no log — e some na leitura. O operador lê
+    # "auditoria OK: 24 amostras" e treina com 16. Já aconteceu duas vezes neste
+    # arquivo (MALTA, depois WLASL).
+    #
+    # A comparação é contra os PREFIXOS QUE `fontes` ACEITA, não contra o que
+    # sobrou depois de ler — a primeira versão comparava com `{c.pessoa[:1] for c
+    # in clipes}` e abortava também quando `min_frames` filtrava clipes CURTOS
+    # DEMAIS de um prefixo legitimamente incluído: nesse caso a fonte já estava
+    # em `--fontes`, e a mensagem mandava incluir algo que já estava incluído.
+    # Checar elegibilidade em vez de resultado separa "fonte não pedida" de
+    # "fonte pedida, mas todos os clipes eram curtos demais" — o segundo caso é
+    # normal e não deveria travar o pré-treino.
+    auditados = {dd.parse_nome(Path(r["arquivo"]).stem)[0][:1]
+                 for r in verificado["amostras"]}
+    aceitos = {p[:1] for p in dd.prefixos_aceitos(fontes)}
+    if auditados - aceitos:
+        faltam = ", ".join(sorted(auditados - aceitos))
+        raise ValueError(
+            f"a auditoria aprovou clipes com prefixo {faltam}, mas fontes={fontes!r} "
+            f"não os aceita — seriam descartados em silêncio. Inclua a fonte "
+            f"correspondente em --fontes ou retire o corpus do comando.")
 
     contagem: dict[str, int] = {}
     for c in clipes:
@@ -222,6 +266,11 @@ def main() -> None:
     ap.add_argument("--threads", type=int, default=10)
     ap.add_argument("--dispositivo", default="auto", choices=["auto", "cpu", "cuda"])
     ap.add_argument("--min-clipes-por-classe", type=int, default=2)
+    ap.add_argument("--fontes", default="vlibrasil,malta",
+                    help="corpora a LER, separados por vírgula: vlibrasil, malta, "
+                         "wlasl. O padrão cobre Libras; WLASL é ASL e entra só "
+                         "quando pedido, porque é experimento separado. A auditoria "
+                         "aborta se aprovar um prefixo que esta lista não lê.")
     ap.add_argument("--fracao-val", type=float, default=0.1)
     ap.add_argument("--semente", type=int, default=0)
     ap.add_argument("--saida", default="resultados-pretreino")
@@ -236,6 +285,7 @@ def main() -> None:
     auditoria: dict = {}
     try:
         clipes = carregar_corpora(args.corpus, args.min_clipes_por_classe,
+                                  fontes=args.fontes,
                                   manifesto=args.manifesto_avaliacao, auditoria=auditoria)
     except (ValueError, OSError) as e:
         raise SystemExit(f"[auditoria] ABORTADO: {e}") from e
