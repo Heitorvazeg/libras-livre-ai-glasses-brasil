@@ -18,3 +18,11 @@ __pycache__/
 .venv311/
 venv/
 .ipynb_checkpoints/
+
+# Artefatos de execução da extração e do regulador térmico — estado de corrida,
+# não fonte. Regeneram sozinhos e não devem entrar em diff.
+computer-vision-model/PoC/data/.extracao-ufsc.json*
+computer-vision-model/PoC/data/.extracao-logs/
+computer-vision-model/PoC/data/.regulador.json
+# Cache dos intermediários TLS da UFSC: buscado por AIA na primeira execução.
+computer-vision-model/PoC/data/.cadeia-ufsc.pem
