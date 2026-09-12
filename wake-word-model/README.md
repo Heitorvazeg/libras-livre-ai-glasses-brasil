@@ -27,13 +27,18 @@ local de verdade (`OpenWakeWordDetector`, ONNX Runtime, offline) já está imple
 e esperava só os dois classificadores treinados. Ver
 `docs/orquestracao-dialogo-audio-plano.md` Fase 3 e §8 item 1.
 
-**Esta pasta treinou os dois classificadores em duas rodadas (2026-09-12).** A
-primeira pulou o pool de negativos ACAV100M (achou 17 GB inviável sem medir) e saiu
-com falso-positivo de 103–280/h. A segunda mediu a banda real (~14 MB/s, ~20 min
-pro arquivo inteiro), baixou o ACAV100M e derrubou isso pra **1,48/h
-(`iniciar`) e 0,00/h (`encerrar`)** — `encerrar` já bate o alvo do config (0,2/h),
-`iniciar` está a 7,4× dele — ao custo de recall (0,84/0,56 → 0,63/0,40). Ver
-`resultados/*/relatorio.md` e `../docs/wake-word-treino-plano.md` §3/§4.
+**Esta pasta treinou os dois classificadores em três rodadas (2026-09-12).** A
+Rodada 1 pulou o pool de negativos ACAV100M (achou 17 GB inviável sem medir) e
+saiu com falso-positivo de 103–280/h. A Rodada 2 mediu a banda real (~14 MB/s,
+~20 min pro arquivo inteiro), baixou o ACAV100M e derrubou isso pra 1,48/0,00
+por hora — mas `encerrar` ficou com recall preso em ~0,40 em qualquer limiar
+(scores bimodais, não questão de calibração). A Rodada 3 acrescentou fala real
+em português (MLS, 600 clipes) e mais confusáveis manuscritos específicos de
+"encerrar" — resultado final: **recall 0,69/0,58, falso-positivo 0,52/0,49 por
+hora** (limiar recalibrado por classificador). Ver `resultados/*/relatorio.md`
+e `../docs/wake-word-treino-plano.md` §3/§4 pro histórico completo, inclusive
+uma ressalva sobre variância entre rodadas que vale ler antes de comparar
+números com a próxima rodada.
 `SpeechRecognizerWakeWordDetector` continua sendo o motor ativo até isso ser
 validado em hardware real.
 
@@ -43,12 +48,12 @@ validado em hardware real.
 |---|---|
 | Motor Android (`OpenWakeWordDetector.kt`, `com.rementia.openwakeword.lib`) | pronto — não ativo |
 | Modelos fixos do openWakeWord (mel-spectrogram, embedding) | baixados por `download-assets.sh` |
-| Dataset sintético pt-BR (esta pasta) | pronto (`dados/sintetizar.py`) — ~550 clipes/classe/frase |
+| Dataset sintético pt-BR (esta pasta) | pronto (`dados/sintetizar.py`) — ~550-850 clipes/classe/frase (varia por fonte, ver `dados/frases.py`) |
 | Pool de negativos ACAV100M (~17 GB) | ✅ baixado e em uso (`dados/baixar_ruido.py`) |
-| Classificadores `.onnx` treinados | ✅ treinados (2026-09-12) — recall 0,63/0,40, precisão 0,96/1,00 |
-| Falso-positivo em áudio genérico | 🟡 **1,48/h (`iniciar`) e 0,00/h (`encerrar`)** a limiar 0,5, alvo 0,2/h — `encerrar` já bate, `iniciar` quase (ver `resultados/*/relatorio.md`) |
-| Limiar de decisão | ✅ recalibrado pra 0,3 (`DEFAULT_THRESHOLD` em `OpenWakeWordDetector.kt`) — recupera recall de `iniciar` (0,63→0,71) sem piorar `encerrar` (ver "Curva de limiar" nos relatórios) |
-| Recall (limiar 0,3) | 🟡 0,71 (`iniciar`) / 0,44 (`encerrar`) — `encerrar` não responde a limiar (scores bimodais), precisa de mais dado/diversidade, não de calibração |
+| Fala real em português (MLS, negativo extra) | ✅ baixada e em uso (`dados/baixar_fala_pt.py`) — resolveu o recall bimodal de `encerrar` |
+| Classificadores `.onnx` treinados | ✅ treinados (2026-09-12, Rodada 3) — recall 0,69/0,58, precisão 0,93/0,97 |
+| Falso-positivo em áudio genérico | ✅ **0,52/h (`iniciar`) e 0,49/h (`encerrar`)** — ainda acima do alvo 0,2/h do config, mas ordens de grandeza melhor que a Rodada 1 |
+| Limiar de decisão | ✅ por classificador — `THRESHOLD_INICIAR=0,3` / `THRESHOLD_ENCERRAR=0,4` em `OpenWakeWordDetector.kt` |
 | Validação em ambiente ruidoso real | **pendente** — critério de sucesso da Fase 3 |
 | Troca do motor padrão no `DialogOrchestrator` | **pendente**, depende da validação acima |
 
@@ -72,11 +77,17 @@ Ver `../docs/wake-word-treino-plano.md` pro detalhe de cada uma:
    preferir não). Foi pulado numa primeira tentativa por achar 17 GB inviável sem
    medir — a banda real da sessão (~14 MB/s) dá uns 20 min, nada perto de
    inviável. É o principal responsável por derrubar o falso-positivo de 103–280/h
-   pra 1,48/0,00 por hora. Continua rodando junto RIR real (MIT, ~8 MB), ruído
-   ambiente real (ESC-50, ~120 clipes) e os confusáveis pt-BR escritos à mão,
-   incluindo a frase irmã como negativo de cada classificador (`dados/frases.py`).
-   **O fator de risco agora é o recall** (caiu pra 0,63/0,40) — ver "O que fica de
-   fora desta rodada" abaixo.
+   pra abaixo de 1/h. Continua rodando junto RIR real (MIT, ~8 MB) e ruído
+   ambiente real (ESC-50, ~120 clipes).
+3. **Fala real em português (MLS, `dados/baixar_fala_pt.py`) resolveu o recall
+   bimodal de `libras_livre_encerrar`**, que o ACAV100M sozinho não tinha corrigido
+   (recall preso em ~0,40 em QUALQUER limiar — sinal de falta de diversidade, não
+   de calibração). **Só entra pra `encerrar`**, não pra `iniciar`: testado nos dois
+   primeiro, e `iniciar` piorou (recall 0,63→0,46) sem ganho compensador — a
+   sobreposição semântica entre os confusáveis novos ("fechar o atendimento"...) e
+   `encerrar` é o que fazia diferença, e isso não existe pra `iniciar`. Ver
+   `dados/frases.py` (`negativos_para`) e `docs/wake-word-treino-plano.md` §3
+   Rodada 3.
 
 ## Como rodar
 
@@ -92,7 +103,8 @@ que já existe. Cada etapa também roda isolada, se preferir:
 ```bash
 source .venv/bin/activate       # depois da primeira vez que ./treinar.sh criar o venv
 bash dados/baixar_vozes.sh      # 6 vozes Piper pt-BR, ~130 MB
-python dados/baixar_ruido.py    # RIR + ruído ambiente + validação de FP, ~200 MB
+python dados/baixar_ruido.py    # RIR + ruído ambiente + validação de FP + ACAV100M, ~17,5 GB
+python dados/baixar_fala_pt.py  # fala real em português (MLS), ~157 MB
 python dados/sintetizar.py --output-dir ./treino
 python _vendor/openWakeWord-src/openwakeword/train.py \
     --training_config config/libras_livre_iniciar.yaml --augment_clips --train_model
@@ -121,11 +133,14 @@ Lido junto com `resultados/*/relatorio.md` (números medidos, não estimados):
 - **Vozes limitadas a 6 identidades vocais discretas**, não a variação contínua de
   um gerador multi-falante de verdade. Sotaques/timbres fora dessas 6 vozes são uma
   incógnita.
-- **Recall caiu depois do ACAV100M** (0,84/0,56 → 0,63/0,40). O classificador ficou
-  bem mais seletivo — é o lado bom do falso-positivo ter despencado — mas 0,40 de
-  recall sintético pode significar que a pessoa precisa repetir a frase com
-  frequência. Não medido ainda: onde um limiar diferente de 0,5 fica nesse
-  trade-off (mudar o limiar não exige retreinar).
+- **Recall ainda moderado** (0,69/0,58 no split sintético, limiar recalibrado por
+  classificador) — bem melhor que a Rodada 2, mas pode significar que a pessoa
+  precisa repetir a frase de vez em quando.
+- **Variância entre rodadas é real e não pequena.** Sem seed fixa em
+  `dados/sintetizar.py`/`train.py`, duas rodadas com a MESMA configuração de dados
+  já produziram recalls visivelmente diferentes pro mesmo classificador (ver
+  `docs/wake-word-treino-plano.md` §3 Rodada 3). Trate estes números como ordem de
+  grandeza, não como precisos até a segunda casa decimal.
 - **Nenhum teste com pessoa de verdade, mic real dos óculos/celular, ou ambiente de
   balcão.** Os relatórios desta pasta são só sobre o próprio dataset sintético — o
   mesmo aviso que `../contextualization-model/README.md` faz sobre o corpus dele
@@ -136,10 +151,8 @@ Lido junto com `resultados/*/relatorio.md` (números medidos, não estimados):
 objetivamente contra o `SpeechRecognizerWakeWordDetector` atual (falso-positivo,
 falso-negativo, latência, funciona offline) antes de trocar o motor padrão. Se o
 recall não for suficiente nesse teste, as alavancas mais óbvias, nesta ordem: (1)
-medir a curva precisão/recall por limiar nos scores já computados (sem retreinar),
-(2) se ainda faltar, baixar `max_negative_weight` um pouco mais ou reduzir
-`batch_n_per_class.ACAV100M_sample` (menos pressão de negativo por batch), (3)
-gravar confusáveis/contexto reais (voz humana, não só sintética).
+gravar confusáveis/contexto reais (voz humana, não só sintética/MLS), (2) mais
+`n_samples`/`steps`, (3) revisitar `max_negative_weight`/`batch_n_per_class.ACAV100M_sample`.
 
 ## Estrutura
 
@@ -151,7 +164,8 @@ wake-word-model/
 ├── dados/
 │   ├── frases.py                    frases-alvo, confusáveis e contexto pt-BR (só texto)
 │   ├── baixar_vozes.sh              baixa as 6 vozes Piper pt-BR (sherpa-onnx)
-│   ├── baixar_ruido.py              baixa RIR + ruído de fundo + validação de FP
+│   ├── baixar_ruido.py              baixa RIR + ruído de fundo + validação de FP + ACAV100M
+│   ├── baixar_fala_pt.py            baixa fala real em português (MLS) — negativo extra
 │   └── sintetizar.py                gera os clipes .wav (substitui --generate_clips)
 ├── _vendor/
 │   ├── openWakeWord-src/            clone do repositório oficial (train.py, data.py) — gitignored

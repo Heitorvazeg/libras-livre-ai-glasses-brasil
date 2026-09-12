@@ -36,6 +36,10 @@ sherpa-onnx>=1.10.0
 soundfile>=0.12
 librosa>=0.10
 
+# Fala real em português — MLS Portuguese vem em .parquet (dados/baixar_fala_pt.py)
+pandas>=2.0
+pyarrow>=15.0
+
 tqdm>=4.0
 
 # openwakeword em si (train.py, data.py) NÃO está aqui: o pacote publicado no PyPI

@@ -4,17 +4,17 @@ Gerado em 2026-09-12.
 
 ## Split de teste sintético (mesmo gerador do treino)
 
-- Positivos: 100, negativos: 110
-- Acurácia: 0.714
-- Recall (taxa de detecção): 0.400
-- Precisão: 1.000
-- TP=40 FP=0 FN=60 TN=110
+- Positivos: 100, negativos: 170
+- Acurácia: 0.837
+- Recall (taxa de detecção): 0.580
+- Precisão: 0.967
+- TP=58 FP=2 FN=42 TN=168
 
 ## Falso-positivo em áudio genérico (conjunto de validação do openWakeWord)
 
 - ~2.0 h de fala/ruído/música (majoritariamente inglês — não é pt-BR nem cenário de balcão, só um proxy geral de "áudio comum do dia a dia")
-- Falsos positivos: 0
-- Falsos positivos por hora: 0.00 (alvo do config: 0.2)
+- Falsos positivos: 1
+- Falsos positivos por hora: 0.49 (alvo do config: 0.2)
 
 ## Curva de limiar (sem retreinar)
 
@@ -22,15 +22,15 @@ Os mesmos scores acima, recalculados em vários limiares de decisão — `OpenWa
 
 | Limiar | Recall | Precisão | FP/hora (genérico) |
 |---|---|---|---|
-| 0.1 | 0.470 | 1.000 | 0.98 |
-| 0.2 | 0.450 | 1.000 | 0.49 |
-| 0.3 | 0.440 | 1.000 | 0.00 |
-| 0.4 | 0.440 | 1.000 | 0.00 |
-| 0.5 **(atual)** | 0.400 | 1.000 | 0.00 |
-| 0.6 | 0.400 | 1.000 | 0.00 |
-| 0.7 | 0.400 | 1.000 | 0.00 |
-| 0.8 | 0.370 | 1.000 | 0.00 |
-| 0.9 | 0.300 | 1.000 | 0.00 |
+| 0.1 | 0.610 | 0.924 | 3.45 |
+| 0.2 | 0.600 | 0.938 | 1.97 |
+| 0.3 | 0.580 | 0.935 | 1.97 |
+| 0.4 | 0.580 | 0.935 | 1.48 |
+| 0.5 **(atual)** | 0.580 | 0.967 | 0.49 |
+| 0.6 | 0.580 | 0.967 | 0.49 |
+| 0.7 | 0.560 | 0.982 | 0.49 |
+| 0.8 | 0.520 | 0.981 | 0.00 |
+| 0.9 | 0.460 | 0.979 | 0.00 |
 
 ## O que este número NÃO mede
 

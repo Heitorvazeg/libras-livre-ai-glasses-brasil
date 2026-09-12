@@ -69,12 +69,14 @@ class OpenWakeWordDetector(
     private const val MODEL_INICIAR = "wakeword/libras_livre_iniciar.onnx"
     private const val MODEL_ENCERRAR = "wakeword/libras_livre_encerrar.onnx"
 
-    // Calibrado na curva de limiar de wake-word-model/resultados/*/relatorio.md (medida no
-    // split sintético + validação genérica, sem ambiente real ainda — Fase 3, §7): 0,3 dá a
-    // "iniciar" mais recall (0,63->0,71) por pouca precisão a menos (0,955->0,947), e não piora
-    // "encerrar" (recall só sobe, falso-positivo genérico continua 0,00/h). Reavaliar depois de
-    // medir em hardware real — "Threshold Guidelines" em WakeWordModel.kt vendorizado.
-    private const val DEFAULT_THRESHOLD = 0.3f
+    // Limiares independentes, calibrados na curva de wake-word-model/resultados/*/relatorio.md
+    // (split sintético + validação genérica, sem ambiente real ainda — Fase 3, §7). Os dois
+    // classificadores respondem diferente ao limiar — WakeWordModel aceita um valor por modelo,
+    // então cada um usa o ponto que dá mais recall sem aumentar o falso-positivo genérico em
+    // relação ao próximo limiar acima. Reavaliar depois de medir em hardware real —
+    // "Threshold Guidelines" em WakeWordModel.kt vendorizado.
+    private const val THRESHOLD_INICIAR = 0.3f
+    private const val THRESHOLD_ENCERRAR = 0.4f
   }
 
   @Volatile private var active = false
@@ -134,9 +136,9 @@ class OpenWakeWordDetector(
   private fun buildEngine(): WakeWordEngine {
     val models =
         listOf(
-            WakeWordModel(name = NAME_INICIAR, modelPath = MODEL_INICIAR, threshold = DEFAULT_THRESHOLD),
+            WakeWordModel(name = NAME_INICIAR, modelPath = MODEL_INICIAR, threshold = THRESHOLD_INICIAR),
             WakeWordModel(
-                name = NAME_ENCERRAR, modelPath = MODEL_ENCERRAR, threshold = DEFAULT_THRESHOLD),
+                name = NAME_ENCERRAR, modelPath = MODEL_ENCERRAR, threshold = THRESHOLD_ENCERRAR),
         )
     // ALL, não SINGLE_BEST: "iniciar" e "encerrar" são gatilhos distintos por estado (ver
     // DialogOrchestrator.onWakeWord), não variações do mesmo comando — mesmo raciocínio do

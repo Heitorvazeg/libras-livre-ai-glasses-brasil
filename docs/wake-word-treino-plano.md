@@ -187,6 +187,64 @@ antes de mexer em limiar ou peso — o problema não está aí; (3) testar os do
 hardware real, que é o único jeito de saber se isto dá uma experiência de uso
 aceitável.
 
+### Rodada 3 (2026-09-12, mesma sessão): mais dado pro `encerrar`
+
+Seguindo o item (2) acima: `libras_livre_encerrar` precisava de mais
+diversidade nos negativos, não de calibração. Duas adições:
+
+1. **Fala real em português** (`dados/baixar_fala_pt.py`): 600 recortes de
+   ~1,5 s do MLS Portuguese (`facebook/multilingual_librispeech`, CC-BY-4.0,
+   audiolivros do LibriVox — majoritariamente português europeu, não pt-BR, mas
+   é fonética/prosódia portuguesa de verdade, o que nem o ACAV100M
+   (majoritariamente inglês) nem os confusáveis manuscritos ofereciam).
+2. **`ENCERRAMENTO_SINONIMOS`** em `dados/frases.py`: 18 frases naturais de
+   "terminar um atendimento" em pt-BR ("posso finalizar aqui", "vou fechar o
+   atendimento"...) — mais profundidade na família de confusáveis que já
+   incluía "terminar"/"finalizar".
+
+**Primeiro teste: as duas fontes nos DOIS classificadores.** Resultado
+inesperado — `encerrar` disparou pra recall 0,940 (precisão 0,969, FP/h 0,00),
+resolvendo o problema bimodal por completo. Mas `iniciar` **piorou**: recall
+caiu de 0,63→0,46 a limiar 0,5 (e o teto em qualquer limiar caiu de 0,74→0,53).
+Reproduzido num segundo treino idêntico — não era variância de inicialização.
+
+**Diagnóstico:** `ENCERRAMENTO_SINONIMOS` é semanticamente sobre "fechar" — um
+confusável de peso pra `encerrar`, mas ruído sem função pra `iniciar` (que já
+tinha cobertura suficiente via `CONTEXTO_ATENDIMENTO` e a frase irmã). Aplicado
+aos dois, só teve custo pra `iniciar`, sem contrapartida.
+
+**Correção:** `ENCERRAMENTO_SINONIMOS` restrito a `libras_livre_encerrar`
+(`negativos_para()` em `dados/frases.py`), fala real em português mantida nos
+dois (é genérica, não específica de um confusável). Retreinado:
+
+| | Rodada 2 (`iniciar` / `encerrar`) | Rodada 3 (`iniciar` / `encerrar`) |
+|---|---|---|
+| Recall (split sintético, limiar 0,5) | 0,630 / 0,400 | 0,690 / 0,580 |
+| Precisão (split sintético, limiar 0,5) | 0,955 / 1,000 | 0,932 / 0,967 |
+| Falso-positivo/hora (limiar 0,5) | 1,48 / 0,00 | 0,52 / 0,49 |
+
+**Os dois melhoraram** em relação à Rodada 2 — `iniciar` ganhou recall E reduziu
+falso-positivo (0,63→0,69 recall, 1,48→0,52 FP/h); `encerrar` saiu do buraco
+bimodal (0,40→0,58 recall) sem voltar ao catastrófico da Rodada 1. Não chegou
+aos 0,94 de recall do teste "nos dois classificadores" — essa era uma
+configuração pior pra `iniciar`, não uma opção descartada por engano.
+
+**Limiar por classificador**, não mais um `DEFAULT_THRESHOLD` único
+(`THRESHOLD_INICIAR`/`THRESHOLD_ENCERRAR` em `OpenWakeWordDetector.kt`): 0,3 pra
+`iniciar` (recall 0,73, FP/h 0,52 — mesmo FP que 0,4, mais recall) e 0,4 pra
+`encerrar` (recall 0,58, FP/h 1,48 — mesmo recall que 0,3, menos FP).
+
+**Ressalva importante sobre variância:** com ~1.000-1.700 clipes por
+classificador e 3.000 passos, duas rodadas com a MESMA configuração de dados
+já produziram números visivelmente diferentes (ver `encerrar` entre a rodada
+"nos dois" e a rodada final, com o MESMO `negativos_para` pra `encerrar` nas
+duas). Regenerar `dados/sintetizar.py` sem mudar nenhum código muda os clipes
+específicos sorteados (sem seed fixa) — os números desta pasta são úteis pra
+comparar ORDENS DE GRANDEZA entre rodadas, não pra tratar a segunda casa
+decimal como precisa. Isto reforça, mais do que qualquer número individual, por
+que a Fase 3 exige validação em hardware real antes de qualquer decisão de
+produção.
+
 ## 5. Critério de aceite real
 
 Continua sendo o da Fase 3 em `orquestracao-dialogo-audio-plano.md`, inalterado por

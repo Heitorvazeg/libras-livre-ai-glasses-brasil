@@ -35,6 +35,7 @@ from frases import POSITIVOS, negativos_para  # noqa: E402
 RAIZ = Path(__file__).resolve().parent.parent
 VOZES_DIR = RAIZ / "vozes"
 RUIDO_BG_DIR = RAIZ / "ruido" / "esc50_background"
+FALA_PT_DIR = RAIZ / "ruido" / "fala_pt"
 
 SAMPLE_RATE = 16000
 
@@ -59,6 +60,14 @@ N_VAL = 100
 # não cobrem.
 N_RUIDO_EXTRA_TRAIN = 40
 N_RUIDO_EXTRA_VAL = 10
+# Recortes de fala real em português (MLS) — a peça que faltava especificamente pro
+# libras_livre_encerrar: recall preso em ~0,40-0,47 em QUALQUER limiar (ver
+# resultados/libras_livre_encerrar/relatorio.md, "Curva de limiar"), sinal de falta
+# de diversidade nos negativos, não de calibração. Volume maior que o ruído ambiente
+# porque é a fonte de maior valor — fonética/prosódia portuguesa de verdade, que nem
+# o ACAV100M (majoritariamente inglês) nem os confusáveis manuscritos oferecem.
+N_FALA_PT_TRAIN = 300
+N_FALA_PT_VAL = 60
 
 
 def carregar_vozes(vozes_dir: Path) -> list[tuple[str, sherpa_onnx.OfflineTts]]:
@@ -123,18 +132,22 @@ def gerar_split(engines, frases: list[str], destino_dir: Path, n: int) -> None:
     print(f"    {destino_dir.name}: {n}/{n} concluído")
 
 
-def adicionar_ruido_como_negativo(destino_dir: Path, n: int, duracao_s: float = 1.5) -> None:
-    """Recorta clipes do ESC-50 (16 kHz, já baixados por dados/baixar_ruido.py) como
-    negativos extras — "não é fala nenhuma" é um caso que os confusáveis falados não
-    cobrem sozinhos."""
-    if not RUIDO_BG_DIR.exists():
-        print("    (sem ruído de fundo baixado ainda — rode dados/baixar_ruido.py; pulando esta parte)")
+def adicionar_recortes_como_negativo(
+    origem_dir: Path, prefixo: str, destino_dir: Path, n: int, duracao_s: float = 1.5
+) -> None:
+    """Recorta wavs de `origem_dir` (16 kHz, já preparados por dados/baixar_ruido.py
+    ou dados/baixar_fala_pt.py) como negativos extras — cada fonte cobre um tipo de
+    "não é a frase" que os confusáveis manuscritos sozinhos não cobrem (ruído
+    ambiente: "não é fala nenhuma"; fala real em português: "é português, mas não é
+    a frase")."""
+    if not origem_dir.exists():
+        print(f"    (sem {origem_dir.name} baixado ainda; pulando esta parte)")
         return
-    arquivos = list(RUIDO_BG_DIR.glob("*.wav"))
+    arquivos = list(origem_dir.glob("*.wav"))
     if not arquivos:
         return
     n_amostras = int(duracao_s * SAMPLE_RATE)
-    existentes = len(list(destino_dir.glob("ruido-*.wav")))
+    existentes = len(list(destino_dir.glob(f"{prefixo}-*.wav")))
     for i in range(existentes, n):
         origem = random.choice(arquivos)
         sr, dados = wavfile.read(origem)
@@ -143,7 +156,7 @@ def adicionar_ruido_como_negativo(destino_dir: Path, n: int, duracao_s: float = 
         else:
             inicio = random.randint(0, len(dados) - n_amostras)
             recorte = dados[inicio : inicio + n_amostras]
-        wavfile.write(destino_dir / f"ruido-{uuid.uuid4().hex}.wav", SAMPLE_RATE, recorte.astype(np.int16))
+        wavfile.write(destino_dir / f"{prefixo}-{uuid.uuid4().hex}.wav", SAMPLE_RATE, recorte.astype(np.int16))
 
 
 def main() -> None:
@@ -170,8 +183,11 @@ def main() -> None:
         print("  negativos falados (validação):")
         gerar_split(engines, negativos, base / "negative_test", args.n_val)
         print("  negativos de ruído ambiente (extra):")
-        adicionar_ruido_como_negativo(base / "negative_train", N_RUIDO_EXTRA_TRAIN)
-        adicionar_ruido_como_negativo(base / "negative_test", N_RUIDO_EXTRA_VAL)
+        adicionar_recortes_como_negativo(RUIDO_BG_DIR, "ruido", base / "negative_train", N_RUIDO_EXTRA_TRAIN)
+        adicionar_recortes_como_negativo(RUIDO_BG_DIR, "ruido", base / "negative_test", N_RUIDO_EXTRA_VAL)
+        print("  negativos de fala real em português (extra):")
+        adicionar_recortes_como_negativo(FALA_PT_DIR, "falapt", base / "negative_train", N_FALA_PT_TRAIN)
+        adicionar_recortes_como_negativo(FALA_PT_DIR, "falapt", base / "negative_test", N_FALA_PT_VAL)
 
     print("\nPronto.")
 

@@ -53,6 +53,33 @@ CONFUSAVEIS = [
     "então tá, iniciar",
 ]
 
+# Sinônimos e frases naturais de "terminar um atendimento" em pt-BR — adicionado
+# depois de medir que libras_livre_encerrar ficava com recall preso em ~0,40-0,47
+# em QUALQUER limiar (resultados/libras_livre_encerrar/relatorio.md, "Curva de
+# limiar"): "terminar"/"finalizar" (já em CONFUSAVEIS) têm bastante sobreposição
+# fonética com fala comum em pt-BR, e a lista original não cobria essa família de
+# frases com profundidade suficiente.
+ENCERRAMENTO_SINONIMOS = [
+    "posso finalizar aqui",
+    "vou fechar o atendimento",
+    "já terminamos",
+    "então tá bom, obrigada",
+    "vamos encerrando por aqui",
+    "podemos concluir",
+    "fechando o atendimento",
+    "é isso, encerrado",
+    "acabou por aqui",
+    "está encerrado",
+    "vou concluir o atendimento",
+    "por hoje é só",
+    "terminamos por aqui",
+    "conclui-se o atendimento",
+    "encerra-se aqui",
+    "dou por encerrado",
+    "vamos parar por aqui",
+    "chegamos ao fim",
+]
+
 # Frases genéricas de um atendimento de balcão — negativo "de contexto", pra não
 # disparar em qualquer fala perto do produto (o dispositivo é institucional, ver
 # docs/orquestracao-dialogo-audio-plano.md §4.3).
@@ -80,6 +107,17 @@ POSITIVOS: dict[str, list[str]] = {
 
 
 def negativos_para(modelo: str) -> list[str]:
-    """Confusáveis + contexto + a FRASE IRMÃ (o confusável mais perigoso dos dois)."""
+    """Confusáveis + contexto + a FRASE IRMÃ (o confusável mais perigoso dos dois).
+
+    ENCERRAMENTO_SINONIMOS só entra pro libras_livre_encerrar: medido (não só
+    hipótese) que incluir nos dois pioras o recall de libras_livre_iniciar sem
+    ganho compensador — reproduzido em duas rodadas de treino, não foi
+    variância (ver docs/wake-word-treino-plano.md §3). Faz sentido: essas frases
+    são sobre "fechar/terminar", um confusável específico de encerrar, não de
+    iniciar — mudar uma variável de cada vez pra cada classificador.
+    """
     irma = VARIANTES_ENCERRAR if modelo == "libras_livre_iniciar" else VARIANTES_INICIAR
-    return CONFUSAVEIS + CONTEXTO_ATENDIMENTO + irma
+    negativos = CONFUSAVEIS + CONTEXTO_ATENDIMENTO + irma
+    if modelo == "libras_livre_encerrar":
+        negativos = negativos + ENCERRAMENTO_SINONIMOS
+    return negativos

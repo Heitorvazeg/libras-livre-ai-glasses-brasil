@@ -77,6 +77,9 @@ bash dados/baixar_vozes.sh
 echo "==> ruído (RIR + background) e validação de falso-positivo"
 "$PY" dados/baixar_ruido.py
 
+echo "==> fala real em português (MLS) — negativo extra pro libras_livre_encerrar"
+"$PY" dados/baixar_fala_pt.py
+
 echo "==> sintetizando clipes positivos/negativos (os dois modelos de uma vez, reaproveita as engines)"
 "$PY" dados/sintetizar.py --output-dir ./treino
 
