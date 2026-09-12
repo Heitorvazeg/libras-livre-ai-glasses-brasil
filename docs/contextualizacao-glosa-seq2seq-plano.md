@@ -1,5 +1,11 @@
 # Contextualização glosa → português — seq2seq local (`.tflite`)
 
+> **Status (2026-09-12): implementado.** A trilha vive em
+> `contextualization-model/` e o consumo no app em `libras/contextualizacao/`. O
+> `.tflite` roda **sob guarda**, com o `TemplateGlossContextualizer` como piso,
+> porque o modelo não bateu o template em F1 na validação sintética. O conjunto
+> humano de teste — o portão de aceite real — continua pendente.
+
 > Plano de implementação do estágio descrito em
 > `docs/libras-livre-arquitetura.md` §4.4 ("Contextualização (sinais →
 > linguagem natural)"), que já prevê literalmente este documento: *"a

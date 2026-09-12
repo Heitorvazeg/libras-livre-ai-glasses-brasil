@@ -1,5 +1,10 @@
 # Extração de landmarks — unificação mobile + treino, e orquestração com o reconhecimento
 
+> **Status (2026-09-12): implementado.** `libras/reconhecimento/LandmarkNormalizer.kt`
+> e `HandGapImputer.kt` estão no app, com testes de paridade numérica contra o
+> pipeline Python em `app/src/test/`. Ver
+> `mobile-app-companion/.../libras/README.md`.
+
 > Plano de implementação da extração/pré-processamento de landmarks que o app
 > vai rodar **on-device**, alimentando `SignBoundaryDetector`
 > (`docs/sign-boundary-detector-plano.md`) e o classificador GCN `.tflite`

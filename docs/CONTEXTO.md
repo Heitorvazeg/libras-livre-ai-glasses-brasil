@@ -4,9 +4,13 @@ Este documento existe para quem chega no meio: outra pessoa do time, um assisten
 IA em outra sessão, ou nós mesmos daqui a duas semanas. Ele responde **o que já está
 resolvido, o que está em aberto e por quê** — sem exigir a leitura do histórico.
 
-**Última atualização:** 2026-09-11
+**Última atualização:** 2026-09-12
 **Prazo do hackathon:** 16/09/2026
-**Branch de trabalho:** `poc/tres-coordenadas` (a partir de `claude/libras-detection-model-53kd30`)
+**Branch de integração:** `dev`
+
+> Índice da documentação: [`README.md`](README.md). Como rodar cada trilha: os
+> READMEs de `computer-vision-model/`, `contextualization-model/` e
+> `mobile-app-companion/`.
 
 ---
 
@@ -14,6 +18,14 @@ resolvido, o que está em aberto e por quê** — sem exigir a leitura do histó
 
 Óculos Ray-Ban Meta que traduzem Libras para fala, num balcão de atendimento. A câmera
 capta a pessoa surda sinalizando, o celular reconhece os sinais e fala em português.
+
+O sistema tem **três trilhas**, e este documento cobre em detalhe a primeira:
+
+| Trilha | O que faz | Onde |
+|---|---|---|
+| Visão | vídeo → glosa | `computer-vision-model/` |
+| Contextualização | glosa → frase em português | `contextualization-model/` (ver §5.5) |
+| App | roda os dois modelos, fala e escuta | `mobile-app-companion/` |
 
 **A premissa que molda todas as decisões técnicas:** o dispositivo é **institucional**,
 fica com o atendente e serve dezenas de pessoas surdas diferentes por dia. Não há
@@ -171,6 +183,23 @@ cobre ângulo de câmera** (óculos de cima, de baixo, de lado) — e nenhuma ba
 temos permite medir isso, porque são todas estúdio frontal. É risco real de produto, e só
 a coleta própria responde.
 
+### Contextualização glosa → português — implementada, sob guarda
+
+A lista de glosas reconhecidas não é português: Libras tem ordem e estrutura
+próprias. `contextualization-model/` treinou um seq2seq (ptt5-small podado, 45,1M,
+vocabulário de 1.987 tokens) que vira `.tflite` de 46 MB e roda no app.
+
+**O modelo não bateu o contextualizador por template em F1** em nenhuma das três
+rodadas (0,826 a 0,837 contra 0,871 a 0,884), na validação sintética. Por isso o
+app usa a cadeia `modelo → guarda → template → passthrough`, com o template como
+piso: a guarda aceita o modelo em ~95% das sessões, e ele ganha onde há relação
+gramatical entre glosas ("banco esquina" → "o banco fica na esquina").
+
+⚠️ **O corpus é sintético** — escrito por um LLM a partir de sequências de glosas
+que também foram hipótese de um LLM. Não é Libras observada. O portão real é um
+conjunto humano de teste que ainda não existe. Nenhum número dessa trilha deve
+aparecer em apresentação sem essa ressalva.
+
 ### Vocabulário
 Os 20 sinais do MINDS são banco de provas, não produto. O vocabulário de atendimento está
 proposto em três camadas, por confiança de generalização, em
@@ -228,7 +257,11 @@ possível aqui, porque produz um número bonito e falso.
 | [`vocabulario-mvp-proposta.md`](vocabulario-mvp-proposta.md) | vocabulário em 3 camadas, para o consultor de Libras |
 | [`libras-livre-arquitetura.md`](libras-livre-arquitetura.md) | arquitetura de produto (visão longa) |
 | [`libras-livre-poc-plano.md`](libras-livre-poc-plano.md) | plano original da PoC |
+| [`contextualizacao-glosa-seq2seq-plano.md`](contextualizacao-glosa-seq2seq-plano.md) | contextualização glosa → português: decisões e guardas |
+| [`README.md`](README.md) | índice de toda a documentação, com o estado de cada plano |
 | [`../computer-vision-model/treino/README.md`](../computer-vision-model/treino/README.md) | como rodar o treino |
+| [`../contextualization-model/README.md`](../contextualization-model/README.md) | como rodar a trilha de contextualização |
+| [`../mobile-app-companion/README.md`](../mobile-app-companion/README.md) | como buildar e rodar o app |
 
 ---
 

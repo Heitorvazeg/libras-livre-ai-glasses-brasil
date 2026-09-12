@@ -14,7 +14,7 @@ tts/pt_br/tokens.txt
 tts/pt_br/MODEL_CARD
 tts/pt_br/espeak-ng-data/
 
-# STT — Vosk pt-BR (obs.: motor Vosk ainda não plugado, ver SttEngine.kt)
+# STT — Vosk pt-BR (motor ATIVO, instanciado por CameraViewModel)
 vosk-model-small-pt-0.3/
 
 # Wake word — openWakeWord (raiz de assets/ + wakeword/)

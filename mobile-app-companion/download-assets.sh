@@ -12,6 +12,11 @@
 #   TTS    — Piper/sherpa-onnx (int8)       tts/pt_br/*
 #   STT    — Vosk pt-BR                     vosk-model-small-pt-0.3/*
 #   Wake   — openWakeWord (fixos)           melspectrogram.onnx, embedding_model.onnx
+#
+# NÃO baixados aqui (ver mobile-app-companion/README.md §2.3):
+#   - modelo_contextualizacao.tflite — gerado por
+#     contextualization-model/exportacao/para_tflite.py --experimento v2
+#   - wakeword/libras_livre_{iniciar,encerrar}.onnx — exigem treino (ver rodapé)
 
 set -euo pipefail
 
@@ -64,8 +69,8 @@ fi
 
 # ---------------------------------------------------------------------------
 # 3) STT — Vosk pt-BR
-#    OBS.: o motor Vosk ainda NÃO está plugado no app (SttEngine.kt usa o
-#    Android SpeechRecognizer). Baixado aqui só para quando for integrado.
+#    Motor ATIVO: CameraViewModel instancia VoskSttEngine. Sem este modelo, a
+#    transcrição da resposta do atendente não funciona.
 # ---------------------------------------------------------------------------
 if present "$ASSETS/vosk-model-small-pt-0.3/final.mdl"; then
   skip "vosk-model-small-pt-0.3/"

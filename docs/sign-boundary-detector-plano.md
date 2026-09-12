@@ -1,5 +1,12 @@
 # `SignBoundaryDetector` — detecção automática de início/fim de sinalização
 
+> **Status (2026-09-12): implementado, não calibrado.**
+> `libras/reconhecimento/SignBoundaryDetector.kt` roda no app com os "pontos de
+> partida sugeridos" deste plano — as fases de calibração (§7) dependem de device e
+> dataset que ainda não existem. A classificação do segmento continua no
+> `PlaceholderSignClassifier`, porque o export do ST-GCN para `.tflite` ainda não
+> foi escrito.
+
 > Plano de implementação do componente descrito em `docs/libras-livre-arquitetura.md`
 > §4.2 como "heurístico simples baseado em velocidade/presença da mão no
 > quadro" (MVP). Este documento é a implementação concreta dessa heurística —

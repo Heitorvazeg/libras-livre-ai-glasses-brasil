@@ -15,9 +15,10 @@
 // SttEngine.kt — em modo de escuta contínua (reinicia sozinho a cada resultado/erro), comparando
 // cada transcrição contra as duas frases fixas por regex. Zero dependência nova, mas não é
 // keyword-spotting de verdade: historicamente depende de rede em muitos aparelhos (o objetivo do
-// projeto é on-device/offline — ver PoC/api/README.md) e gasta mais bateria/CPU que um motor
-// dedicado. Fica atrás da mesma interface WakeWordDetector para ser trocada por Porcupine/TFLite
-// depois sem tocar no DialogOrchestrator.
+// projeto é on-device/offline — ver docs/libras-livre-arquitetura.md) e gasta mais bateria/CPU que
+// um motor dedicado. Fica atrás da mesma interface WakeWordDetector para ser trocada sem tocar no
+// DialogOrchestrator — OpenWakeWordDetector.kt já é essa troca, e só espera os classificadores
+// pt-BR treinados (ver mobile-app-companion/README.md §2.3).
 //
 // Concorrência não validada em hardware real (docs §4 item 3, §7 Fase 0): este detector precisa
 // continuar rodando (mic do celular) durante DialogState.ESCUTANDO_ATENDENTE, ao mesmo tempo que

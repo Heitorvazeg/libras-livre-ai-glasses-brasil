@@ -1,8 +1,15 @@
 # PoC — a terceira coordenada ajuda?
 
+> **Status (2026-09-12): respondido — o z ajuda.** O z recentrado rendeu +2,1
+> pontos, confirmado em segunda semente, e faz parte da configuração de entrega do
+> ST-GCN (`--com-z --z-recentrado`). Ver `decisao-arquitetura-modelo.md`.
+>
+> Consequência ainda aberta: `treino/exportar.py` **recusa** checkpoints com z, de
+> modo que a configuração de entrega não é exportável hoje.
+
 **Branch:** `poc/tres-coordenadas`, a partir de `claude/libras-detection-model-53kd30`
 **Notebook:** [`computer-vision-model/treino/notebook_poc_3d.ipynb`](../computer-vision-model/treino/notebook_poc_3d.ipynb)
-**Status:** implementado e testado; **sem resultado ainda** — falta rodar no Colab.
+**Status original (quando escrito):** implementado e testado, sem resultado — faltava rodar no Colab.
 
 ---
 
