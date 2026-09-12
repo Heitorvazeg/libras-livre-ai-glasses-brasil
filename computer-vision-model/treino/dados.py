@@ -82,6 +82,32 @@ def recentrar_z(seq: np.ndarray) -> np.ndarray:
     return saida
 
 
+# `todas` CONTINUA SENDO M+V, o que sempre foi. Acrescentar T aqui pareceu
+# natural e é armadilha: `todas` alimenta a partição LOSO do treinar.py, e
+# incluir MALTA faria as rodadas girarem também sobre as 8 pseudo-pessoas
+# dele — inclusive `TUFS`, que são 2.039 clipes sob um ID que não é uma
+# pessoa. A média reportada deixaria de ser o número do protocolo sem que
+# nada no comando mudasse. Quem quer MALTA pede por nome ou compõe.
+PREFIXOS_FONTE = {"minds": ("M",), "vlibrasil": ("V",), "malta": ("T",),
+                  "wlasl": ("W",), "todas": ("M", "V")}
+
+
+def prefixos_aceitos(fontes: str) -> tuple[str, ...]:
+    """`fontes` ('vlibrasil', 'vlibrasil,malta', ...) -> tupla de prefixos de pessoa.
+
+    Extraído de `carregar` para que quem só precisa saber "essa configuração
+    aceita o prefixo X?" — como a guarda de `pretreinar.carregar_corpora` — não
+    precise repetir o parsing, nem inferir a resposta a partir do que sobrou
+    depois de filtros que nada têm a ver com configuração (frames curtos, por
+    exemplo). É checagem de ELEGIBILIDADE, não de resultado de leitura.
+    """
+    pedidos = [f.strip() for f in fontes.split(",") if f.strip()]
+    if not pedidos or any(f not in PREFIXOS_FONTE for f in pedidos):
+        raise ValueError(f"fontes={fontes!r} — use um ou mais de {sorted(PREFIXOS_FONTE)}, "
+                         "separados por vírgula")
+    return tuple(sorted({p for f in pedidos for p in PREFIXOS_FONTE[f]}))
+
+
 def carregar(lm_dir: Path, fontes: str = "minds", min_frames: int = 3,
              imputar: bool = True, lacuna_maxima: int = 5,
              com_z: bool = False, z_recentrado: bool = False) -> list[Clipe]:
@@ -102,19 +128,7 @@ def carregar(lm_dir: Path, fontes: str = "minds", min_frames: int = 3,
     mãos ao referencial do punho (ver recentrar_z). O .npy sempre tem as 3 dims, então
     trocar de variante NÃO exige reextrair — são horas de MediaPipe economizadas.
     """
-    # `todas` CONTINUA SENDO M+V, o que sempre foi. Acrescentar T aqui pareceu
-    # natural e é armadilha: `todas` alimenta a partição LOSO do treinar.py, e
-    # incluir MALTA faria as rodadas girarem também sobre as 8 pseudo-pessoas
-    # dele — inclusive `TUFS`, que são 2.039 clipes sob um ID que não é uma
-    # pessoa. A média reportada deixaria de ser o número do protocolo sem que
-    # nada no comando mudasse. Quem quer MALTA pede por nome ou compõe.
-    PREFIXOS = {"minds": ("M",), "vlibrasil": ("V",), "malta": ("T",),
-                "wlasl": ("W",), "todas": ("M", "V")}
-    pedidos = [f.strip() for f in fontes.split(",") if f.strip()]
-    if not pedidos or any(f not in PREFIXOS for f in pedidos):
-        raise ValueError(f"fontes={fontes!r} — use um ou mais de {sorted(PREFIXOS)}, "
-                         "separados por vírgula")
-    aceitos = tuple(sorted({p for f in pedidos for p in PREFIXOS[f]}))
+    aceitos = prefixos_aceitos(fontes)
 
     clipes: list[Clipe] = []
     curtos: list[str] = []

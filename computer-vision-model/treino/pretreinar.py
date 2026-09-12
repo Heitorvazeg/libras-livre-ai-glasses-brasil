@@ -155,20 +155,28 @@ def carregar_corpora(dirs: list[Path], min_clipes_por_classe: int,
         clipes += novos
         print(f"[pretreino] {d.name}: {len(clipes) - antes} clipes")
 
-    # A AUDITORIA E A LEITURA PRECISAM CONCORDAR. Elas têm listas de fontes
-    # independentes: a auditoria aceita V, T e W; `fontes` decide o que é lido.
-    # Quando divergem, o arquivo é auditado, aprovado, contado no log — e some na
-    # leitura. O operador lê "auditoria OK: 24 amostras" e treina com 16.
-    # Já aconteceu duas vezes neste arquivo (MALTA, depois WLASL), então aqui a
-    # divergência aborta em vez de virar uma linha de log que ninguém cruza.
+    # A AUDITORIA E A CONFIGURAÇÃO DE LEITURA PRECISAM CONCORDAR. A auditoria
+    # aceita V, T e W; `fontes` decide o que é lido. Quando divergem, o arquivo é
+    # auditado, aprovado, contado no log — e some na leitura. O operador lê
+    # "auditoria OK: 24 amostras" e treina com 16. Já aconteceu duas vezes neste
+    # arquivo (MALTA, depois WLASL).
+    #
+    # A comparação é contra os PREFIXOS QUE `fontes` ACEITA, não contra o que
+    # sobrou depois de ler — a primeira versão comparava com `{c.pessoa[:1] for c
+    # in clipes}` e abortava também quando `min_frames` filtrava clipes CURTOS
+    # DEMAIS de um prefixo legitimamente incluído: nesse caso a fonte já estava
+    # em `--fontes`, e a mensagem mandava incluir algo que já estava incluído.
+    # Checar elegibilidade em vez de resultado separa "fonte não pedida" de
+    # "fonte pedida, mas todos os clipes eram curtos demais" — o segundo caso é
+    # normal e não deveria travar o pré-treino.
     auditados = {dd.parse_nome(Path(r["arquivo"]).stem)[0][:1]
                  for r in verificado["amostras"]}
-    lidos = {c.pessoa[:1] for c in clipes}
-    if auditados - lidos:
-        faltam = ", ".join(sorted(auditados - lidos))
+    aceitos = {p[:1] for p in dd.prefixos_aceitos(fontes)}
+    if auditados - aceitos:
+        faltam = ", ".join(sorted(auditados - aceitos))
         raise ValueError(
             f"a auditoria aprovou clipes com prefixo {faltam}, mas fontes={fontes!r} "
-            f"não os lê — seriam descartados em silêncio. Inclua a fonte "
+            f"não os aceita — seriam descartados em silêncio. Inclua a fonte "
             f"correspondente em --fontes ou retire o corpus do comando.")
 
     contagem: dict[str, int] = {}
