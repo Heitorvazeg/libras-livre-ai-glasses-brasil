@@ -1,11 +1,12 @@
 /*
  * Libras Livre — tradutor glosa via endpoint público do VLibras.
  *
- * POR QUE TRADUZIR AQUI, E NÃO NO PLAYER (§7.1 do plano): o vlibras.js tem um
- * Player.translate() que faria isso sozinho, mas ele usa o config.js do repositório, que aponta
- * para https://traducao2-dth.vlibras.gov.br/dl/translate — URL MORTA (503 medido em 2026-09-12).
- * Traduzir no Kotlin dá três coisas: a URL certa sem editar o bundle do player, cache entre
- * sessões, e um ponto único para o comportamento sem rede.
+ * POR QUE TRADUZIR AQUI, E NÃO NO PLAYER (§7.1 do plano): o vlibras.js tem um Player.translate()
+ * que faria isso sozinho — e o bundle que o download-assets.sh gera aponta para o MESMO endpoint
+ * que usamos aqui (conferido no build de 2026-09-12; a URL morta /dl/translate é a de outra
+ * variante do config, não a deste bundle). O que traduzir no Kotlin dá, e o player não dá:
+ * cache em disco entre sessões, um ponto único para o comportamento sem rede, e independência
+ * de um config que vive dentro de um bundle de 72 KB que não versionamos.
  *
  * CONTRATO DO ENDPOINT (medido, não documentado oficialmente):
  *   POST https://traducao2.vlibras.gov.br/translate
@@ -46,7 +47,9 @@ class VLibrasGlosaTranslator(
     val chave = normalizar(texto)
     if (chave.isEmpty()) return null
 
-    cache.obter(chave)?.let {
+    // Cache e rede no dispatcher de IO: a primeira [GlosaCache.obter] lê o TSV do disco, e esta
+    // função é chamada da main thread (CameraViewModel.playAvatar roda em viewModelScope).
+    withContext(io) { cache.obter(chave) }?.let {
       Log.d(TAG, "cache hit: \"$chave\"")
       return it
     }
@@ -57,7 +60,7 @@ class VLibrasGlosaTranslator(
     } }
 
     if (glosa.isNullOrBlank()) return null
-    cache.guardar(chave, glosa)
+    withContext(io) { cache.guardar(chave, glosa) }
     return glosa
   }
 
@@ -108,7 +111,10 @@ class GlosaCache(private val arquivo: File, private val maxEntradas: Int = 500) 
   @Synchronized
   fun guardar(chave: String, glosa: String) {
     carregar()
-    memoria[chave] = glosa
+    // O formato é uma linha por par: um \t ou \n dentro da glosa cortaria o arquivo ao meio na
+    // releitura (a linha órfã é descartada em silêncio por [carregar]). Frases longas do atendente
+    // podem voltar assim do endpoint.
+    memoria[chave] = glosa.replace(Regex("[\t\n\r]+"), " ").trim()
     while (memoria.size > maxEntradas) {
       val maisAntiga = memoria.keys.firstOrNull() ?: break
       memoria.remove(maisAntiga)

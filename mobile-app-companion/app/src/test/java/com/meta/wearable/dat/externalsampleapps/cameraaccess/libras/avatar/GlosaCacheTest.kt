@@ -52,6 +52,19 @@ class GlosaCacheTest {
   }
 
   @Test
+  fun `glosa multilinha nao corrompe o arquivo — o formato e uma linha por par`() {
+    val f = tmp()
+    GlosaCache(f).apply {
+      guardar("a", "BOM\nDIA\tTUDO BEM")
+      guardar("b", "RECEPCAO")
+    }
+    val lido = GlosaCache(f)
+    assertEquals("BOM DIA TUDO BEM", lido.obter("a"))
+    // Sem a higienizacao, a cauda da primeira glosa viraria uma linha orfa e comeria a segunda.
+    assertEquals("RECEPCAO", lido.obter("b"))
+  }
+
+  @Test
   fun `arquivo corrompido nao derruba — comeca vazio`() {
     val f = tmp().apply { writeText("lixo sem separador\nmais lixo") }
     assertNull(GlosaCache(f).obter("qualquer"))
