@@ -24,6 +24,7 @@ import android.media.AudioDeviceInfo
 import android.media.MediaRecorder
 import android.util.Log
 import android.view.Surface
+import android.webkit.WebView
 import androidx.exifinterface.media.ExifInterface
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.ViewModel
@@ -46,6 +47,12 @@ import com.meta.wearable.dat.core.types.PermissionStatus
 import com.meta.wearable.dat.externalsampleapps.cameraaccess.R
 import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.audio.AudioSessionManager
 import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.audio.PcmMicCapture
+import java.io.File
+import kotlinx.coroutines.CompletableDeferred
+import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.avatar.AvatarPlayer
+import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.avatar.AvatarState
+import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.avatar.GlosaCache
+import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.avatar.VLibrasGlosaTranslator
 import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.audio.PiperSherpaOnnxTtsEngine
 import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.audio.Speaker
 import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.audio.SpeechRecognizerWakeWordDetector
@@ -85,6 +92,10 @@ class CameraViewModel(
 ) : AndroidViewModel(application) {
 
   companion object {
+    // Teto para o ⑦ inteiro: tradução + carga residual do Unity + animação da frase. Um player
+    // travado não pode prender a conversa — melhor legenda tardia que atendimento congelado.
+    private const val AVATAR_TIMEOUT_MS = 45_000L
+
     private const val TAG = "CameraAccess:CameraViewModel"
     private const val FRAME_RATE = 24
     private const val KEYFRAME_WAIT_STEP_MS = 25L
@@ -130,6 +141,49 @@ class CameraViewModel(
           onRecognitionFailed = { dialogOrchestrator.onSignRecognitionFailed() },
       )
   private val audioSessionManager = AudioSessionManager(application)
+
+  // Sentido OUVINTE -> SURDO (docs/vlibras-webview-plano.md). O tradutor fala com o endpoint
+  // público do VLibras e guarda o resultado em disco — as perguntas de balcão se repetem, e o
+  // cache é o que torna o modo sem rede parcialmente útil.
+  private val glosaTranslator =
+      VLibrasGlosaTranslator(GlosaCache(File(application.filesDir, "vlibras/glosa-cache.tsv")))
+
+  // O avatar é criado uma vez e reaproveitado durante o atendimento inteiro; só o ciclo
+  // prepare/release é dirigido pelo DialogOrchestrator (§4.2 do plano).
+  private val avatarPlayer =
+      AvatarPlayer(
+          context = application,
+          onState = { s ->
+            _uiState.update { it.copy(avatarState = s) }
+            // Falhou no meio da espera do ⑦ (renderer morto, Unity que não ficou pronto): desiste
+            // agora. Sem isto o turno pagaria os AVATAR_TIMEOUT_MS inteiros para chegar à mesma
+            // conclusão que o AvatarPlayer já tinha.
+            if (s == AvatarState.FALHOU) {
+              avatarAnimacaoTerminada?.let { if (it.isActive) it.complete(false) }
+            }
+          },
+          onGlossEnd = { avatarAnimacaoTerminada?.let { if (it.isActive) it.complete(true) } },
+      )
+
+  /**
+   * A WebView do avatar, para o [ui.AvatarScreen] anexar.
+   *
+   * Fica FORA do [CameraUiState] de propósito: uma View numa data class de estado quebra a
+   * igualdade estrutural e segura contexto vivo dentro de um StateFlow. Quem dispara a
+   * recomposição é o `avatarState`, que muda exatamente quando esta View nasce, fica pronta ou
+   * morre — a tela então busca a referência atual aqui.
+   */
+  val avatarView: WebView?
+    get() = avatarPlayer.view
+
+  /** Congela/descongela o Unity com o app em background — ver AvatarScreen. */
+  fun pausarAvatar() = avatarPlayer.pause()
+
+  fun retomarAvatar() = avatarPlayer.resume()
+
+  // Completado por onGlossEnd (true) ou pela transição para FALHOU (false) — é como playAvatar()
+  // sabe que pode devolver o controle ao ⑦.
+  @Volatile private var avatarAnimacaoTerminada: CompletableDeferred<Boolean>? = null
 
   // Cadeia modelo -> guarda -> template -> passthrough (§3.3). Nasce uma vez e vive até
   // onCleared(): o Interpreter do .tflite não deve ser recriado por sessão (§7.1).
@@ -211,16 +265,75 @@ class CameraViewModel(
             contextualizer = glossContextualizer,
             ensureCameraActive = ::ensureCameraActiveForLibras,
             deactivateCamera = ::deactivateCameraForLibras,
-            // TODO: handoff pro pipeline texto->glosa->avatar de docs/vlibras-webview-plano.md,
-            // ainda não implementado nesta branch.
-            onAvatarText = { text ->
-              Log.d(TAG, "Texto pronto pro avatar (handoff pendente): \"$text\"")
+            playAvatar = ::playAvatar,
+            prepareAvatar = avatarPlayer::prepare,
+            releaseAvatar = ::liberarAvatar,
+            onAvatarUnavailable = { text ->
+              // Degradação explícita, nunca silêncio: a pessoa surda perde o avatar, mas a
+              // legenda aparece e o atendente ouve que a resposta não foi sinalizada.
+              Log.w(TAG, "Avatar indisponível — caindo para legenda: \"$text\"")
+              _uiState.update { it.copy(avatarLegenda = text) }
             },
         )
     dialogOrchestrator.attachWakeWordDetector(wakeWordDetector)
     viewModelScope.launch {
       dialogOrchestrator.state.collect { state -> _uiState.update { it.copy(dialogState = state) } }
     }
+  }
+
+  /**
+   * Estado ⑦: traduz o texto do atendente para glosa e manda o avatar sinalizar, suspendendo até
+   * a animação terminar. Devolve false quando não deu — sem rede E sem cache, ou avatar que não
+   * subiu —, e aí o DialogOrchestrator aciona o caminho degradado.
+   *
+   * O timeout existe porque o gloss:end vem do Unity, e um player travado não pode prender a
+   * conversa: melhor uma legenda tardia que um atendimento congelado.
+   */
+  private suspend fun playAvatar(text: String): Boolean {
+    // Abre a tela ANTES de traduzir, e com a legenda já preenchida: a pessoa surda vê o que foi
+    // dito enquanto a glosa vem da rede, e os dois caminhos de falha (sem rede, player caído)
+    // encontram a tela aberta mostrando o texto em vez de devolverem preto.
+    _uiState.update { it.copy(avatarVisivel = true, avatarLegenda = text) }
+
+    if (avatarPlayer.state == AvatarState.FALHOU) return false
+    val glosa = glosaTranslator.traduzir(text) ?: return false
+    Log.i(TAG, "glosa para o avatar: \"$glosa\"")
+
+    val espera = CompletableDeferred<Boolean>()
+    avatarAnimacaoTerminada = espera
+    avatarPlayer.play(glosa)
+    // Teto generoso: a carga do Unity (6-9 s) pode ainda estar em curso na primeira resposta do
+    // atendimento, e a própria animação de uma frase leva alguns segundos.
+    val concluiu = withTimeoutOrNull(AVATAR_TIMEOUT_MS) { espera.await() } ?: false
+    avatarAnimacaoTerminada = null
+    if (!concluiu) Log.w(TAG, "avatar não sinalizou a tempo (${AVATAR_TIMEOUT_MS}ms)")
+    return concluiu
+  }
+
+  /**
+   * Abre a tela do avatar por ação explícita do operador (botão), não pela máquina de estados.
+   *
+   * Existe porque o avatar só tem o que mostrar no ⑦, e entre um atendimento e outro ele ficaria
+   * ocioso segurando ~300 MB. Fechar e reabrir custa os 6-9 s de carga do Unity — aceitável
+   * justamente por ser intencional: quem apertou o botão sabe que pediu, e a UI mostra
+   * [AvatarState.CARREGANDO] enquanto isso.
+   */
+  fun abrirAvatar() {
+    avatarPlayer.prepare()
+    _uiState.update { it.copy(avatarVisivel = true) }
+  }
+
+  /** Fecha a tela e devolve a memória. A próxima [abrirAvatar] recarrega do zero. */
+  fun fecharAvatar() = liberarAvatar()
+
+  /**
+   * Destrói a WebView E fecha a tela. As duas coisas andam juntas: o DialogOrchestrator chama
+   * isto quando o atendimento encerra por inatividade, e uma tela aberta sobre uma WebView
+   * destruída mostraria um retângulo preto sem dono.
+   */
+  private fun liberarAvatar() {
+    avatarPlayer.release()
+    _uiState.update { it.copy(avatarVisivel = false, avatarLegenda = null) }
   }
 
   // MARK: - Surface
@@ -776,6 +889,7 @@ class CameraViewModel(
     cleanupSession()
     videoRecorder.close()
     landmarkPipeline.dispose()
+    avatarPlayer.release()
     glossContextualizer.close()
     speaker.shutdown()
     sttEngine.stop()

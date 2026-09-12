@@ -59,9 +59,20 @@ class DialogOrchestrator(
     // Desliga o stream (câmera+display) — chamado assim que uma sessão de sinais fecha (②→③),
     // já que a captura de vídeo não é mais necessária dali em diante no ciclo.
     private val deactivateCamera: () -> Unit,
-    // Handoff pro pipeline texto->glosa->avatar (docs/vlibras-webview-plano.md) — ainda não
-    // implementado nesta branch, por isso é só um callback injetado (ver §6.5 do plano).
-    private val onAvatarText: (String) -> Unit,
+    // Handoff pro pipeline texto->glosa->avatar (docs/vlibras-webview-plano.md §6, Fase 5).
+    // Suspende até a animação terminar (ou desistir), para que ⑦ só volte a ① quando a pessoa
+    // surda de fato tiver visto a resposta. Devolve false quando o avatar não estava disponível
+    // — quem chama decide o fallback.
+    private val playAvatar: suspend (String) -> Boolean,
+    // Pré-carrega o avatar no INÍCIO do atendimento, não no ⑦: o Unity leva 6-9 s para ficar
+    // pronto (medido, §0.7 do plano), e esse tempo cabe escondido atrás de ②③④⑤⑥. Criar não é
+    // mostrar.
+    private val prepareAvatar: () -> Unit,
+    // Fim do atendimento: devolve os ~300 MB do processo do renderer.
+    private val releaseAvatar: () -> Unit,
+    // Último recurso quando o avatar não subiu: falar a resposta e mostrar a legenda, em vez de
+    // travar em ⑦ (§6, Fase 5 do plano).
+    private val onAvatarUnavailable: (String) -> Unit,
 ) {
 
   companion object {
@@ -175,6 +186,9 @@ class DialogOrchestrator(
           return@launch
         }
         palavrasReconhecidas.clear()
+        // Começa a carregar o Unity agora, invisível: até chegarmos ao ⑦ terão passado ②③④⑤⑥,
+        // tempo de sobra para os 6-9 s de carga (§4.2 do plano).
+        prepareAvatar()
         setState(DialogState.CAPTURANDO_SINAIS)
         resetIdleTimeout(DialogState.CAPTURANDO_SINAIS) { endSignSession() }
         landmarkPipeline.startSession()
@@ -250,8 +264,14 @@ class DialogOrchestrator(
     scope.launch {
       audioSessionManager.releaseListening()
       setState(DialogState.GERANDO_AVATAR)
-      onAvatarText(text)
+      // Suspende até o avatar terminar de sinalizar. Se ele não estava disponível (sem WebGL,
+      // assets ausentes, renderer morto, sem rede e sem cache), a resposta ainda chega à pessoa
+      // surda pelo caminho degradado — nunca ficamos presos em ⑦.
+      if (!playAvatar(text)) onAvatarUnavailable(text)
+      // O atendimento terminou este turno; o avatar fica carregado para o próximo, e só é
+      // destruído quando o atendimento inteiro encerra por inatividade (§4.2).
       setState(DialogState.AGUARDANDO_SINAL)
+      resetIdleTimeout(DialogState.AGUARDANDO_SINAL) { encerrarAtendimento() }
     }
   }
 
@@ -260,6 +280,16 @@ class DialogOrchestrator(
     audioSessionManager.releaseListening()
     // Permite tentar de novo com "Libras Livre, iniciar" sem reabrir a sessão de sinais inteira.
     setState(DialogState.AGUARDANDO_RESPOSTA)
+  }
+
+  /**
+   * Fim do ATENDIMENTO (não do turno): ninguém interagiu por [IDLE_TIMEOUT_MS] depois que o
+   * avatar respondeu. É aqui que os ~300 MB do renderer voltam para o sistema — destruir por
+   * turno faria a próxima resposta esperar de novo os 6-9 s de carga do Unity (§4.2).
+   */
+  private fun encerrarAtendimento() {
+    Log.i(TAG, "Atendimento ocioso — liberando o avatar")
+    releaseAvatar()
   }
 
   // (Re)inicia o timer de inatividade — cancela qualquer um pendente antes (cobre tanto "resetar

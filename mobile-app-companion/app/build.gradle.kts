@@ -73,6 +73,11 @@ android {
   // O .tflite precisa ficar NÃO COMPRIMIDO no APK: o Interpreter o acessa por
   // mmap a partir do asset, e um asset comprimido não é mapeável (§7.3 do plano).
   androidResources { noCompress += "tflite" }
+
+  // android.util.Log não existe na JVM e, por padrão, qualquer chamada a ele explode nos testes
+  // de unidade. Os componentes do Libras Livre logam (é como se depura em campo), então os
+  // stubs devolvem valor padrão em vez de lançar. Vale só para unit tests.
+  testOptions { unitTests.isReturnDefaultValues = true }
   signingConfigs {
     getByName("debug") {
       storeFile = file("sample.keystore")
@@ -99,6 +104,7 @@ dependencies {
   implementation(libs.mwdat.core)
   implementation(libs.mwdat.camera)
   implementation(libs.mwdat.mockdevice)
+  implementation(libs.androidx.webkit)
 
   // Libras Livre — motores de IA local (docs/orquestracao-dialogo-audio-plano.md §4 itens 9-11).
   //

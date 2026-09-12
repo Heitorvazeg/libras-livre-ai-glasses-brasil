@@ -38,6 +38,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.LinkOff
+import androidx.compose.material.icons.filled.Accessibility
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PhotoCamera
@@ -172,6 +173,7 @@ fun CameraScreen(
           onWakeEncerrar = {
             cameraViewModel.onWakeWordButton(WakeWord.ENCERRAR, onRequestRecordAudioPermission)
           },
+          onAbrirAvatar = cameraViewModel::abrirAvatar,
           onUpdateFirmware = { activity?.let { wearablesViewModel.openFirmwareUpdate(it) } },
       )
     }
@@ -187,6 +189,21 @@ fun CameraScreen(
       CapturePreviewScreen(
           preview = preview,
           onDismiss = { cameraViewModel.dismissCapturePreview() },
+      )
+    }
+
+    // Libras Livre: a tela do avatar (estado ⑦). Abre sozinha quando a resposta do atendente
+    // chega — ver CameraViewModel.playAvatar — e fica aberta até o operador fechar ou o
+    // atendimento encerrar por inatividade, para a WebView não ser reanexada a cada turno.
+    if (ui.avatarVisivel) {
+      AvatarScreen(
+          estado = ui.avatarState,
+          legenda = ui.avatarLegenda,
+          webView = { cameraViewModel.avatarView },
+          onFechar = cameraViewModel::fecharAvatar,
+          onTentarDeNovo = cameraViewModel::abrirAvatar,
+          onPausar = cameraViewModel::pausarAvatar,
+          onRetomar = cameraViewModel::retomarAvatar,
       )
     }
 
@@ -444,6 +461,7 @@ private fun BottomBar(
     onToggleRecording: () -> Unit,
     onWakeIniciar: () -> Unit,
     onWakeEncerrar: () -> Unit,
+    onAbrirAvatar: () -> Unit,
     onUpdateFirmware: () -> Unit,
 ) {
   Column(
@@ -463,7 +481,12 @@ private fun BottomBar(
     } else {
       // Libras Livre: botões de fallback da wake word — orquestram a sessão de diálogo (só
       // quando o stream está ao vivo). Ver libras/WakeWordDetector.kt.
-      DialogControlRow(ui = ui, onWakeIniciar = onWakeIniciar, onWakeEncerrar = onWakeEncerrar)
+      DialogControlRow(
+          ui = ui,
+          onWakeIniciar = onWakeIniciar,
+          onWakeEncerrar = onWakeEncerrar,
+          onAbrirAvatar = onAbrirAvatar,
+      )
       CaptureRow(
           ui = ui,
           onStartPreview = onStartPreview,
@@ -561,7 +584,9 @@ private fun AnchoredPrimaryButton(
 }
 
 @Composable
-private fun CapturePill(
+// Sem `private`: o AvatarScreen reusa a mesma pílula, para o botão de retentativa ter o mesmo
+// peso visual dos botões de diálogo.
+internal fun CapturePill(
     icon: androidx.compose.ui.graphics.vector.ImageVector,
     label: String,
     contentDescription: String,
@@ -708,6 +733,7 @@ private fun DialogControlRow(
     ui: CameraUiState,
     onWakeIniciar: () -> Unit,
     onWakeEncerrar: () -> Unit,
+    onAbrirAvatar: () -> Unit,
 ) {
   val iniciarEnabled = ui.dialogState in DIALOG_STATES_WHERE_INICIAR_ACTS
   val encerrarEnabled = ui.dialogState in DIALOG_STATES_WHERE_ENCERRAR_ACTS
@@ -744,6 +770,17 @@ private fun DialogControlRow(
           contentDescription = stringResource(R.string.dialog_wake_encerrar),
           enabled = encerrarEnabled,
           onClick = onWakeEncerrar,
+      )
+      // Sempre habilitado: abrir o avatar é uma ação do operador, não um passo da máquina de
+      // estados. Serve para conferir o avatar antes do atendimento (ele leva 6-9 s para subir) e
+      // para reabrir a tela depois de a ter fechado no meio de uma conversa.
+      CapturePill(
+          modifier = Modifier.weight(1f).testTag("avatar_button"),
+          icon = Icons.Filled.Accessibility,
+          label = stringResource(R.string.avatar_open),
+          contentDescription = stringResource(R.string.avatar_open),
+          enabled = true,
+          onClick = onAbrirAvatar,
       )
     }
   }

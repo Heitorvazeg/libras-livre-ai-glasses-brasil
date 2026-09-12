@@ -17,6 +17,7 @@ import android.graphics.Bitmap
 import android.net.Uri
 import com.meta.wearable.dat.camera.types.StreamState
 import com.meta.wearable.dat.core.session.DeviceSessionState
+import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.avatar.AvatarState
 import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.dialogo.DialogState
 import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.reconhecimento.LibrasState
 
@@ -29,6 +30,13 @@ sealed interface CapturePreview {
 
 data class CameraUiState(
     // Bound directly to the SDK state machines.
+    // Libras Livre — avatar VLibras (docs/vlibras-webview-plano.md). Carrega escondido durante
+    // a conversa e só aparece no estado ⑦; a legenda é o caminho degradado quando ele não sobe.
+    val avatarState: AvatarState = AvatarState.OCIOSO,
+    // Controlado por botão (abrirAvatar/fecharAvatar), não pela máquina de estados: o avatar só
+    // tem o que mostrar no ⑦, e fora dele seguraria ~300 MB à toa.
+    val avatarVisivel: Boolean = false,
+    val avatarLegenda: String? = null,
     val sessionState: DeviceSessionState = DeviceSessionState.IDLE,
     val streamState: StreamState = StreamState.STOPPED,
     // Flips once when the first preview frame arrives; drives the loading→preview swap. A one-shot

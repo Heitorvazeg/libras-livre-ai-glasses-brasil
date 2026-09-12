@@ -12,6 +12,7 @@
 #   TTS    — Piper/sherpa-onnx (int8)       tts/pt_br/*
 #   STT    — Vosk pt-BR                     vosk-model-small-pt-0.3/*
 #   Wake   — openWakeWord (fixos)           melspectrogram.onnx, embedding_model.onnx
+#   Avatar — VLibras player (Unity WebGL)   vlibras/vlibras.js + vlibras/target/*
 #
 # NÃO baixados aqui (ver mobile-app-companion/README.md §2.3):
 #   - modelo_contextualizacao.tflite — gerado por
@@ -91,6 +92,41 @@ for f in melspectrogram.onnx embedding_model.onnx; do
     fetch "$OWW/$f" "$ASSETS/$f"
   fi
 done
+
+# ---------------------------------------------------------------------------
+# 5) Avatar — player VLibras (Unity WebGL + wrapper JS)
+#    O repositorio oficial ja traz o build Unity pronto em src/target/ (nenhum Unity Editor
+#    necessario). O wrapper vlibras.js sai de um build com webpack — que roda em Node moderno,
+#    medido em 2026-09-12. Licenca LGPLv3: ver docs/vlibras-webview-plano.md §0.6.
+# ---------------------------------------------------------------------------
+# As duas metades sao verificadas SEPARADAMENTE de proposito: quem roda sem npm fica com o
+# target/ completo e sem o vlibras.js, e a mensagem manda rodar de novo depois de instalar o
+# Node — uma guarda unica sobre o target/ faria essa segunda rodada nao fazer nada.
+if present "$ASSETS/vlibras/target/playerweb.data.unityweb" && present "$ASSETS/vlibras/vlibras.js"; then
+  skip "vlibras/ (player + wrapper)"
+else
+  log "Avatar: vlibras-player-webjs (~13,5MB de build Unity)"
+  mkdir -p "$ASSETS/vlibras/target"
+  fetch "https://codeload.github.com/spbgovbr-vlibras/vlibras-player-webjs/tar.gz/refs/heads/master" \
+        "$TMP/player.tar.gz"
+  tar -xzf "$TMP/player.tar.gz" -C "$TMP"
+  SRC="$(find "$TMP" -maxdepth 1 -type d -name 'vlibras-player-webjs-*' | head -1)"
+  cp -a "$SRC"/src/target/. "$ASSETS/vlibras/target/"
+
+  if command -v npm >/dev/null 2>&1; then
+    log "Avatar: buildando o wrapper vlibras.js"
+    # Sem `set -e` aqui: um webpack que falha nao pode abortar o script inteiro e levar junto os
+    # assets que ja baixaram — o avatar cai na legenda, o resto do app funciona.
+    if (cd "$SRC" && npm install --silent --no-audit --no-fund >/dev/null 2>&1 && npx webpack >/dev/null 2>&1); then
+      cp "$SRC/build/vlibras.js" "$ASSETS/vlibras/vlibras.js"
+    else
+      printf '\033[1;33m ! \033[0m build do vlibras.js falhou — o avatar nao sobe (o resto segue).\n'
+    fi
+  else
+    printf '\033[1;33m ! \033[0m npm ausente: vlibras.js NAO foi gerado — o avatar nao sobe.\n'
+    printf '     Instale Node e rode de novo (o script retoma so esta parte).\n'
+  fi
+fi
 
 # ---------------------------------------------------------------------------
 echo

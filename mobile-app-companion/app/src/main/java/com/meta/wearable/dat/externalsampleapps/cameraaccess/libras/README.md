@@ -18,15 +18,23 @@ frames HEVC (CameraViewModel.handleVideoFrame)
       -> DialogOrchestrator acumula as glosas da sessão
       -> GlossContextualizer transforma a lista de glosas numa frase em português
       -> Speaker fala a frase ao "encerrar"
+
+e no sentido inverso, para a pessoa surda ler a resposta:
+
+  atendente responde por voz (mic dos óculos, HFP)
+  -> VoskSttEngine transcreve  (estado ⑥)
+  -> VLibrasGlosaTranslator: português -> glosa do VLibras  (rede, com cache em disco)
+  -> AvatarPlayer: WebView -> player VLibras -> Unity/WebGL -> avatar sinaliza  (estado ⑦)
 ```
 
-Organizado em 4 subpacotes, por domínio (não por tipo de arquivo):
+Organizado em 5 subpacotes, por domínio (não por tipo de arquivo):
 
 | Subpacote | Papel |
 |---|---|
 | `reconhecimento/` | pipeline de visão: extração, normalização, imputação, fronteiras, classificação |
 | `dialogo/` | máquina de estados da sessão (①→⑦) |
-| `contextualizacao/` | glosas reconhecidas → frase em português |
+| `contextualizacao/` | glosas reconhecidas → frase em português (surdo → ouvinte) |
+| `avatar/` | frase em português → glosa do VLibras → avatar 3D (ouvinte → surdo) |
 | `audio/` | wake word, síntese de voz, transcrição, troca A2DP/HFP |
 
 ### `reconhecimento/`
@@ -59,12 +67,48 @@ Organizado em 4 subpacotes, por domínio (não por tipo de arquivo):
 | `Guardas.kt` | `GuardedGlossContextualizer` — rejeita a saída do modelo quando ela inventa ou perde conteúdo |
 | `LexicoGlosas.kt` | léxico de glosas (`lexico-glosas.json`), contrato com a trilha de contextualização |
 
+Este é o sentido **surdo → ouvinte**. O inverso está em `avatar/`.
+
 A cadeia é `modelo (.tflite) → guarda → template → passthrough`. **O template é o
 piso e o modelo precisa merecer cada sessão**: em três rodadas de fine-tuning o
 modelo não bateu o template em F1 na validação sintética, mas a guarda o aceita em
 ~95% das sessões e ele ganha justamente onde há relação gramatical entre glosas
 ("banco esquina" → "o banco fica na esquina"). Se o asset do modelo não estiver
 presente, tudo continua funcionando com o template — sem erro, só um log.
+
+### `avatar/`
+
+O sentido **ouvinte → surdo**, fechando o estado ⑦. Não confundir com
+`contextualizacao/`: são direções opostas, notações diferentes, nenhum artefato
+compartilhado (ver `docs/vlibras-webview-plano.md` §0.5).
+
+| Arquivo | Papel |
+|---|---|
+| `GlosaTranslator.kt` | interface (português → glosa) |
+| `VLibrasGlosaTranslator.kt` | endpoint público do VLibras + `GlosaCache`, um TSV em disco |
+| `AvatarPlayer.kt` | dono da WebView: `prepare` / `play` / `pause` / `release`, e `AvatarState` |
+
+Quem consome: `CameraViewModel.playAvatar`, chamado pelo `DialogOrchestrator` no ⑦. A View
+é anexada por `ui/AvatarScreen.kt` — um `Dialog` em tela cheia que abre sozinho quando a
+resposta chega, com a legenda fixa embaixo. O `AvatarPlayer` continua sendo o dono da
+WebView: a tela anexa e solta, nunca destrói.
+
+O avatar é o player oficial do VLibras — Unity compilado para WebAssembly,
+desenhando por WebGL dentro de uma WebView. **Nada aqui escreve WebGL**; a WebView
+só precisa oferecer o contexto, e o `index.html` em `assets/vlibras/` falha
+explicitamente se ele não existir, para que o app caia na legenda em vez de mostrar
+uma tela branca.
+
+Três decisões que vieram de medição, não de palpite (`docs/vlibras-webview-plano.md`
+§0.7):
+
+- **Criar não é mostrar.** O Unity leva 6 a 9 s para ficar pronto, então `prepare()`
+  é chamado quando a sessão de sinais abre e carrega escondido; o ⑦ só torna visível.
+- **`onRenderProcessGone` é obrigatório.** O Unity vive no processo do renderer
+  (~307 MB medidos, contra 3–5 MB de heap Java no app). Quando o sistema mata esse
+  processo, sem tratamento o app inteiro cai junto.
+- **O ciclo é por atendimento, não por turno.** Destruir a WebView a cada resposta
+  faria a pessoa surda esperar os 6–9 s toda vez.
 
 ### `audio/`
 
@@ -125,6 +169,9 @@ Resumo do que **não** é baixável:
   openWakeWord só publica modelos prontos em inglês. Ausentes, o
   `OpenWakeWordDetector` não sobe e o fallback assume.
 
+O player do avatar (`vlibras/vlibras.js` + `vlibras/target/`, 13,5 MB) **é** baixado
+pelo script. Sem ele, o `AvatarPlayer` reporta falha e o app cai na legenda.
+
 ---
 
 ## Como testar sem óculos
@@ -139,6 +186,8 @@ Resumo do que **não** é baixável:
    → acumular → contextualizar → falar funciona, não que o reconhecimento está
    correto. Isso só com o `.tflite` real.
 4. Erros (modelos ausentes, segmento curto demais) aparecem no banner.
+5. Para ver só o avatar, sem percorrer o fluxo: o botão **Avatar** na linha dos
+   controles abre a tela a qualquer momento. O Unity leva 6-9 s para subir.
 
 ---
 
@@ -157,6 +206,11 @@ Resumo do que **não** é baixável:
   "pontos de partida sugeridos" do plano, marcados como tal no código.
 - **A classificação é um placeholder.** O `.tflite` real depende do export do
   ST-GCN, que `computer-vision-model/treino/exportar.py` ainda não cobre.
+- **O avatar depende de rede para traduzir e para buscar os sinais.** É a única
+  peça online do fluxo; o cache de glosa cobre repetições, e o espelho local do
+  dicionário (Fase 3.5 do plano) ainda não existe.
+- **O avatar nunca foi medido em GPU ARM.** A validação foi num emulador com
+  passthrough para GPU Intel; resultado positivo ali não prova celular real.
 
 Referências: `docs/extracao-landmarks-plano.md`,
 `docs/sign-boundary-detector-plano.md`,
