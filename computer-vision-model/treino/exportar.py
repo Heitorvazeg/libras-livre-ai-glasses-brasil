@@ -95,6 +95,7 @@ sys.path.insert(0, str(AQUI.parent / "datasets"))
 import proveniencia as pv  # noqa: E402
 
 LADO = 224
+N_POSE, N_MAO = gg.N_POSE, gg.N_MAO
 # Máxima divergência tolerada entre PyTorch e TFLite no mesmo tensor de entrada.
 # Em float32 é ruído de aritmética acumulada numa ResNet-18: acima disso é
 # diferença de GRAFO, não de precisão. Nos modos quantizados a perda de precisão é
@@ -165,12 +166,30 @@ def _config_cabeca_gcn(origem: dict) -> dict:
     meta = origem.get("meta", {})
     args = meta.get("args", {}) or meta.get("proveniencia", {}).get("args", {})
     if origem.get("smoke"):
-        args = {"com_z": True, "z_recentrado": True, "ossos": True, "movimento": False}
-    return {"z_recentrado": bool(args.get("z_recentrado")),
-            "imputar": not bool(args.get("sem_imputacao")),
-            "ossos": bool(args.get("ossos")),
-            "movimento": bool(args.get("movimento")),
-            "com_z": bool(args.get("com_z"))}
+        args = {"com_z": True, "z_recentrado": True, "ossos": True,
+                "movimento": False, "sem_imputacao": False}
+    # EXIGIR A CHAVE, NÃO ACEITAR O DEFAULT. A guarda de `canais_ent` compara um
+    # número só contra cinco flags, e duas delas não mudam canal nenhum:
+    # `z_recentrado` e `sem_imputacao`. Um checkpoint cujo metadado não traga
+    # `z_recentrado` seria exportado SEM recentrar o z — a feature que vale
+    # +2,1 pp — com a contagem de canais batendo perfeitamente. O mesmo vale para
+    # a imputação, que ainda seria declarada como embutida no sidecar.
+    # `ossos` e `movimento` também colidem entre si na guarda (ambos dobram), e
+    # só se separam sendo lidos explicitamente.
+    faltando = [k for k in ("com_z", "z_recentrado", "ossos", "movimento",
+                            "sem_imputacao") if k not in args]
+    if faltando:
+        raise SystemExit(
+            f"o checkpoint não declara {', '.join(faltando)} nos metadados. Assumir "
+            "o padrão exportaria uma cabeça diferente da que treinou, e a conferência "
+            "de canais não pega a diferença — `z_recentrado` e `sem_imputacao` não "
+            "mudam a contagem. Regenere o checkpoint com um treinar.py que grave "
+            "todas as flags de representação.")
+    return {"z_recentrado": bool(args["z_recentrado"]),
+            "imputar": not bool(args["sem_imputacao"]),
+            "ossos": bool(args["ossos"]),
+            "movimento": bool(args["movimento"]),
+            "com_z": bool(args["com_z"])}
 
 
 def montar(checkpoint: Path | None, modo: str, num_classes: int = 20,
@@ -228,12 +247,27 @@ def montar(checkpoint: Path | None, modo: str, num_classes: int = 20,
     return modelo_final.eval(), rotulos, origem
 
 
-def entrada_exemplo(modo: str, frames: int, pontos: int, dims: int = 2) -> torch.Tensor:
-    """Tensor com o shape do contrato — define o shape fixo do grafo exportado."""
-    if modo == "landmarks":
-        # Faixa realista: landmarks em unidades de ombro ficam em [-1,56; +1,84].
-        return torch.empty(1, frames, pontos, dims).uniform_(-1.8, 1.8)
-    return torch.rand(1, 3, LADO, LADO)
+def entrada_exemplo(modo: str, frames: int, pontos: int, dims: int = 2,
+                    lacunas: bool = False) -> torch.Tensor:
+    """Tensor com o shape do contrato — define o shape fixo do grafo exportado.
+
+    `lacunas` zera blocos de mão para exercitar o caminho de imputação da cabeça
+    do GCN. Sem isso a paridade roda sempre em dado denso: `uniform_` nunca
+    produz um bloco exatamente zerado, então o gather/where da imputação e o osso
+    pulso->punho com mão ausente ficariam sem conferência — e é justamente o
+    único trecho com lógica dependente de dado, onde um conversor erraria.
+    """
+    if modo != "landmarks":
+        return torch.rand(1, 3, LADO, LADO)
+    # Faixa realista: landmarks em unidades de ombro ficam em [-1,56; +1,84].
+    x = torch.empty(1, frames, pontos, dims).uniform_(-1.8, 1.8)
+    if lacunas and pontos >= N_POSE + 2 * N_MAO:
+        import gcn as _gg
+        a, b = _gg.N_POSE, _gg.N_POSE + _gg.N_MAO
+        c, d = b, b + _gg.N_MAO
+        x[:, frames // 4:frames // 4 + 3, a:b] = 0.0        # curta: imputada
+        x[:, frames // 2:frames // 2 + 12, c:d] = 0.0       # longa: fica zerada
+    return x
 
 
 def resolver_layout(origem: dict, pontos_cli: int | None) -> dict:
@@ -251,7 +285,15 @@ def resolver_layout(origem: dict, pontos_cli: int | None) -> dict:
              or meta.get("limite_escala_z") is not None)
     # Para o GCN, quem manda é a config com que a cabeça foi de fato construída
     # em `montar` — não uma segunda leitura dos mesmos metadados.
-    if origem.get("arquitetura") == "gcn" and "cabeca" in origem:
+    if origem.get("arquitetura") == "gcn":
+        # Sem a config da cabeça não há como saber quantas coordenadas a entrada
+        # tem, e adivinhar pelos metadados aqui foi o que já produziu uma cabeça
+        # de 3 coordenadas recebendo entrada de 2. A invariante é `montar` rodar
+        # antes; se não rodou, é erro de uso e tem que falhar alto.
+        if "cabeca" not in origem:
+            raise SystemExit("resolver_layout chamado antes de montar() para um "
+                             "checkpoint GCN: a configuração da cabeça é quem "
+                             "define o número de coordenadas da entrada.")
         usa_z = bool(origem["cabeca"]["com_z"])
     # A ResNet continua 2D: a cabeça Skeleton-DML monta a imagem a partir de x,y e
     # não há caminho testado para o z ali. O ST-GCN consome o esqueleto direto e a
@@ -443,8 +485,10 @@ def conferir_paridade(modelo_torch: nn.Module, destino: Path, modo: str, frames:
     ent, sai = interp.get_input_details()[0], interp.get_output_details()[0]
 
     piores, discordancias = [], 0
-    for _ in range(amostras):
-        x = entrada_exemplo(modo, frames, pontos, dims)
+    for i in range(amostras):
+        # Metade das amostras com lacunas de mão: o caminho de imputação e o osso
+        # pulso->punho com mão ausente só existem quando há bloco zerado.
+        x = entrada_exemplo(modo, frames, pontos, dims, lacunas=bool(i % 2))
         with torch.no_grad():
             esperado = modelo_torch(x).numpy()
         interp.set_tensor(ent["index"], x.numpy().astype(ent["dtype"]))

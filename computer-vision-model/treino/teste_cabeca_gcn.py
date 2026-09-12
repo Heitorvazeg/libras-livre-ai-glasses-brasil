@@ -93,11 +93,30 @@ def teste_ossos():
     print("  ok  com_ossos zera o z das ligacoes pulso->punho")
 
 
+def _valido_numpy(s):
+    """A máscara exatamente como `DatasetSinais.__getitem__` a monta."""
+    v = np.ones(s.shape[:2], dtype=bool)
+    for (a, b), ausente in zip(dd.BLOCOS_MAO, dd.maos_ausentes(s)):
+        v[:, a:b] = ~ausente[:, None]
+    return v
+
+
 def teste_movimento():
-    s = _seq()
-    esperado = gg.com_movimento(s)
-    obtido = cg.ComMovimento()(_t(s))[0].numpy()
-    _bate("com_movimento (sem mascara)", esperado, obtido)
+    """SEMPRE com máscara: é assim que o treino chama, e comparar contra a
+    versão sem máscara foi o que deixou um bug de 2,18 unidades passar."""
+    casos = {
+        "sem ausencias": [],
+        "lacuna longa (nao imputada)": [(0, 30, 39)],
+        "lacuna longa nas duas maos": [(0, 30, 39), (1, 60, 70)],
+        "ausente no inicio": [(0, 0, 6)],
+        "ausente no fim": [(1, 90, 96)],
+        "mao ausente o clipe inteiro": [(0, 0, 96)],
+    }
+    for nome, aus in casos.items():
+        s = _seq(ausencias=aus)
+        esperado = gg.com_movimento(s, _valido_numpy(s))
+        obtido = cg.ComMovimento()(_t(s), cg.validade(_t(s))).numpy()[0]
+        _bate(f"com_movimento: {nome}", esperado, obtido)
 
 
 def teste_sequencia():
@@ -123,13 +142,16 @@ def teste_cabeca_inteira():
         _bate(f"cabeça completa (semente {sem})", ref, obtido, TOL_INTERP)
         assert obtido.shape == (6, gg.T_FIXO, V), obtido.shape
 
-    # com movimento, a ordem é coordenadas -> ossos -> movimento
-    s = _seq(semente=3)
-    ref = gg.para_sequencia(gg.com_movimento(gg.com_ossos(
-        dd.imputar_maos(dd.recentrar_z(s), 5), gg.pais())))
-    obtido = cg.CabecaGCN(movimento=True)(_t(s))[0].numpy()
-    _bate("cabeça completa com movimento", ref, obtido, TOL_INTERP)
-    assert obtido.shape == (12, gg.T_FIXO, V), obtido.shape
+    # Com movimento, na ordem e com a máscara que o treino usa. Os casos com
+    # lacuna longa são os que separam a versão certa da errada.
+    for sem, aus in ((3, []), (4, [(0, 30, 39), (1, 60, 70)]), (5, [(0, 0, 6)])):
+        s = _seq(semente=sem, ausencias=aus)
+        base = dd.imputar_maos(dd.recentrar_z(s), 5)
+        ref = gg.para_sequencia(gg.com_movimento(
+            gg.com_ossos(base, gg.pais()), _valido_numpy(base)))
+        obtido = cg.CabecaGCN(movimento=True)(_t(s))[0].numpy()
+        _bate(f"cabeça completa com movimento (semente {sem})", ref, obtido, TOL_INTERP)
+        assert obtido.shape == (12, gg.T_FIXO, V), obtido.shape
 
 
 def teste_lote():

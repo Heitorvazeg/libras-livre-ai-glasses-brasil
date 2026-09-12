@@ -144,18 +144,43 @@ class ComOssos(nn.Module):
         return torch.cat([seq, osso], dim=-1)
 
 
+def validade(seq: torch.Tensor) -> torch.Tensor:
+    """(N, T, V) — quais nós foram observados. Espelha o que `DatasetSinais` monta.
+
+    Pose é sempre válida; cada bloco de mão vale o inverso de `maos_ausentes`,
+    que testa o bloco EXATAMENTE zerado em x,y. Construída por concatenação em
+    vez de escrita em fatia porque o grafo exportado prefere forma estática.
+    """
+    n, t = seq.shape[0], seq.shape[1]
+    partes = [torch.ones(n, t, dd.N_POSE, dtype=torch.bool, device=seq.device)]
+    for a, b in dd.BLOCOS_MAO:
+        presente = seq[:, :, a:b, :2].abs().sum(dim=(2, 3)) != 0        # (N, T)
+        partes.append(presente[:, :, None].expand(n, t, b - a))
+    return torch.cat(partes, dim=2)
+
+
 class ComMovimento(nn.Module):
     """Concatena a variação temporal dos canais (gcn.com_movimento).
 
-    A máscara de validade do numpy depende de quais nós foram observados. Aqui a
-    imputação já rodou antes, então o que sobra ausente são lacunas longas, que
-    continuam zeradas — e a diferença entre dois zeros é zero. O primeiro quadro
-    não tem anterior e sua variação é zero, como no numpy.
+    A MÁSCARA DE VALIDADE NÃO É OPCIONAL, e eu tinha escrito aqui que era. O
+    argumento errado: "a imputação já rodou, o que sobra ausente são lacunas
+    longas, e a diferença entre dois zeros é zero". Isso vale no MIOLO da lacuna
+    e falha na BORDA — no quadro em que a mão reaparece, o numpy mascarado dá 0 e
+    a versão sem máscara dá o salto inteiro. Medido: até 2,18 unidades de ombro
+    de divergência, mais que a amplitude útil do dado.
+
+    É o mesmo salto que `gcn.com_movimento` documenta com número: 1,32 unidade na
+    transição contra 0,0116 de deslocamento normal entre quadros. Sem a máscara, o
+    canal de movimento vira ruído exatamente onde a detecção oscila.
     """
 
-    def forward(self, seq: torch.Tensor) -> torch.Tensor:
+    def forward(self, seq: torch.Tensor, valido: torch.Tensor) -> torch.Tensor:
         d = torch.zeros_like(seq)
         d[:, 1:] = seq[:, 1:] - seq[:, :-1]
+        # Só há velocidade entre duas observações REAIS.
+        par = torch.zeros_like(valido)
+        par[:, 1:] = valido[:, 1:] & valido[:, :-1]
+        d = torch.where(par[:, :, :, None], d, torch.zeros_like(d))
         return torch.cat([seq, d], dim=-1)
 
 
@@ -202,14 +227,23 @@ class CabecaGCN(nn.Module):
     def forward(self, seq: torch.Tensor) -> torch.Tensor:
         if seq.ndim != 4:
             raise ValueError(f"esperava (N, T, V, C), veio {tuple(seq.shape)}")
+        # As funções numpy terminam em `.astype(np.float32)`; sem este cast a
+        # cabeça devolveria float64 para entrada float64, e as duas
+        # implementações deixariam de ser comparáveis fora do contrato do tflite.
+        seq = seq.to(torch.float32)
         if self.recentrar is not None:
             seq = self.recentrar(seq)
         if self.imputar is not None:
             seq = self.imputar(seq)
+        if self.movimento is not None:
+            # A validade é medida DEPOIS da imputação e ANTES dos ossos, que é
+            # onde `DatasetSinais` a mede: ela descreve quais nós foram
+            # observados, e o osso de um nó ausente não muda essa resposta.
+            valido = validade(seq)
         if self.ossos is not None:
             seq = self.ossos(seq)
         if self.movimento is not None:
-            seq = self.movimento(seq)
+            seq = self.movimento(seq, valido)
         return self.sequencia(seq)
 
 
