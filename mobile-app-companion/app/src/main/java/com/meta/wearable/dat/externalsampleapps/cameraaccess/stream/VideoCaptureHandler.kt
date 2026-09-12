@@ -12,7 +12,7 @@
 // to an MP4 file via MediaMuxer. No re-encoding of video is needed. Video-only: the reconhecimento
 // de sinal roda só sobre landmarks (ver libras/LandmarkPipeline.kt), então o clipe não precisa de
 // uma trilha de áudio — o mic do celular ficou livre pra virar a fonte da wake word (ver
-// libras/AudioInputHandler.kt). The track opens on the first detectable keyframe so playback
+// libras/audio/PcmMicCapture.kt). The track opens on the first detectable keyframe so playback
 // isn't black, falling back to any frame after a short grace period so recording always starts
 // even when keyframes aren't detectable.
 
