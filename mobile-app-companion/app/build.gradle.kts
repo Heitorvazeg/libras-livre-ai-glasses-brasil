@@ -139,9 +139,9 @@ tasks
     .matching { it.name.startsWith("merge") && it.name.endsWith("Assets") }
     .configureEach { dependsOn(verificarAssets) }
 
-// ModeloContextualizacaoProvenienciaTest lê estes assets direto do disco. Assets não são
-// entrada dos testes de unidade por padrão: sem declarar aqui, trocar só o .tflite (ou o
-// carimbo) deixa a tarefa UP-TO-DATE e a guarda nem roda.
+// ModeloContextualizacaoProvenienciaTest e TabelasDuplicadasTest leem estes arquivos direto do
+// disco. Eles não são entrada dos testes de unidade por padrão: sem declarar aqui, trocar só o
+// .tflite, o carimbo ou uma tabela deixa a tarefa UP-TO-DATE e as guardas nem rodam.
 tasks.withType<Test>().configureEach {
   inputs
       .files(
@@ -149,6 +149,10 @@ tasks.withType<Test>().configureEach {
           "src/main/assets/modelo_contextualizacao.proveniencia.json",
           "src/main/assets/glosa_ids.json",
           "src/main/assets/destokenizar.json",
+          "src/main/assets/lexico-glosas.json",
+          "../../contextualization-model/artefatos/glosa_ids.json",
+          "../../contextualization-model/artefatos/destokenizar.json",
+          "../../contextualization-model/lexico/lexico-glosas.json",
       )
       .withPropertyName("contratoContextualizacao")
       .withPathSensitivity(PathSensitivity.RELATIVE)
