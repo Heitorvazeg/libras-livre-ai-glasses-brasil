@@ -96,6 +96,22 @@ class TestEntradaPretreino(unittest.TestCase):
         with self.assertRaisesRegex(FileNotFoundError, "Add Input"):
             ep.localizar(self.base / "nao-existe", "malta")
 
+    def test_aninhamento_duplo_do_tar_no_kaggle(self):
+        # MEDIDO EM PRODUÇÃO: o Kaggle extraiu um .tar.gz mesmo estando DENTRO
+        # de um .zip já extraído. Como o tar tem internamente uma pasta com o
+        # MESMO nome do pacote, o resultado ficou `pasta/pasta/*.npy` — a
+        # externa sem nenhum .npy, só a subpasta; a interna com os arquivos.
+        raiz = self.base / "input" / "kaggle-real"
+        externa = raiz / "landmarks-malta"
+        interna = externa / "landmarks-malta"
+        shutil.copytree(self.origens["malta"], interna)
+        self.assertEqual(ep.localizar(raiz, "malta"), interna)
+        # Volta a ambíguo se houver TAMBÉM um candidato genuinamente diferente.
+        outro = raiz / "outra-fonte" / "landmarks-malta"
+        shutil.copytree(self.origens["malta"], outro)
+        with self.assertRaisesRegex(ValueError, "encontradas 2"):
+            ep.localizar(raiz, "malta")
+
     def test_duplicatas_exclui_grupo_inteiro_e_audita(self):
         arquivos = sorted(self.origens["malta"].glob("*.npy"))
         primeiro = ep.pv.ler(arquivos[0])

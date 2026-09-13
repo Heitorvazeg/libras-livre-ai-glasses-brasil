@@ -35,9 +35,21 @@ def localizar(raiz: Path, fonte: str, explicita: str | Path | None = None) -> Pa
         return p
     if not raiz.is_dir():
         raise FileNotFoundError(f"Input ausente: {raiz}. Anexe datasets privados em Add Input.")
-    candidatos = sorted(set(raiz.rglob(pacote)) | {
-        p for p in raiz.rglob(pasta) if p.is_dir()
-    })
+    tars = set(raiz.rglob(pacote))
+    pastas = {p for p in raiz.rglob(pasta) if p.is_dir()}
+    # ANINHAMENTO DUPLO, MEDIDO EM PRODUÇÃO. O Kaggle às vezes extrai um .tar.gz
+    # mesmo estando DENTRO de um .zip que já foi extraído — contrariando a
+    # suposição registrada em notebook_gpu.ipynb de que só a camada externa
+    # seria descompactada. Como o próprio .tar.gz tem uma pasta interna com o
+    # MESMO nome do pacote, e o Kaggle nomeia a extração com o nome do arquivo
+    # sem a extensão, o resultado fica `pasta/pasta/*.npy` — duas pastas de
+    # mesmo nome, uma dentro da outra. A externa não tem .npy nenhum, só a
+    # subpasta; a interna tem os arquivos de verdade. Descartar a que é só
+    # invólucro (contém a mesma pasta e nada de útil) resolve sem adivinhar
+    # entre candidatos genuinamente diferentes.
+    pastas = {p for p in pastas
+             if list(p.glob("*.npy")) or not (p / pasta).is_dir()}
+    candidatos = sorted(tars | pastas)
     if len(candidatos) != 1:
         raise ValueError(
             f"Esperada uma entrada de {fonte}; encontradas {len(candidatos)}. "
