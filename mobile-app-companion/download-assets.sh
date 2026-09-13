@@ -17,7 +17,10 @@
 # NÃO baixados aqui (ver mobile-app-companion/README.md §2.3):
 #   - modelo_contextualizacao.tflite — gerado por
 #     contextualization-model/exportacao/para_tflite.py --experimento v2
-#   - wakeword/libras_livre_{iniciar,encerrar}.onnx — exigem treino (ver rodapé)
+#
+# wakeword/libras_livre_{iniciar,encerrar}.onnx[.data]: classificadores custom pt-BR,
+# versionados direto no git (pequenos, não regeneráveis sem re-treino) — não precisam
+# de download, já vêm com o checkout.
 
 set -euo pipefail
 
@@ -131,10 +134,3 @@ fi
 # ---------------------------------------------------------------------------
 echo
 log "Concluído."
-echo
-echo "PENDENTE (não baixável — exige treino): os classificadores custom pt-BR"
-echo "  app/src/main/assets/wakeword/libras_livre_iniciar.onnx"
-echo "  app/src/main/assets/wakeword/libras_livre_encerrar.onnx"
-echo "O openWakeWord só traz modelos prontos em inglês (alexa, hey jarvis, ...)."
-echo "Treine as duas frases pt-BR via automatic_model_training.ipynb do openWakeWord"
-echo "(ver docs/orquestracao-dialogo-audio-plano.md §7 Fase 3) e coloque os .onnx acima."
