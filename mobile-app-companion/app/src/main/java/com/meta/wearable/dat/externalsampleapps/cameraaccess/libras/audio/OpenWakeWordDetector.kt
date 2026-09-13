@@ -48,6 +48,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 class OpenWakeWordDetector(
     context: Context,
@@ -114,7 +115,9 @@ class OpenWakeWordDetector(
                   NAME_ENCERRAR -> WakeWord.ENCERRAR
                   else -> null
                 }
-            if (word != null) onWakeWord(word)
+            // As detecções chegam em Dispatchers.Default, e o DialogOrchestrator não é seguro entre
+            // threads — os botões e o SpeechRecognizerWakeWordDetector o chamam na main.
+            if (word != null) withContext(Dispatchers.Main) { onWakeWord(word) }
           }
         }
     realEngine.start()
