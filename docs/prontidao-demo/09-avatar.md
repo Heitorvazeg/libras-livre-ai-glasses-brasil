@@ -41,6 +41,19 @@ com os botões desabilitados.
 - modo avião com cache vazio: o ⑦ termina em ≤ ~7 s com a legenda;
 - "Pular" no meio da animação volta ao ① na hora.
 
+**Como ficou a onda 1.**
+- `libras/avatar/TetosAvatar.kt` calcula os tetos e define `DesfechoAvatar` (animou, pulado, avatar
+  indisponível, sem glosa, teto da animação, teto total). O desfecho vai para o log e para o
+  painel de conversa (10.1); o CSV entra com o gravador (1.9, onda 2).
+- O teto de 5 s da tradução mora no `VLibrasGlosaTranslator`. No teto, a espera é abandonada sem
+  aguardar o socket, e a conexão é derrubada.
+- **"Pular"** já existe na onda 1, dentro da tela do avatar e só durante o ⑦. O botão principal
+  do 4.7 (onda 3) passa a ser o lugar dele.
+- **Testes automatizados:** `TetosAvatarTest` e um caso novo no `VLibrasGlosaTranslatorTest`
+  (servidor que aceita a conexão e não responde: `null` em menos de 1 s com teto de 300 ms).
+- **Pendente:** os dois testes manuais acima precisam de uma transcrição com texto para chegar ao
+  ⑦, o que o emulador sem fala não produz. Ficam para o teste com voz (guia, A7 e A8).
+
 ## 9.2 A tela do avatar não esconde os controles
 
 **Decisão.** O atendente começa o próximo turno sem fechar nada, e fechar não destrói o Unity.

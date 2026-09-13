@@ -18,6 +18,7 @@ import android.net.Uri
 import com.meta.wearable.dat.camera.types.StreamState
 import com.meta.wearable.dat.core.session.DeviceSessionState
 import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.avatar.AvatarState
+import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.dialogo.Conversa
 import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.dialogo.DialogState
 import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.reconhecimento.LibrasState
 
@@ -59,6 +60,9 @@ data class CameraUiState(
     val libras: LibrasState = LibrasState(),
     // Libras Livre: estado da sessão de diálogo bidirecional (ver libras/DialogOrchestrator.kt).
     val dialogState: DialogState = DialogState.AGUARDANDO_SINAL,
+    // Libras Livre: painel de conversa (docs/prontidao-demo/10-tela.md §10.1). Independe do stream:
+    // o resultado de um turno fica visível até o próximo "iniciar".
+    val conversa: Conversa = Conversa(),
 ) {
   /** A session exists and is connected (or connecting); a stream can be started. */
   val hasSession: Boolean

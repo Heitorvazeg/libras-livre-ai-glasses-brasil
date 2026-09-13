@@ -51,8 +51,14 @@ selecionáveis, para teste.
   óculos indisponível, usando o do celular"), em vez de abortar.
 - **Onda 4:** seletor "Microfone da resposta: celular / óculos" nas configurações de demo.
 
+**Como ficou a onda 1.** Só o modo celular existe: sem o seletor, o modo óculos seria código
+inalcançável, e ele precisa trocar a fonte e o dispositivo do `PcmMicCapture` por escuta. Ele
+entra **inteiro na onda 4**, junto com o seletor e com a faixa de estado que mostra o aviso.
+
 **Teste (manual, emulador).** No modo celular, a escuta funciona sem nenhum dispositivo
-Bluetooth. No modo óculos sem SCO, aparece o aviso e a escuta segue pelo celular.
+Bluetooth. No modo óculos sem SCO, aparece o aviso e a escuta segue pelo celular (onda 4).
+**Automatizado (onda 1):** `FluxoOnda1Test` abre o ⑤ no emulador, sem Bluetooth, e confere que
+ele continua escutando. Antes da correção, o estado voltava ao ④ na hora.
 
 ## 5.3 Não escutar o fim da própria fala
 

@@ -193,6 +193,17 @@ class AvatarPlayer(
   }
 
   /**
+   * Interrompe a animação em curso e descarta uma glosa pendente — "Pular" e tetos do ⑦
+   * (docs/prontidao-demo/09-avatar.md §9.1). O Unity continua carregado para a próxima resposta.
+   */
+  fun parar() {
+    glosaPendente = null
+    val wv = webView ?: return
+    wv.evaluateJavascript("window.avatarStop && window.avatarStop();", null)
+    if (state == AvatarState.ANIMANDO) state = AvatarState.PRONTO
+  }
+
+  /**
    * App em background: congela sem descarregar. Voltar custa ~nada.
    *
    * NÃO chama `avatarStop`: parar a animação aqui mataria o `gloss:end` no meio do caminho, e

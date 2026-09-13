@@ -33,6 +33,7 @@ import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.audio.Speake
 import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.audio.SttEngine
 import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.audio.WakeWord
 import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.audio.WakeWordDetector
+import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.avatar.DesfechoAvatar
 import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.contextualizacao.GlossContextualizer
 import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.reconhecimento.LandmarkPipeline
 import kotlinx.coroutines.CoroutineScope
@@ -60,10 +61,9 @@ class DialogOrchestrator(
     // já que a captura de vídeo não é mais necessária dali em diante no ciclo.
     private val deactivateCamera: () -> Unit,
     // Handoff pro pipeline texto->glosa->avatar (docs/vlibras-webview-plano.md §6, Fase 5).
-    // Suspende até a animação terminar (ou desistir), para que ⑦ só volte a ① quando a pessoa
-    // surda de fato tiver visto a resposta. Devolve false quando o avatar não estava disponível
-    // — quem chama decide o fallback.
-    private val playAvatar: suspend (String) -> Boolean,
+    // Suspende até a animação terminar, um teto estourar ou o operador pular
+    // (docs/prontidao-demo/09-avatar.md §9.1), e diz como terminou — quem chama decide o fallback.
+    private val playAvatar: suspend (String) -> DesfechoAvatar,
     // Pré-carrega o avatar no INÍCIO do atendimento, não no ⑦: o Unity leva 6-9 s para ficar
     // pronto (medido, §0.7 do plano), e esse tempo cabe escondido atrás de ②③④⑤⑥. Criar não é
     // mostrar.
@@ -73,20 +73,13 @@ class DialogOrchestrator(
     // Último recurso quando o avatar não subiu: falar a resposta e mostrar a legenda, em vez de
     // travar em ⑦ (§6, Fase 5 do plano).
     private val onAvatarUnavailable: (String) -> Unit,
+    // O que o painel de conversa mostra (docs/prontidao-demo/10-tela.md §10.1): cada sinal, a frase
+    // falada, a resposta transcrita e como o ⑦ terminou. Só informa; não decide nada.
+    private val onConversa: (EventoConversa) -> Unit = {},
 ) {
 
   companion object {
     private const val TAG = "Libras:DialogOrchestrator"
-
-    // Estados em que a wake word deve estar ouvindo (docs/orquestracao-dialogo-audio-plano.md
-    // §5): "O detector de wake word fica ativo em ①②④⑤ [...] só pausa em ③⑥⑦".
-    private val WAKE_WORD_ACTIVE_STATES =
-        setOf(
-            DialogState.AGUARDANDO_SINAL,
-            DialogState.CAPTURANDO_SINAIS,
-            DialogState.AGUARDANDO_RESPOSTA,
-            DialogState.ESCUTANDO_ATENDENTE,
-        )
 
     // Corta "Libras Livre, encerrar" (com variações comuns de pontuação/caixa) do final da
     // transcrição — a frase pode vazar pro texto reconhecido pelo STT (plano §4 item 3, §6.4).
@@ -119,7 +112,7 @@ class DialogOrchestrator(
    * criação. */
   fun attachWakeWordDetector(detector: WakeWordDetector) {
     wakeWordDetector = detector
-    if (_state.value in WAKE_WORD_ACTIVE_STATES) detector.start()
+    if (Transicoes.wakeWordAtiva(_state.value)) detector.start()
   }
 
   /**
@@ -130,7 +123,7 @@ class DialogOrchestrator(
    * espera wake word.
    */
   fun resumeWakeWordDetectorIfActive() {
-    if (_state.value in WAKE_WORD_ACTIVE_STATES) wakeWordDetector?.start()
+    if (Transicoes.wakeWordAtiva(_state.value)) wakeWordDetector?.start()
   }
 
   /** Chamado pelo [WakeWordDetector] ativo (motor real ou botão) quando uma frase é ouvida. */
@@ -153,7 +146,10 @@ class DialogOrchestrator(
    * quem decide quando falar é [endSignSession].
    */
   fun onSignRecognized(text: String) {
-    if (text.isNotBlank()) palavrasReconhecidas.add(text)
+    if (text.isNotBlank()) {
+      palavrasReconhecidas.add(text)
+      onConversa(EventoConversa.SinalClassificado(SinalNaConversa(glosa = text)))
+    }
     // Conta como atividade — reinicia o timeout de 1 min de inatividade (§7 Fase 7).
     resetIdleTimeout(DialogState.CAPTURANDO_SINAIS) { endSignSession() }
   }
@@ -186,6 +182,7 @@ class DialogOrchestrator(
           return@launch
         }
         palavrasReconhecidas.clear()
+        onConversa(EventoConversa.TurnoIniciado)
         // Começa a carregar o Unity agora, invisível: até chegarmos ao ⑦ terão passado ②③④⑤⑥,
         // tempo de sobra para os 6-9 s de carga (§4.2 do plano).
         prepareAvatar()
@@ -220,7 +217,10 @@ class DialogOrchestrator(
       if (glosas.isNotEmpty()) {
         val resultado = contextualizer.contextualize(glosas)
         Log.i(TAG, "glosas=$glosas -> \"${resultado.texto}\" (${resultado.origem})")
-        if (resultado.texto.isNotBlank()) speaker.speakAndAwait(resultado.texto)
+        if (resultado.texto.isNotBlank()) {
+          onConversa(EventoConversa.FraseFalada(resultado.texto, resultado.origem))
+          speaker.speakAndAwait(resultado.texto)
+        }
       }
       setState(DialogState.AGUARDANDO_RESPOSTA)
     }
@@ -229,12 +229,9 @@ class DialogOrchestrator(
   private fun beginListening() {
     setState(DialogState.ESCUTANDO_ATENDENTE)
     scope.launch {
-      val device = audioSessionManager.acquireListening()
-      if (device == null) {
-        Log.w(TAG, "Sem dispositivo SCO disponível — volta pra AGUARDANDO_RESPOSTA sem escutar")
-        setState(DialogState.AGUARDANDO_RESPOSTA)
-        return@launch
-      }
+      // Microfone do celular (docs/prontidao-demo/05-audio.md §5.2): sem troca de perfil
+      // Bluetooth, então sem audioSessionManager.acquireListening()/releaseListening() neste
+      // caminho. Eles voltam com o modo óculos do seletor (onda 4).
       sttEngine.start(
           onResult = { text -> onAttendantTranscribed(text) },
           onError = { onAttendantTranscriptionFailed() },
@@ -262,12 +259,17 @@ class DialogOrchestrator(
     if (_state.value != DialogState.TRANSCREVENDO) return
     val text = rawText.replace(TRAILING_ENCERRAR_PATTERN, "").trim()
     scope.launch {
-      audioSessionManager.releaseListening()
+      onConversa(EventoConversa.RespostaTranscrita(text))
       setState(DialogState.GERANDO_AVATAR)
       // Suspende até o avatar terminar de sinalizar. Se ele não estava disponível (sem WebGL,
-      // assets ausentes, renderer morto, sem rede e sem cache), a resposta ainda chega à pessoa
-      // surda pelo caminho degradado — nunca ficamos presos em ⑦.
-      if (!playAvatar(text)) onAvatarUnavailable(text)
+      // assets ausentes, renderer morto, sem rede e sem cache) ou um teto estourou, a resposta
+      // ainda chega à pessoa surda pela legenda — nunca ficamos presos em ⑦.
+      val desfecho = playAvatar(text)
+      Log.i(TAG, "⑦ terminou: $desfecho")
+      if (desfecho != DesfechoAvatar.ANIMOU && desfecho != DesfechoAvatar.PULADO) {
+        onAvatarUnavailable(text)
+      }
+      onConversa(EventoConversa.AvatarTerminou(desfecho))
       // O atendimento terminou este turno; o avatar fica carregado para o próximo, e só é
       // destruído quando o atendimento inteiro encerra por inatividade (§4.2).
       setState(DialogState.AGUARDANDO_SINAL)
@@ -277,7 +279,6 @@ class DialogOrchestrator(
 
   private fun onAttendantTranscriptionFailed() {
     if (_state.value != DialogState.TRANSCREVENDO) return
-    audioSessionManager.releaseListening()
     // Permite tentar de novo com "Libras Livre, iniciar" sem reabrir a sessão de sinais inteira.
     setState(DialogState.AGUARDANDO_RESPOSTA)
   }
@@ -314,7 +315,7 @@ class DialogOrchestrator(
   // componente decide roteamento por conta própria" (plano §5).
   private fun setState(newState: DialogState) {
     _state.value = newState
-    if (newState in WAKE_WORD_ACTIVE_STATES) {
+    if (Transicoes.wakeWordAtiva(newState)) {
       wakeWordDetector?.start()
     } else {
       wakeWordDetector?.pause()

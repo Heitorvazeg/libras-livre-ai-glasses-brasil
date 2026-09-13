@@ -15,6 +15,7 @@
 package com.meta.wearable.dat.externalsampleapps.cameraaccess.ui
 
 import androidx.activity.ComponentActivity
+import androidx.annotation.StringRes
 import androidx.activity.compose.LocalActivity
 import androidx.compose.foundation.AndroidExternalSurface
 import androidx.compose.foundation.background
@@ -53,6 +54,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -64,6 +66,7 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
@@ -84,7 +87,9 @@ import com.meta.wearable.dat.externalsampleapps.cameraaccess.R
 import com.meta.wearable.dat.externalsampleapps.cameraaccess.camera.CameraUiState
 import com.meta.wearable.dat.externalsampleapps.cameraaccess.camera.CameraViewModel
 import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.audio.WakeWord
+import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.dialogo.Conversa
 import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.dialogo.DialogState
+import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.dialogo.TurnoConversa
 import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.reconhecimento.LibrasState
 import com.meta.wearable.dat.externalsampleapps.cameraaccess.wearables.WearablesViewModel
 
@@ -121,6 +126,15 @@ fun CameraScreen(
   // primeiro — ver CameraViewModel.enableWakeWordListening. Se negado, os botões de
   // DialogControlRow continuam funcionando como fallback.
   LaunchedEffect(Unit) { cameraViewModel.enableWakeWordListening(onRequestRecordAudioPermission) }
+
+  // Tela ligada enquanto houver sessão com os óculos (docs/prontidao-demo/07 §7.1): o serviço em
+  // primeiro plano mantém stream e microfone, mas não a tela, e o painel e o avatar sumiriam no
+  // meio da demo. Sem sessão, o sistema volta a apagar no tempo configurado.
+  val view = LocalView.current
+  DisposableEffect(view, ui.hasSession) {
+    view.keepScreenOn = ui.hasSession
+    onDispose { view.keepScreenOn = false }
+  }
 
   Box(modifier = modifier.fillMaxSize().background(Color.Black)) {
     PreviewBackground(
@@ -178,12 +192,20 @@ fun CameraScreen(
       )
     }
 
-    // Libras Livre: banner com o sinal reconhecido / status da classificação, sobre o preview.
-    LibrasBanner(
-        libras = ui.libras,
-        visible = ui.isStreaming || ui.libras.isClassifying,
-        modifier = Modifier.align(Alignment.TopCenter).statusBarsPadding().padding(top = 84.dp),
-    )
+    // Libras Livre: estado da captura e painel de conversa (docs/prontidao-demo/10-tela.md §10.1).
+    // Fora de qualquer condição do stream, de propósito: o resultado continua visível depois que a
+    // câmera desliga, que é justamente quando a frase é falada e a resposta chega.
+    Column(
+        modifier =
+            Modifier.align(Alignment.TopCenter)
+                .statusBarsPadding()
+                .padding(top = 84.dp, start = 16.dp, end = 16.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+      LinhaDeEstado(libras = ui.libras, dialogState = ui.dialogState)
+      PainelConversa(conversa = ui.conversa)
+    }
 
     ui.activePreview?.let { preview ->
       CapturePreviewScreen(
@@ -204,6 +226,8 @@ fun CameraScreen(
           onTentarDeNovo = cameraViewModel::abrirAvatar,
           onPausar = cameraViewModel::pausarAvatar,
           onRetomar = cameraViewModel::retomarAvatar,
+          onPular =
+              if (ui.dialogState == DialogState.GERANDO_AVATAR) cameraViewModel::pularAvatar else null,
       )
     }
 
@@ -786,69 +810,101 @@ private fun DialogControlRow(
   }
 }
 
-/** Banner sobre o preview: status da classificação, sinal reconhecido ou erro. */
+/**
+ * Uma linha de estado da captura: erro, "Aguarde…", "Pode sinalizar" (3.1) ou "Reconhecendo…".
+ *
+ * É o mínimo da onda 1. A faixa de estado com prioridade entre avisos (10.2, onda 4) a substitui.
+ */
 @Composable
-private fun LibrasBanner(
+private fun LinhaDeEstado(
     libras: LibrasState,
-    visible: Boolean,
+    dialogState: DialogState,
     modifier: Modifier = Modifier,
 ) {
-  val hasContent =
-      libras.isCollecting || libras.isClassifying || libras.lastResult != null || libras.error != null
-  if (!visible || !hasContent) return
-
-  Column(
+  val texto: String
+  val cor: Color
+  when {
+    libras.error != null -> {
+      texto = libras.error
+      cor = AppColor.Yellow
+    }
+    dialogState != DialogState.CAPTURANDO_SINAIS -> return
+    libras.isClassifying -> {
+      texto = stringResource(R.string.libras_classifying)
+      cor = Color.White
+    }
+    libras.podeSinalizar -> {
+      texto = stringResource(R.string.libras_pode_sinalizar)
+      cor = AppColor.Green
+    }
+    else -> {
+      texto = stringResource(R.string.libras_aguarde)
+      cor = Color.White
+    }
+  }
+  Text(
+      text = texto,
+      color = cor,
+      fontSize = 18.sp,
+      fontWeight = FontWeight.SemiBold,
+      textAlign = TextAlign.Center,
       modifier =
           modifier
               .clip(RoundedCornerShape(16.dp))
               .background(Color.Black.copy(alpha = 0.6f))
-              .padding(horizontal = 20.dp, vertical = 12.dp),
-      horizontalAlignment = Alignment.CenterHorizontally,
+              .padding(horizontal = 20.dp, vertical = 10.dp)
+              .testTag("linha_de_estado"),
+  )
+}
+
+/**
+ * Painel de conversa (docs/prontidao-demo/10-tela.md §10.1): o turno atual em destaque e os
+ * anteriores menores. É onde a banca vê o que o app entendeu, o que falou e o que ouviu.
+ */
+@Composable
+private fun PainelConversa(conversa: Conversa, modifier: Modifier = Modifier) {
+  if (conversa.turnos.none { it.temConteudo }) return
+  Column(
+      modifier =
+          modifier
+              .fillMaxWidth()
+              .clip(RoundedCornerShape(16.dp))
+              .background(Color.Black.copy(alpha = 0.6f))
+              .padding(horizontal = 16.dp, vertical = 12.dp)
+              .testTag("painel_conversa"),
+      verticalArrangement = Arrangement.spacedBy(12.dp),
   ) {
-    when {
-      libras.isClassifying -> {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-          CircularProgressIndicator(color = Color.White, modifier = Modifier.size(18.dp))
-          Spacer(modifier = Modifier.width(10.dp))
-          Text(
-              text = stringResource(R.string.libras_classifying),
-              color = Color.White,
-              fontSize = 16.sp,
-              fontWeight = FontWeight.SemiBold,
-          )
-        }
-      }
-      libras.error != null -> {
-        Text(
-            text = libras.error,
-            color = AppColor.Yellow,
-            fontSize = 14.sp,
-            textAlign = TextAlign.Center,
-        )
-      }
-      libras.isCollecting -> {
-        Text(
-            text = stringResource(R.string.libras_capture_hint),
-            color = Color.White.copy(alpha = 0.9f),
-            fontSize = 14.sp,
-        )
-      }
-      libras.lastResult != null -> {
-        Text(
-            text = stringResource(R.string.libras_recognized_label),
-            color = Color.White.copy(alpha = 0.7f),
-            fontSize = 12.sp,
-            fontWeight = FontWeight.Medium,
-        )
-        Spacer(modifier = Modifier.height(2.dp))
-        Text(
-            text = libras.lastResult,
-            color = Color.White,
-            fontSize = 26.sp,
-            fontWeight = FontWeight.Bold,
-        )
-      }
-    }
+    for (turno in conversa.anteriores.filter { it.temConteudo }) TurnoNoPainel(turno, destaque = false)
+    conversa.atual?.takeIf { it.temConteudo }?.let { TurnoNoPainel(it, destaque = true) }
+  }
+}
+
+@Composable
+private fun TurnoNoPainel(turno: TurnoConversa, destaque: Boolean) {
+  Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+    val sinais = turno.textoDosSinais()
+    if (sinais.isNotEmpty()) LinhaDoPainel(R.string.conversa_sinais, sinais, destaque)
+    turno.falado?.let { LinhaDoPainel(R.string.conversa_falado, "“$it”", destaque) }
+    turno.resposta?.let { LinhaDoPainel(R.string.conversa_resposta, "“$it”", destaque) }
+  }
+}
+
+@Composable
+private fun LinhaDoPainel(@StringRes rotulo: Int, texto: String, destaque: Boolean) {
+  val alpha = if (destaque) 1f else 0.6f
+  Row(verticalAlignment = Alignment.Top) {
+    Text(
+        text = stringResource(rotulo),
+        color = Color.White.copy(alpha = 0.6f * alpha),
+        fontSize = if (destaque) 13.sp else 11.sp,
+        modifier = Modifier.width(76.dp).padding(top = if (destaque) 4.dp else 1.dp),
+    )
+    Text(
+        text = texto,
+        color = Color.White.copy(alpha = alpha),
+        fontSize = if (destaque) 20.sp else 14.sp,
+        fontWeight = if (destaque) FontWeight.SemiBold else FontWeight.Normal,
+    )
   }
 }
 

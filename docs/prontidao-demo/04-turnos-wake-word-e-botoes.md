@@ -80,9 +80,13 @@ capturaria a pessoa enquanto ela lê a resposta.
 **Decisão.** P0: com o microfone da resposta no **celular** por padrão (5.2), a wake word e o
 Vosk disputariam **o mesmo microfone**.
 
-**Mudança.** `DialogOrchestrator.WAKE_WORD_ACTIVE_STATES` perde `ESCUTANDO_ATENDENTE`.
+**Mudança.** `DialogOrchestrator.WAKE_WORD_ACTIVE_STATES` perde `ESCUTANDO_ATENDENTE`. A lista
+passa a morar em `libras/dialogo/Transicoes.kt` (`Transicoes.wakeWordAtiva`), que a onda 3 amplia
+com as demais regras (4.1).
 
-**Teste (JVM, em `Transicoes`).** A wake word está ativa em ① e ② e inativa em ③ a ⑦.
+**Teste (JVM, em `Transicoes`).** A wake word está ativa em ①, ② e ④ e inativa em ③, ⑤, ⑥ e ⑦. No ④
+não há disputa: o Vosk ainda não abriu o microfone. (Texto corrigido na onda 1: a versão anterior
+dizia "inativa em ③ a ⑦", o que contradizia a mudança acima; vale a mudança.)
 
 ## 4.5 Motor da wake word selecionável
 

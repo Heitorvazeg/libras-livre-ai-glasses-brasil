@@ -30,6 +30,12 @@ serviço em primeiro plano mantém o stream e o microfone, mas não a tela.
 **Teste (manual).** Tempo de tela do aparelho em 30 s, sessão ativa por 2 min sem tocar: a tela
 continua ligada. Encerrar a sessão: a tela apaga no tempo configurado.
 
+**Como ficou a onda 1.** `View.keepScreenOn` na view do Compose, por um `DisposableEffect` chaveado em
+`hasSession`. Isso equivale à `FLAG_KEEP_SCREEN_ON` e vale só enquanto a tela está visível.
+**Automatizado:** o `FluxoOnda1Test` confere o pedido na view e, no `dumpsys window`, que o
+`mHoldScreenWindow` é a `MainActivity` com a sessão ativa. Sem sessão, o pedido some. O teste
+manual de 2 min continua valendo no aparelho da demo.
+
 ## 7.2 Modo economia de bateria (P2)
 
 **Decisão.** Avisar, porque o modo economia reduz o desempenho da CPU.

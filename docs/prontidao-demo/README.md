@@ -94,3 +94,5 @@ Caminhos abreviados, relativos a `mobile-app-companion/app/src/main/java/com/met
 | Microfone da resposta (§7.2) | celular na demo | **seletor**, padrão **celular** (5.2) |
 | Burst de IA (§9.3) | opcional | **esperar os dados** do painel (7.6) |
 | Bug `ACONTECER RUIM` → "Aconteceu." | — | **fora** das correções (2.9) |
+| Modelo de contextualização (§5.1 do mapa) | medir e otimizar a latência | ele nunca funcionou no app (INT32 × INT64 e tabelas de outra poda); **contrato corrigido e tabelas recuperadas do checkpoint, modelo fora da cadeia na demo** até a trilha validar a saída (6.1) |
+| MediaPipe (§2 do mapa) | — | nunca produziu landmarks (entrada YUV recusada); **conversão YUV→ARGB e MediaPipe 0.10.35**, antes da onda 2 (3.1) |

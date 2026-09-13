@@ -52,6 +52,18 @@ Diagnóstico: [mapa de riscos §12](../riscos-demo-2026-09-13.md#12-o-que-aparec
   descartada.
 - **Manual:** o painel continua visível depois que o stream desliga.
 
+**Como ficou a onda 1.**
+- `Conversa.kt` tem sinais (glosa e confiança opcional), frase e origem, resposta e desfecho. A
+  **decisão** do avaliador e as marcas de **descartado / abaixo do limiar** entram com o 2.5 e o
+  2.8 (ondas 2 e 3), junto com os testes de turno de repetição e glosa descartada, que dependem
+  deles.
+- A origem da frase fica guardada no estado, mas não aparece: as configurações de debug que a
+  mostram são da onda 2/4.
+- Os estados do `LibrasBanner` foram para uma **linha de estado mínima** (erro, "Aguarde…",
+  "Pode sinalizar", "Reconhecendo…"), acima do painel. A faixa com prioridade do 10.2 (onda 4) a
+  substitui.
+- Turno sem nenhum conteúdo (sessão sem sinais) não desenha caixa vazia.
+
 ## 10.2 Faixa de estado
 
 **Decisão.** Um aviso por vez, sempre no mesmo lugar, escolhido por prioridade.

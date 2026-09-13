@@ -26,22 +26,35 @@ import java.io.BufferedReader
 import java.io.File
 import java.net.HttpURLConnection
 import java.net.URL
+import java.util.concurrent.atomic.AtomicReference
 import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.async
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import org.json.JSONObject
 
 private const val TAG = "Libras:GlosaTranslator"
 private const val ENDPOINT = "https://traducao2.vlibras.gov.br/translate"
 
-/** Mesmo timeout que o player oficial usa (GlosaTranslator.js: 30s). */
-private const val TIMEOUT_MS = 30_000
+/**
+ * Teto da tradução, conexão e leitura SOMADAS (docs/prontidao-demo/09-avatar.md §9.1). Era o do
+ * player oficial, 30 s de conexão + 30 s de leitura, e prendia o ⑦ por um minuto sem rede.
+ */
+private const val TETO_MS = 5_000L
 
 class VLibrasGlosaTranslator(
     private val cache: GlosaCache,
     private val endpoint: String = ENDPOINT,
     private val io: CoroutineDispatcher = Dispatchers.IO,
+    private val tetoMs: Long = TETO_MS,
 ) : GlosaTranslator {
+
+  // A requisição roda num escopo próprio para que o teto possa ABANDONÁ-LA: um withContext(io)
+  // esperaria o HttpURLConnection sair do bloqueio, e socket não responde a cancelamento.
+  private val requisicoes = CoroutineScope(SupervisorJob() + io)
 
   override suspend fun traduzir(texto: String): String? {
     val chave = normalizar(texto)
@@ -54,25 +67,37 @@ class VLibrasGlosaTranslator(
       return it
     }
 
-    val glosa = withContext(io) { runCatching { requisitar(texto) }.getOrElse { e ->
-      Log.w(TAG, "falha ao traduzir \"$chave\"", e)
-      null
-    } }
+    val conexao = AtomicReference<HttpURLConnection?>(null)
+    val emVoo =
+        requisicoes.async {
+          runCatching { requisitar(texto, conexao) }.getOrElse { e ->
+            Log.w(TAG, "falha ao traduzir \"$chave\"", e)
+            null
+          }
+        }
+    val glosa = withTimeoutOrNull(tetoMs) { emVoo.await() }
+    if (glosa == null && emVoo.isActive) {
+      Log.w(TAG, "teto de ${tetoMs}ms estourado traduzindo \"$chave\" — segue sem glosa")
+      // Best-effort: derruba o socket em voo. Se não derrubar, os timeouts abaixo encerram.
+      conexao.get()?.disconnect()
+      emVoo.cancel()
+    }
 
     if (glosa.isNullOrBlank()) return null
     withContext(io) { cache.guardar(chave, glosa) }
     return glosa
   }
 
-  private fun requisitar(texto: String): String? {
+  private fun requisitar(texto: String, conexao: AtomicReference<HttpURLConnection?>): String? {
     val conn = (URL(endpoint).openConnection() as HttpURLConnection).apply {
       requestMethod = "POST"
-      connectTimeout = TIMEOUT_MS
-      readTimeout = TIMEOUT_MS
+      connectTimeout = tetoMs.toInt()
+      readTimeout = tetoMs.toInt()
       doOutput = true
       setRequestProperty("Content-Type", "application/json")
       setRequestProperty("Accept", "text/plain")
     }
+    conexao.set(conn)
     try {
       conn.outputStream.use { it.write(JSONObject().put("text", texto).toString().toByteArray()) }
       if (conn.responseCode != HttpURLConnection.HTTP_OK) {

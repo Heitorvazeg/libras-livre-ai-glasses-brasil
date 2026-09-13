@@ -85,6 +85,13 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.selects.select
+import android.os.SystemClock
+import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.avatar.DesfechoAvatar
+import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.avatar.TetosAvatar
+import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.dialogo.Conversas
 
 class CameraViewModel(
     application: Application,
@@ -92,10 +99,6 @@ class CameraViewModel(
 ) : AndroidViewModel(application) {
 
   companion object {
-    // Teto para o ⑦ inteiro: tradução + carga residual do Unity + animação da frase. Um player
-    // travado não pode prender a conversa — melhor legenda tardia que atendimento congelado.
-    private const val AVATAR_TIMEOUT_MS = 45_000L
-
     private const val TAG = "CameraAccess:CameraViewModel"
     private const val FRAME_RATE = 24
     private const val KEYFRAME_WAIT_STEP_MS = 25L
@@ -189,15 +192,18 @@ class CameraViewModel(
   // onCleared(): o Interpreter do .tflite não deve ser recriado por sessão (§7.1).
   private val glossContextualizer = criarGlossContextualizer(application)
 
-  // Motor real de STT: Vosk pt-BR local (§4 item 11, §8 item 2) — precisa de PCM cru do mic dos
-  // óculos, capturado por PcmMicCapture configurado pra HFP/SCO (§6.4). Pra voltar ao motor nativo
-  // do Android (fallback, sem depender do asset vosk-model-small-pt-0.3/), troque por
+  // Motor real de STT: Vosk pt-BR local (§4 item 11, §8 item 2), sobre PCM cru. Pra voltar ao motor
+  // nativo do Android (fallback, sem depender do asset vosk-model-small-pt-0.3/), troque por
   // AndroidSpeechRecognizerSttEngine(application).
+  //
+  // Microfone da resposta: o do CELULAR (docs/prontidao-demo/05-audio.md §5.2), para a demo não
+  // depender da troca A2DP/HFP. Sem dispositivo SCO, a escuta pelos óculos abortava em silêncio. O
+  // modo óculos (VOICE_COMMUNICATION + TYPE_BLUETOOTH_SCO) volta com o seletor, na onda 4.
   private val attendantAudioCapture =
       PcmMicCapture(
           context = application,
-          audioSource = MediaRecorder.AudioSource.VOICE_COMMUNICATION,
-          preferredDeviceType = AudioDeviceInfo.TYPE_BLUETOOTH_SCO,
+          audioSource = MediaRecorder.AudioSource.VOICE_RECOGNITION,
+          preferredDeviceType = AudioDeviceInfo.TYPE_BUILTIN_MIC,
       )
   private val sttEngine: SttEngine = VoskSttEngine(application, attendantAudioCapture)
 
@@ -274,40 +280,88 @@ class CameraViewModel(
               Log.w(TAG, "Avatar indisponível — caindo para legenda: \"$text\"")
               _uiState.update { it.copy(avatarLegenda = text) }
             },
+            onConversa = { evento ->
+              _uiState.update { it.copy(conversa = Conversas.reduzir(it.conversa, evento)) }
+            },
         )
     dialogOrchestrator.attachWakeWordDetector(wakeWordDetector)
+    // 3.1: o MediaPipe carrega ao abrir o app, fora da thread de frames, e fica ocioso até a
+    // captura. Antes ele nascia no primeiro frame, e o "iniciar" chegava antes dele.
+    viewModelScope.launch { landmarkPipeline.carregarModelos() }
     viewModelScope.launch {
       dialogOrchestrator.state.collect { state -> _uiState.update { it.copy(dialogState = state) } }
     }
   }
 
+  // Tetos do ⑦ (docs/prontidao-demo/09-avatar.md §9.1). O da tradução mora no glosaTranslator,
+  // que é quem faz a requisição; os dois precisam andar juntos.
+  private val tetosAvatar = TetosAvatar()
+
+  // Completado por pularAvatar(): o "Pular" do operador encerra o ⑦ em qualquer ponto.
+  @Volatile private var puloDoAvatar: CompletableDeferred<Unit>? = null
+
   /**
    * Estado ⑦: traduz o texto do atendente para glosa e manda o avatar sinalizar, suspendendo até
-   * a animação terminar. Devolve false quando não deu — sem rede E sem cache, ou avatar que não
-   * subiu —, e aí o DialogOrchestrator aciona o caminho degradado.
+   * a animação terminar, um teto estourar ou o operador tocar "Pular". Tudo que não for
+   * [DesfechoAvatar.ANIMOU] ou [DesfechoAvatar.PULADO] faz o DialogOrchestrator ficar só com a
+   * legenda.
    *
-   * O timeout existe porque o gloss:end vem do Unity, e um player travado não pode prender a
-   * conversa: melhor uma legenda tardia que um atendimento congelado.
+   * Os tetos existem porque o gloss:end vem do Unity, e um player travado não pode prender a
+   * conversa. Antes eram 45 s fixos para a animação e 30 s + 30 s para a tradução, com os botões
+   * desabilitados — até ~105 s.
    */
-  private suspend fun playAvatar(text: String): Boolean {
+  private suspend fun playAvatar(text: String): DesfechoAvatar {
     // Abre a tela ANTES de traduzir, e com a legenda já preenchida: a pessoa surda vê o que foi
     // dito enquanto a glosa vem da rede, e os dois caminhos de falha (sem rede, player caído)
     // encontram a tela aberta mostrando o texto em vez de devolverem preto.
     _uiState.update { it.copy(avatarVisivel = true, avatarLegenda = text) }
+    val pulo = CompletableDeferred<Unit>().also { puloDoAvatar = it }
+    return try {
+      coroutineScope {
+        val trabalho = async { traduzirEAnimar(text, inicioMs = SystemClock.elapsedRealtime()) }
+        select {
+          trabalho.onAwait { it }
+          pulo.onAwait {
+            trabalho.cancel()
+            avatarPlayer.parar()
+            DesfechoAvatar.PULADO
+          }
+        }
+      }
+    } finally {
+      puloDoAvatar = null
+      avatarAnimacaoTerminada = null
+    }
+  }
 
-    if (avatarPlayer.state == AvatarState.FALHOU) return false
-    val glosa = glosaTranslator.traduzir(text) ?: return false
+  private suspend fun traduzirEAnimar(text: String, inicioMs: Long): DesfechoAvatar {
+    if (avatarPlayer.state == AvatarState.FALHOU) return DesfechoAvatar.AVATAR_INDISPONIVEL
+    val glosa = glosaTranslator.traduzir(text) ?: return DesfechoAvatar.SEM_GLOSA
     Log.i(TAG, "glosa para o avatar: \"$glosa\"")
 
+    val tetoAnimacao = tetosAvatar.animacaoMs(glosa)
+    val restanteDoTotal = tetosAvatar.totalMs(glosa) - (SystemClock.elapsedRealtime() - inicioMs)
     val espera = CompletableDeferred<Boolean>()
     avatarAnimacaoTerminada = espera
     avatarPlayer.play(glosa)
-    // Teto generoso: a carga do Unity (6-9 s) pode ainda estar em curso na primeira resposta do
-    // atendimento, e a própria animação de uma frase leva alguns segundos.
-    val concluiu = withTimeoutOrNull(AVATAR_TIMEOUT_MS) { espera.await() } ?: false
-    avatarAnimacaoTerminada = null
-    if (!concluiu) Log.w(TAG, "avatar não sinalizou a tempo (${AVATAR_TIMEOUT_MS}ms)")
-    return concluiu
+    val concluiu =
+        withTimeoutOrNull(minOf(tetoAnimacao, restanteDoTotal).coerceAtLeast(0L)) { espera.await() }
+    return when (concluiu) {
+      true -> DesfechoAvatar.ANIMOU
+      false -> DesfechoAvatar.AVATAR_INDISPONIVEL
+      null -> {
+        avatarPlayer.parar()
+        val desfecho =
+            if (tetoAnimacao <= restanteDoTotal) DesfechoAvatar.TETO_ANIMACAO else DesfechoAvatar.TETO_TOTAL
+        Log.w(TAG, "⑦: $desfecho (animação ${tetoAnimacao}ms, restante do total ${restanteDoTotal}ms)")
+        desfecho
+      }
+    }
+  }
+
+  /** "Pular" (9.1): encerra o ⑦ na hora, com a legenda na tela. No-op fora do ⑦. */
+  fun pularAvatar() {
+    puloDoAvatar?.complete(Unit)
   }
 
   /**
@@ -617,7 +671,8 @@ class CameraViewModel(
       hevcDecoder?.stop()
       hevcDecoder = null
     }
-    // Libras: solta o decoder/ImageReader/modelos do pipeline de reconhecimento junto com o stream.
+    // Libras: solta o decoder/ImageReader do pipeline de reconhecimento junto com o stream. O
+    // MediaPipe fica carregado para o próximo "iniciar" (docs/prontidao-demo/03 §3.1).
     landmarkPipeline.stop()
     csdCollector.reset()
     StreamingService.stop(getApplication())

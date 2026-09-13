@@ -48,9 +48,12 @@
     <string name="end_session_button" description="End session button">End session</string>
 
     <!-- Libras Livre: captura e reconhecimento de sinal -->
-    <string name="libras_capture_hint" description="Hint shown while collecting a sign">Sinalize e toque em parar</string>
+    <string name="libras_aguarde" description="Capture state while the first usable frame (torso with both shoulders) has not arrived yet">Aguarde…</string>
+    <string name="libras_pode_sinalizar" description="Capture state once the first usable frame arrived: the deaf person can start signing">Pode sinalizar</string>
     <string name="libras_classifying" description="Status while the sign is being classified">Reconhecendo…</string>
-    <string name="libras_recognized_label" description="Label above the recognized word">Sinal reconhecido</string>
+    <string name="conversa_sinais" description="Conversation panel row label: the signs recognized in the turn">Sinais</string>
+    <string name="conversa_falado" description="Conversation panel row label: the sentence the app spoke aloud">Falado</string>
+    <string name="conversa_resposta" description="Conversation panel row label: the attendant's transcribed reply">Resposta</string>
 
     <!-- Libras Livre: orquestração da sessão de diálogo (docs/orquestracao-dialogo-audio-plano.md) -->
     <string name="dialog_state_label" description="Current dialog-session state, shown for debugging">State: %1$s</string>
@@ -63,6 +66,7 @@
     <string name="avatar_loading" description="Shown while the VLibras player loads — it takes 6 to 9 seconds">Preparando o avatar…</string>
     <string name="avatar_failed" description="Shown when the VLibras player could not start; the caption below is the fallback">O avatar não pôde ser carregado. A resposta está escrita abaixo.</string>
     <string name="avatar_retry" description="Button that retries loading the VLibras player">Tentar de novo</string>
+    <string name="avatar_pular" description="Button that ends the avatar step right away, leaving the caption on screen">Pular</string>
     <string name="avatar_caption_label" description="Label above the written form of what the hearing person said">O atendente disse</string>
     <string name="avatar_waiting" description="Shown on the avatar screen while no answer has been signed yet">Aguardando a resposta do atendente…</string>
 

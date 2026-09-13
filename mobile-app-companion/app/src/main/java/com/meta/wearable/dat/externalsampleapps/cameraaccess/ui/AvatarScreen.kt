@@ -32,6 +32,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
@@ -71,6 +72,8 @@ fun AvatarScreen(
     onTentarDeNovo: () -> Unit,
     onPausar: () -> Unit,
     onRetomar: () -> Unit,
+    // "Pular" (docs/prontidao-demo/09-avatar.md §9.1): só durante o ⑦; null esconde o botão.
+    onPular: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
   // Congela o Unity com o app em background — ele desenha a 30 fps mesmo sem ninguém olhando.
@@ -116,6 +119,17 @@ fun AvatarScreen(
             imageVector = Icons.Filled.Close,
             contentDescription = stringResource(R.string.avatar_close),
             tint = Color.Black,
+        )
+      }
+
+      if (onPular != null) {
+        CapturePill(
+            icon = Icons.Filled.SkipNext,
+            label = stringResource(R.string.avatar_pular),
+            contentDescription = stringResource(R.string.avatar_pular),
+            enabled = true,
+            onClick = onPular,
+            modifier = Modifier.align(Alignment.TopStart).padding(20.dp).testTag("skip_avatar_button"),
         )
       }
     }
