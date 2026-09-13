@@ -553,7 +553,43 @@ def teste_contrastivo() -> None:
         assert sum(v >= 2 for v in conta.values()) == 8, f"lote sem 8 pares: {conta}"
     assert len(ct.AmostradorPK(["a", "a", "b"], p=1, k=2).classes) == 1, \
         "classe com 1 exemplo deveria ser excluída"
-    _ok("contrastivo: SupCon, máscara sem NaN e amostrador P×K")
+
+    # PoC (branch poc/contrastivo-negativos-extras): reaproveitar classes com
+    # < k clipes como negativo extra, sem virar par positivo espúrio nem
+    # quebrar a perda numa linha sem nenhum positivo.
+    rotulos_singleton = [f"solo{i}" for i in range(20)]
+    rotulos_ext = rotulos + rotulos_singleton
+    am2 = ct.AmostradorPK(rotulos_ext, p=8, k=2, semente=0, negativos_extras=3)
+    indices2 = list(am2)
+    assert len(indices2) == len(am2), "__iter__ e __len__ precisam bater"
+    tam_lote = 8 * 2 + 3
+    assert len(indices2) % tam_lote == 0
+    for i in range(0, len(indices2), tam_lote):
+        lote = indices2[i:i + tam_lote]
+        nucleo, extras = lote[:16], lote[16:]
+        conta = collections.Counter(rotulos_ext[j] for j in nucleo)
+        assert sum(v >= 2 for v in conta.values()) == 8, f"núcleo sem 8 pares: {conta}"
+        rot_extras = [rotulos_ext[j] for j in extras]
+        assert len(rot_extras) == 3 and all(r.startswith("solo") for r in rot_extras), \
+            f"negativos extras deveriam vir só das classes descartadas: {rot_extras}"
+        # SupCon não pode quebrar numa linha sem nenhum positivo (os extras).
+        rot_lote = [rotulos_ext[j] for j in lote]
+        rot2idx = {r: i for i, r in enumerate(sorted(set(rot_lote)))}
+        y = torch.tensor([rot2idx[r] for r in rot_lote])
+        z = torch.nn.functional.normalize(torch.randn(tam_lote, 16), dim=1)
+        assert torch.isfinite(ct.perda_supcon(z, y)), "extras quebraram a perda"
+
+    # Pool de extras menor que o necessário na época: precisa reciclar, não
+    # emitir menos que negativos_extras por lote (senão desalinha __len__).
+    am3 = ct.AmostradorPK(rotulos_ext, p=8, k=2, semente=0, negativos_extras=15)
+    assert len(list(am3)) == len(am3)
+
+    try:
+        ct.AmostradorPK(rotulos, p=8, k=2, semente=0, negativos_extras=1)
+        assert False, "sem nenhuma classe descartada, negativos_extras deveria falhar"
+    except SystemExit:
+        pass
+    _ok("contrastivo: SupCon, máscara sem NaN, amostrador P×K e negativos extras")
 
 
 def teste_pretreino_contrastivo_ponta_a_ponta() -> None:

@@ -292,6 +292,12 @@ def main() -> None:
                     help="contrastivo: classes por lote")
     ap.add_argument("--k-exemplos", type=int, default=2,
                     help="contrastivo: exemplos por classe no lote (>=2 para haver par)")
+    ap.add_argument("--negativos-extras", type=int, default=0,
+                    help="PoC (branch poc/contrastivo-negativos-extras): quantos clipes de "
+                         "classes com < k-exemplos entram por lote só como negativo — nunca "
+                         "âncora de par positivo, mas contam no denominador do SupCon das "
+                         "outras âncoras. Reaproveita o que hoje é descartado (padrão: 0, "
+                         "desligado, comportamento idêntico ao anterior).")
     ap.add_argument("--temperatura", type=float, default=0.07)
     ap.add_argument("--pessoa-val",
                     help="contrastivo: articulador reservado para validação "
@@ -337,6 +343,8 @@ def main() -> None:
         ap.error("--z-recentrado exige --com-z")
     if args.avaliacao is not None and not any(args.avaliacao.glob("*.npy")):
         ap.error("--avaliacao deve apontar para landmarks existentes; isolamento não pode usar pasta vazia")
+    if args.negativos_extras and args.objetivo != "contrastivo":
+        ap.error("--negativos-extras exige --objetivo contrastivo")
 
     torch.set_num_threads(args.threads)
     if args.dispositivo == "auto":
@@ -412,8 +420,11 @@ def main() -> None:
             # Lotes P×K: sem eles, um corpus de 1.353 classes quase nunca colocaria
             # dois clipes da mesma palavra no mesmo lote, e não haveria par positivo.
             amostrador = ct.AmostradorPK([c.sinal for c in cl], args.p_classes,
-                                         args.k_exemplos, args.semente)
-            return DataLoader(ds, batch_size=amostrador.p * amostrador.k,
+                                         args.k_exemplos, args.semente,
+                                         negativos_extras=args.negativos_extras)
+            # batch_size precisa cobrir os índices extras também: DataLoader agrupa
+            # N índices CONSECUTIVOS do sampler em cada lote (ver __iter__/__len__).
+            return DataLoader(ds, batch_size=amostrador.p * amostrador.k + amostrador.negativos_extras,
                               sampler=amostrador, num_workers=args.workers, drop_last=True)
         return DataLoader(ds, batch_size=args.batch, shuffle=shuffle,
                           num_workers=args.workers, drop_last=shuffle and len(ds) > args.batch)

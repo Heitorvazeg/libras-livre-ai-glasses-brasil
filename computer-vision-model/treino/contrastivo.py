@@ -54,25 +54,45 @@ class AmostradorPK(Sampler):
     Amostragem aleatória num corpus de 1.353 classes quase nunca colocaria dois
     clipes da mesma palavra no mesmo lote, e a perda contrastiva não teria com o
     que trabalhar. Este amostrador garante K exemplos de cada classe sorteada.
+
+    PoC (branch poc/contrastivo-negativos-extras): `negativos_extras` recicla
+    parte do que normalmente é descartado. Uma classe com < K clipes nunca pode
+    ancorar um par positivo, mas `perda_supcon` já ignora corretamente qualquer
+    linha sem positivo (`n_pos > 0`) — ela só entra no DENOMINADOR de log-softmax
+    das outras âncoras do lote. Ou seja: incluir esses clipes como negativo extra
+    não muda a matemática da perda em nada, só aproveita amostras que hoje ficam
+    inertes. Cada classe descartada é distinta de todas as outras (por construção
+    — cada rótulo cai em um único balde), então nunca cria par positivo espúrio
+    entre si nem com as classes elegíveis do lote.
     """
 
-    def __init__(self, rotulos: list[str], p: int = 32, k: int = 2, semente: int = 0):
+    def __init__(self, rotulos: list[str], p: int = 32, k: int = 2, semente: int = 0,
+                negativos_extras: int = 0):
         self.k = k
+        self.negativos_extras = negativos_extras
         self.rng = np.random.default_rng(semente)
         self.por_classe: dict[str, list[int]] = {}
         for i, r in enumerate(rotulos):
             self.por_classe.setdefault(r, []).append(i)
         # Classes com menos de K exemplos não formam par: ficam de fora, com aviso.
         descartadas = [c for c, idx in self.por_classe.items() if len(idx) < k]
+        # Snapshot ANTES de apagar: cada classe descartada empresta seus (< K,
+        # geralmente 1) clipes ao pool de negativos extras.
+        self._extras = [i for c in descartadas for i in self.por_classe[c]]
         if descartadas:
             print(f"[contrastivo] {len(descartadas)} classe(s) com < {k} clipes "
-                  f"ficaram fora dos lotes (não formam par positivo)")
+                  f"ficaram fora dos lotes (não formam par positivo)"
+                  + (f"; {len(self._extras)} clipe(s) reaproveitado(s) como negativo extra"
+                     if negativos_extras else ""))
             for c in descartadas:
                 del self.por_classe[c]
         self.classes = list(self.por_classe)
         if not self.classes:
             raise SystemExit(f"nenhuma classe com >= {k} clipes — o contrastivo não tem "
                              "nenhum par positivo para aprender")
+        if negativos_extras and not self._extras:
+            raise SystemExit(f"negativos_extras={negativos_extras} pedido, mas nenhuma "
+                             f"classe teve < {k} clipes para fornecer negativos extras")
         # P não pode exceder o nº de classes: pedir 32 classes quando só existem 2
         # fazia __len__ prometer 64 índices e __iter__ emitir 4, e o DataLoader com
         # drop_last=True descartava o lote incompleto — treino sem nenhum passo.
@@ -82,16 +102,32 @@ class AmostradorPK(Sampler):
     def __len__(self) -> int:
         # Precisa bater exatamente com o que __iter__ emite: o DataLoader
         # dimensiona o laço por aqui, e a divergência aparece como lote faltando.
-        return self.lotes_por_epoca * self.p * self.k
+        return self.lotes_por_epoca * (self.p * self.k + self.negativos_extras)
 
     def __iter__(self):
         classes = self.rng.permutation(self.classes)
+        extras_ordem = np.array([], dtype=int)
+        if self.negativos_extras:
+            # Pool cíclico: embaralha o pool inteiro e repete a ordem (com nova
+            # permutação a cada volta) se a época pedir mais negativos do que o
+            # pool tem — mantém exatamente `negativos_extras` por lote, sempre.
+            necessarios = self.lotes_por_epoca * self.negativos_extras
+            partes = []
+            enquanto = 0
+            while enquanto < necessarios:
+                partes.append(self.rng.permutation(self._extras))
+                enquanto += len(self._extras)
+            extras_ordem = np.concatenate(partes)[:necessarios]
+        cursor = 0
         for b in range(self.lotes_por_epoca):
             for c in classes[b * self.p:(b + 1) * self.p]:
                 idx = self.por_classe[c]
                 escolha = self.rng.choice(idx, size=self.k,
                                           replace=len(idx) < self.k)
                 yield from (int(i) for i in escolha)
+            if self.negativos_extras:
+                yield from (int(i) for i in extras_ordem[cursor:cursor + self.negativos_extras])
+                cursor += self.negativos_extras
 
 
 def perda_supcon(z: torch.Tensor, rotulos: torch.Tensor,
