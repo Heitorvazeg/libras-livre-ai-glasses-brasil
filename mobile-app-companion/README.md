@@ -54,11 +54,21 @@ export GITHUB_TOKEN=SEU_TOKEN
 Sem o token, o *sync* do Gradle falha nas dependências dos óculos. Ver o
 [setup do SDK](https://wearables.developer.meta.com/docs/develop/dat/build-integration-android#step-2-add-the-sdk-to-gradle).
 
-### 2.3 Baixar os modelos — obrigatório
+### 2.3 Modelos: os nossos vêm no clone, os externos são baixados
 
-**Nenhum modelo pesado é versionado no git** (ver
-[`app/src/main/assets/.gitignore`](./app/src/main/assets/.gitignore)). O script
-baixa todos de uma vez e é idempotente — pula o que já existe:
+A regra do projeto: **modelos internos** (treinados por nós) são versionados no
+git e já vêm com o clone; **modelos externos** (de terceiros) ficam fora e são
+baixados por script (ver
+[`app/src/main/assets/.gitignore`](./app/src/main/assets/.gitignore)).
+
+| Já vem no clone | Arquivos |
+|---|---|
+| Contextualização glosa → português | `modelo_contextualizacao.tflite` (45 MiB) + `glosa_ids.json` + `destokenizar.json` + `modelo_contextualizacao.proveniencia.json` |
+| Léxico de glosas | `lexico-glosas.json` |
+| Wake word pt-BR | `wakeword/libras_livre_{iniciar,encerrar}.onnx[.data]` |
+
+Os externos são baixados de uma vez pelo script, que é idempotente — pula o que
+já existe (~16 s numa conexão boa, medido em clone limpo em 2026-09-13):
 
 ```bash
 ./download-assets.sh
@@ -79,19 +89,20 @@ O player do avatar exige `npm` na máquina: o build Unity vem pronto no reposit�
 oficial, mas o wrapper `vlibras.js` sai de um `webpack`. Sem npm o script avisa e
 segue — o resto dos assets continua sendo baixado.
 
-Dois assets **não** são baixáveis pelo script:
+**Atualizar o modelo de contextualização** (só quando ele for retreinado): o
+`.tflite` e as duas tabelas que ele exige andam juntos, e o carimbo de
+proveniência precisa ser atualizado no mesmo commit. O teste
+`ModeloContextualizacaoProvenienciaTest` falha se um deles mudar sem os outros.
 
-- **`modelo_contextualizacao.tflite`** (46 MB) — gerado pela trilha de
-  contextualização. Sem ele, o app cai no contextualizador por template, sem
-  erro. Para gerá-lo:
-  ```bash
-  cd ../contextualization-model && python exportacao/para_tflite.py --experimento v2
-  cp artefatos/modelo_contextualizacao.tflite ../mobile-app-companion/app/src/main/assets/
-  ```
-- **`wakeword/libras_livre_{iniciar,encerrar}.onnx`** — precisam ser **treinados**.
-  O openWakeWord só publica modelos prontos em inglês. Enquanto não existirem, o
-  motor real não sobe e o fallback é o `SpeechRecognizer` do Android mais os
-  botões Iniciar/Encerrar da tela.
+```bash
+cd ../contextualization-model && python exportacao/para_tflite.py --experimento v2
+cp artefatos/{modelo_contextualizacao.tflite,glosa_ids.json,destokenizar.json} \
+   ../mobile-app-companion/app/src/main/assets/
+# atualize os sha256 em assets/modelo_contextualizacao.proveniencia.json e rode:
+cd ../mobile-app-companion && ./gradlew testDebugUnitTest
+```
+
+A variante `-fp16` (88 MiB) não é usada pelo app e não é versionada.
 
 ### 2.4 Build e execução
 
@@ -306,7 +317,7 @@ Detalhes do lado do treino:
 |---|---|
 | Sync do Gradle falha em `com.meta.wearable:mwdat-*` | token ausente ou expirado em `local.properties` |
 | Banner "Modelos do MediaPipe não encontrados" | `./download-assets.sh` não foi executado |
-| Log "modelo_contextualizacao.tflite indisponível" | esperado; o app usa o template (§2.3) |
+| Log "modelo_contextualizacao.tflite indisponível" | **não esperado**: o modelo vem no clone. O app cai no template; rode `./gradlew testDebugUnitTest` — o `ModeloContextualizacaoProvenienciaTest` diz o que falta (§2.3) |
 | Avatar não aparece e o log diz "sem WebGL nesta WebView" | WebView sem aceleração; o app cai na legenda |
 | Avatar não aparece e o log diz "vlibras.js ausente" | `./download-assets.sh` não rodou, ou rodou sem npm |
 | Avatar abre e fica no spinner até "Unity não ficou pronto" | WebView sem aceleração ou aparelho sem fôlego para o Unity; use **Tentar de novo** |

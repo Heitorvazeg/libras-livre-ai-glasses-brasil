@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 #
-# download-assets.sh — baixa os modelos/assets pesados do Libras Livre para
-# app/src/main/assets/. Nenhum deles é versionado no git (ver assets/.gitignore);
-# rode este script uma vez antes de buildar o app.
+# download-assets.sh — baixa os modelos/assets EXTERNOS (de terceiros) do Libras Livre
+# para app/src/main/assets/. Eles não são versionados no git (ver assets/.gitignore);
+# rode este script uma vez antes de buildar o app. Os modelos INTERNOS (treinados por
+# nós) já vêm com o clone.
 #
 # Idempotente: pula o que já existe. Force um re-download apagando o arquivo/pasta
 # alvo, ou rode com FORCE=1 ./download-assets.sh
@@ -14,13 +15,10 @@
 #   Wake   — openWakeWord (fixos)           melspectrogram.onnx, embedding_model.onnx
 #   Avatar — VLibras player (Unity WebGL)   vlibras/vlibras.js + vlibras/target/*
 #
-# NÃO baixados aqui (ver mobile-app-companion/README.md §2.3):
-#   - modelo_contextualizacao.tflite — gerado por
-#     contextualization-model/exportacao/para_tflite.py --experimento v2
-#
-# wakeword/libras_livre_{iniciar,encerrar}.onnx[.data]: classificadores custom pt-BR,
-# versionados direto no git (pequenos, não regeneráveis sem re-treino) — não precisam
-# de download, já vêm com o checkout.
+# Internos, versionados no git — NÃO baixados aqui (ver mobile-app-companion/README.md §2.3):
+#   - modelo_contextualizacao.tflite + glosa_ids.json + destokenizar.json
+#     (+ modelo_contextualizacao.proveniencia.json)
+#   - wakeword/libras_livre_{iniciar,encerrar}.onnx[.data]
 
 set -euo pipefail
 

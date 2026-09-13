@@ -111,8 +111,9 @@ parâmetros.
 ```bash
 python exportacao/para_tflite.py --experimento v2 [--quantizar]
 python exportacao/paridade.py --experimento v2      # compara PyTorch × TFLite
-cp artefatos/modelo_contextualizacao.tflite \
+cp artefatos/{modelo_contextualizacao.tflite,glosa_ids.json,destokenizar.json} \
    ../mobile-app-companion/app/src/main/assets/
+# e atualize os sha256 em assets/modelo_contextualizacao.proveniencia.json (mesmo commit)
 ```
 
 O `.tflite` exporta **duas assinaturas** — `encode` e `decode_step` — porque um
@@ -123,8 +124,16 @@ decodificação em Kotlin (`TfliteGlossContextualizer.kt`).
 
 ## O que entra no git
 
-O arquivo de 46 MB **não** é versionado; três artefatos pequenos sim, porque são
-**contrato com o app** e não podem sair de sincronia com o modelo:
+**O `.tflite` de entrega é versionado, mas no app, não aqui** (decisão de
+2026-09-13: modelos internos vão para o git). A cópia canônica é
+`mobile-app-companion/app/src/main/assets/modelo_contextualizacao.tflite`, amarrada às
+tabelas por `modelo_contextualizacao.proveniencia.json` e checada por
+`ModeloContextualizacaoProvenienciaTest`. Em `artefatos/` ele continua ignorado: é saída
+de trabalho, e duas cópias no repositório podem divergir. A variante `-fp16` (88 MiB) e o
+`modelo_podado/` (172 MB) não entram.
+
+Três artefatos pequenos também são versionados aqui, porque são **contrato com o app**
+e não podem sair de sincronia com o modelo:
 
 | Arquivo | Papel |
 |---|---|

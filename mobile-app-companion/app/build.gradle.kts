@@ -90,6 +90,21 @@ android {
 
 kotlin { compilerOptions { jvmTarget = JvmTarget.JVM_17 } }
 
+// ModeloContextualizacaoProvenienciaTest lê estes assets direto do disco. Assets não são
+// entrada dos testes de unidade por padrão: sem declarar aqui, trocar só o .tflite (ou o
+// carimbo) deixa a tarefa UP-TO-DATE e a guarda nem roda.
+tasks.withType<Test>().configureEach {
+  inputs
+      .files(
+          "src/main/assets/modelo_contextualizacao.tflite",
+          "src/main/assets/modelo_contextualizacao.proveniencia.json",
+          "src/main/assets/glosa_ids.json",
+          "src/main/assets/destokenizar.json",
+      )
+      .withPropertyName("contratoContextualizacao")
+      .withPathSensitivity(PathSensitivity.RELATIVE)
+}
+
 dependencies {
   implementation(libs.androidx.activity.compose)
   implementation(platform(libs.androidx.compose.bom))
