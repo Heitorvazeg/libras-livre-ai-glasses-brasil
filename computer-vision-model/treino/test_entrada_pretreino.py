@@ -28,19 +28,24 @@ CFG = yaml.safe_load((TREINO.parent / "PoC/config.yaml").read_text())
 NB = TREINO / "notebook_pretreino_malta.ipynb"
 
 
-def fixture(base, completo=False):
+def fixture(base, completo=False, fontes=("minds", "vlibrasil", "malta"),
+            rotulos_por_fonte=None):
     origens = {}
     rng = np.random.default_rng(16)
-    for fonte, (_, pasta) in ep.FONTES.items():
+    rotulos_por_fonte = rotulos_por_fonte or {}
+    for fonte in fontes:
+        _, pasta = ep.FONTES[fonte]
         d = base / fonte / "versao" / pasta
         d.mkdir(parents=True)
         origens[fonte] = d
-        prefixo = {"minds": "M", "vlibrasil": "V", "malta": "T"}[fonte]
+        prefixo = {"minds": "M", "vlibrasil": "V", "malta": "T", "wlasl": "W"}[fonte]
         pessoas, classes, reps = (8, 20, 5) if fonte == "minds" and completo else (3, 3, 1)
+        rotulos = rotulos_por_fonte.get(fonte, [
+            f"{'asl' if fonte == 'wlasl' else 'classe'}{i}" for i in range(classes)])
         for pessoa in range(1, pessoas + 1):
-            for classe in range(classes):
+            for rotulo in rotulos:
                 for rep in range(1, reps + 1):
-                    stem = f"pessoa{prefixo}{pessoa:02d}_sinal-classe{classe}_rep{rep:02d}"
+                    stem = f"pessoa{prefixo}{pessoa:02d}_sinal-{rotulo}_rep{rep:02d}"
                     p = d / (stem + ".npy")
                     np.save(p, rng.uniform(-1, 1, (6, 57, 3)).astype(np.float32))
                     if fonte != "minds":
@@ -49,7 +54,8 @@ def fixture(base, completo=False):
                         ep.pv.registrar_video_http(video, fonte=fonte,
                             origem=f"https://example.invalid/{stem}", indice_sha256="a" * 64)
                         ep.pv.registrar_landmarks(video, p, CFG)
-    (origens["vlibrasil"] / "preparacao.json").write_text('{"politica": "fixture auditada"}')
+    if "vlibrasil" in origens:
+        (origens["vlibrasil"] / "preparacao.json").write_text('{"politica": "fixture auditada"}')
     return origens
 
 
@@ -72,7 +78,7 @@ class TestEntradaPretreino(unittest.TestCase):
         plano = self.preparar()
         self.assertEqual(self.preparar(), plano)
         self.assertEqual(antes, {f: ep.inventario(p) for f, p in self.origens.items()})
-        self.assertEqual(plano["contagens"], {f: 9 for f in ep.FONTES})
+        self.assertEqual(plano["contagens"], {f: 9 for f in self.origens})
         self.assertTrue((self.destino / ep.FONTES["vlibrasil"][1] / "preparacao.json").exists())
 
     def test_tar_e_gitkeep(self):
@@ -195,6 +201,167 @@ class TestEntradaPretreino(unittest.TestCase):
         shutil.copyfile(v, minds / "pessoaM99_sinal-reservado_rep01.npy")
         with self.assertRaisesRegex(ValueError, "reservado para avaliação"):
             pt.auditar_corpora([v.parent], avaliacao=minds)
+
+    def test_wlasl_opcional_entra_so_quando_pedido(self):
+        # Por padrão (fontes_pretreino default), wlasl nem precisa estar em origens.
+        self.assertNotIn("wlasl", self.origens)
+        plano = self.preparar()
+        self.assertNotIn("wlasl", plano["contagens"])
+        self.assertNotIn("exclusao_rotulos_asl", plano)
+
+        # Pedindo explicitamente, precisa estar presente e entra na preparação.
+        base2 = self.base / "input-wlasl"
+        origens4 = fixture(base2, fontes=("minds", "vlibrasil", "malta", "wlasl"))
+        destino2 = self.base / "working2" / "dados"
+        plano2 = ep.preparar(origens4, destino2, validar_minds_completo=False,
+                             fontes_pretreino=("vlibrasil", "malta", "wlasl"))
+        self.assertEqual(plano2["contagens"], {f: 9 for f in origens4})
+        self.assertTrue(list((destino2 / ep.FONTES["wlasl"][1]).glob("*.npy")))
+
+        # Faltando uma fonte pedida, erro explícito (não ignora silenciosamente).
+        origens_incompletas = {f: p for f, p in origens4.items() if f != "wlasl"}
+        with self.assertRaisesRegex(ValueError, "Informe exatamente"):
+            ep.preparar(origens_incompletas, self.base / "working3" / "dados",
+                        validar_minds_completo=False,
+                        fontes_pretreino=("vlibrasil", "malta", "wlasl"))
+
+
+class TestConflitosASL(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.base = pathlib.Path(self.tmp.name)
+        self.fontes = ("vlibrasil", "malta", "wlasl")
+        self.origens = fixture(self.base / "input", fontes=("minds", *self.fontes),
+            rotulos_por_fonte={"vlibrasil": ["pizza", "lib-v"],
+                              "malta": ["africa", "lib-t"],
+                              "wlasl": ["pizza", "africa", "hello"]})
+        self.destino = self.base / "working"
+
+    def preparar(self):
+        return ep.preparar(self.origens, self.destino, validar_minds_completo=False,
+                           fontes_pretreino=self.fontes)
+
+    def test_exclui_so_asl_preserva_libras_originais_e_retomada(self):
+        antes = {f: ep.inventario(p) for f, p in self.origens.items()}
+        plano = self.preparar()
+        self.assertEqual(plano["contagens"], {"minds": 9, "vlibrasil": 6, "malta": 6, "wlasl": 3})
+        self.assertEqual(len(plano["excluidos"]), 6)
+        self.assertTrue(all(n.startswith("wlasl/") for n in plano["excluidos"]))
+        self.assertEqual(plano["grupos"], [], "Colisão de rótulo não é duplicata de vídeo")
+        conflitos = plano["exclusao_rotulos_asl"]["conflitos"]
+        self.assertEqual([c["rotulo"] for c in conflitos], ["africa", "pizza"])
+        for c in conflitos:
+            self.assertEqual(len(c["wlasl"]), 3)
+            self.assertEqual(len(c["libras"]), 3)
+        for fonte in ("minds", "vlibrasil", "malta"):
+            self.assertEqual(ep.inventario(self.destino / ep.FONTES[fonte][1]), antes[fonte])
+        self.assertEqual(len(list((self.destino / "landmarks-wlasl").glob("*.npy.proveniencia.json"))), 3)
+        self.assertEqual(antes, {f: ep.inventario(p) for f, p in self.origens.items()})
+        self.assertEqual(plano, self.preparar())
+        # Caminho direto da CLI também não pode misturar ASL/Libras.
+        auditoria = {}
+        diretos = pt.carregar_corpora([self.origens[f] for f in self.fontes], 2,
+            fontes=",".join(self.fontes), avaliacao=self.origens["minds"], auditoria=auditoria)
+        preparados = pt.carregar_corpora([self.destino / ep.FONTES[f][1] for f in self.fontes], 2,
+            fontes=",".join(self.fontes), avaliacao=self.destino / "landmarks")
+        self.assertEqual([(c.pessoa, c.sinal) for c in diretos],
+                         [(c.pessoa, c.sinal) for c in preparados])
+        self.assertEqual({c.sinal for c in diretos if c.pessoa.startswith("W")}, {"hello"})
+        self.assertEqual(len(auditoria["amostras"]), 21, "Auditoria mantém toda a entrada")
+        self.assertEqual(len(auditoria["exclusao_rotulos_asl"]["conflitos"]), 2)
+        # Uma preparação antiga sem a política não é reutilizada.
+        registro = self.destino / "preparacao.json"
+        antigo = json.loads(registro.read_text())
+        del antigo["exclusao_rotulos_asl"]
+        registro.write_text(json.dumps(antigo))
+        with self.assertRaisesRegex(ValueError, "outra entrada/preparação"):
+            self.preparar()
+
+    def test_tar_aplica_mesma_politica(self):
+        for fonte, pasta in list(self.origens.items()):
+            pacote = self.base / ep.FONTES[fonte][0]
+            with tarfile.open(pacote, "w:gz") as tar:
+                tar.add(pasta, arcname=pasta.name)
+            self.origens[fonte] = pacote
+        self.assertEqual(self.preparar()["contagens"]["wlasl"], 3)
+
+    def test_cli_contrastivo_wlasl_registra_exclusoes_no_checkpoint(self):
+        saida = self.base / "pretreino"
+        cmd = [sys.executable, str(TREINO / "pretreinar.py"),
+               *[a for f in self.fontes for a in ("--corpus", str(self.origens[f]))],
+               "--fontes", ",".join(self.fontes), "--avaliacao", str(self.origens["minds"]),
+               "--arquitetura", "gcn", "--ossos", "--com-z", "--z-recentrado",
+               "--objetivo", "contrastivo", "--pessoa-val", "V03", "--epocas", "1",
+               "--p-classes", "2", "--workers", "0", "--threads", "2",
+               "--dispositivo", "cpu", "--saida", str(saida)]
+        r = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        meta = json.loads((saida / "backbone_gcn.json").read_text())
+        procedencia = meta["proveniencia"]
+        self.assertEqual(meta["clipes"], 15)
+        self.assertEqual(len(procedencia["dados"]["exclusao_rotulos_asl"]["conflitos"]), 2)
+        excluidos = {a["id"] for a in procedencia["dados"]["amostras"]
+                     if a["registro"]["fonte"] == "wlasl"
+                     and a["registro"]["sinal"] in ("pizza", "africa")}
+        self.assertEqual(len(excluidos), 6)
+        self.assertEqual(set(procedencia["particao"]["descartadas"]), excluidos)
+        for grupo in ("treino", "validacao", "galeria", "otimizacao_elegiveis"):
+            self.assertFalse(excluidos & set(procedencia["particao"][grupo]))
+
+    def test_exclusao_antes_do_minimo_de_clipes(self):
+        # Só um exemplar Libras de pizza: ASL não pode fazê-lo passar pelo mínimo.
+        for p in sorted(self.origens["vlibrasil"].glob("*_sinal-pizza_*.npy"))[1:]:
+            p.unlink()
+            ep.pv.sidecar(p).unlink()
+        clipes = pt.carregar_corpora([self.origens[f] for f in self.fontes], 2,
+            fontes=",".join(self.fontes), avaliacao=self.origens["minds"])
+        self.assertNotIn("pizza", {c.sinal for c in clipes})
+        self.assertEqual(self.preparar()["contagens"]["wlasl"], 3)
+
+    def test_so_fontes_libras_selecionadas_sem_usar_minds(self):
+        # Mesmo nome no MINDS não orienta filtragem de pré-treino; V não selecionado também não.
+        origens = fixture(self.base / "isolado", fontes=("minds", "vlibrasil", "wlasl"),
+                          rotulos_por_fonte={"wlasl": ["classe0"]})
+        fontes = ("wlasl",)
+        plano = ep.preparar({f: origens[f] for f in ("minds", *fontes)}, self.destino,
+                            validar_minds_completo=False, fontes_pretreino=fontes)
+        self.assertEqual(plano["contagens"]["wlasl"], 3)
+        self.assertEqual(plano["exclusao_rotulos_asl"]["conflitos"], [])
+
+    def test_todos_asl_conflitantes_falha_sem_instalar(self):
+        for p in self.origens["wlasl"].glob("*_sinal-hello_*.npy"):
+            p.unlink()
+            ep.pv.sidecar(p).unlink()
+        with self.assertRaisesRegex(ValueError, "Nenhum clipe de wlasl"):
+            self.preparar()
+        with self.assertRaisesRegex(ValueError, "Nenhum clipe de wlasl"):
+            pt.carregar_corpora([self.origens[f] for f in self.fontes], 2,
+                fontes=",".join(self.fontes), avaliacao=self.origens["minds"])
+        self.assertFalse(self.destino.exists())
+        self.assertEqual(len(list(self.origens["wlasl"].glob("*.npy"))), 6)
+
+    def test_conflito_nao_dispensa_proveniencia(self):
+        p = next(self.origens["wlasl"].glob("*_sinal-pizza_*.npy"))
+        ep.pv.sidecar(p).unlink()
+        with self.assertRaisesRegex(ValueError, "proveniência ausente"):
+            self.preparar()
+        with self.assertRaisesRegex(ValueError, "proveniência ausente"):
+            pt.carregar_corpora([self.origens[f] for f in self.fontes], 2,
+                fontes=",".join(self.fontes), avaliacao=self.origens["minds"])
+        self.assertFalse(self.destino.exists())
+
+    def test_sobreposicao_com_duplicatas_nao_apaga_duas_vezes(self):
+        w = next(self.origens["wlasl"].glob("*_sinal-pizza_*.npy"))
+        v = next(self.origens["vlibrasil"].glob("*_sinal-pizza_*.npy"))
+        r = ep.pv.ler(w)
+        r["video"]["sha256"] = ep.pv.ler(v)["video"]["sha256"]
+        ep.pv.escrever(ep.pv.sidecar(w), r)
+        plano = self.preparar()
+        # A política anterior de duplicatas continua excluindo o grupo inteiro.
+        self.assertEqual(len(plano["excluidos"]), 7)
+        self.assertEqual(plano["contagens"]["vlibrasil"], 5)
+        self.assertEqual(plano["contagens"]["wlasl"], 3)
 
 
 class TestNotebook(unittest.TestCase):

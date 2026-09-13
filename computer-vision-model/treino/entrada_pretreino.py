@@ -2,6 +2,7 @@
 
 Não altera Input. Exclui TODOS os membros de grupos duplicados do pré-treino,
 sem escolher rótulos/pessoas. A auditoria de isolamento continua obrigatória.
+Para colisões de rótulo entre línguas, exclui apenas ASL e preserva Libras.
 """
 from __future__ import annotations
 
@@ -15,6 +16,7 @@ from pathlib import Path, PurePosixPath
 
 import numpy as np
 import entrada_poc
+from rotulos_pretreino import exclusao_rotulos_asl
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "datasets"))
 import proveniencia as pv
@@ -23,7 +25,9 @@ FONTES = {
     "minds": ("landmarks-minds.tar.gz", "landmarks"),
     "vlibrasil": ("landmarks-vlibrasil.tar.gz", "landmarks-pretreino-auditado"),
     "malta": ("landmarks-malta.tar.gz", "landmarks-malta"),
+    "wlasl": ("landmarks-wlasl.tar.gz", "landmarks-wlasl"),
 }
+FONTES_PRETREINO_PADRAO = ("vlibrasil", "malta")
 
 
 def localizar(raiz: Path, fonte: str, explicita: str | Path | None = None) -> Path:
@@ -139,14 +143,21 @@ def inventario(pasta: Path) -> dict[str, str]:
 
 
 def preparar(origens: dict[str, Path], destino: Path, pontos: int = 57,
-             validar_minds_completo: bool = True) -> dict:
+             validar_minds_completo: bool = True,
+             fontes_pretreino: tuple[str, ...] = FONTES_PRETREINO_PADRAO) -> dict:
     """Instala em destino exclusivo; repetir a mesma entrada é idempotente.
 
     A identidade da entrada e da saída é verificada em toda retomada.
     validar_minds_completo=False é reservado aos testes sintéticos.
+    `fontes_pretreino` escolhe QUAIS corpora de pré-treino entram além do MINDS
+    (ex.: acrescentar "wlasl" é decisão do experimento, não do módulo — mesma
+    lógica de `PREFIXOS_PRETREINO` em pretreinar.py).
     """
-    if set(origens) != set(FONTES):
-        raise ValueError("Informe minds, vlibrasil e malta separadamente")
+    if not fontes_pretreino or set(fontes_pretreino) - set(FONTES) - {"minds"}:
+        raise ValueError(f"fontes_pretreino inválida: {fontes_pretreino!r}")
+    esperadas = {"minds", *fontes_pretreino}
+    if set(origens) != esperadas:
+        raise ValueError(f"Informe exatamente {sorted(esperadas)} em origens")
     destino = destino.absolute()
     if destino.is_symlink():
         raise ValueError("Destino não pode ser link simbólico")
@@ -157,7 +168,7 @@ def preparar(origens: dict[str, Path], destino: Path, pontos: int = 57,
     with tempfile.TemporaryDirectory(dir=destino.parent, prefix=".entrada-") as tmp:
         staging = Path(tmp) / "dados"
         staging.mkdir()
-        pastas = {f: _copiar(Path(origens[f]), staging, f, pontos) for f in FONTES}
+        pastas = {f: _copiar(Path(origens[f]), staging, f, pontos) for f in esperadas}
         entradas = {f: inventario(p) for f, p in pastas.items()}
         minds = sorted(pastas["minds"].glob("*.npy"))
         if validar_minds_completo:
@@ -172,8 +183,12 @@ def preparar(origens: dict[str, Path], destino: Path, pontos: int = 57,
                 raise ValueError("Comparação baseline exige MINDS completo: 800 clipes, "
                                  "8 pessoas, 20 sinais, 5 repetições por pessoa/sinal")
         registros = {f"{f}/{p.name}": pv.ler(p)
-                     for f in ("vlibrasil", "malta") for p in sorted(pastas[f].glob("*.npy"))}
-        grupos, excluidos = [], set()
+                     for f in fontes_pretreino for p in sorted(pastas[f].glob("*.npy"))}
+        conflitos_asl = exclusao_rotulos_asl(registros)
+        grupos = []
+        excluidos = {nome for c in conflitos_asl["conflitos"] for nome in c["wlasl"]}
+        # A deduplicação continua examinando TODA a entrada. Se houver também
+        # duplicata por hash/origem, a política anterior de grupo inteiro prevalece.
         for criterio in ("origem", "video", "landmarks"):
             chaves = defaultdict(list)
             for nome, r in registros.items():
@@ -188,10 +203,11 @@ def preparar(origens: dict[str, Path], destino: Path, pontos: int = 57,
             p = pastas[fonte] / arquivo
             p.unlink()
             pv.sidecar(p).unlink()
-        for fonte in ("vlibrasil", "malta"):
+        for fonte in fontes_pretreino:
             if not list(pastas[fonte].glob("*.npy")):
-                raise ValueError(f"Nenhum clipe de {fonte} restou após excluir duplicatas")
-        if not list(pastas["vlibrasil"].glob("pessoaV03_*.npy")):
+                raise ValueError(f"Nenhum clipe de {fonte} restou após excluir duplicatas "
+                                 "e rótulos ASL conflitantes; revise as fontes do experimento")
+        if "vlibrasil" in fontes_pretreino and not list(pastas["vlibrasil"].glob("pessoaV03_*.npy")):
             raise ValueError("V03 ausente após preparação; validação não pode prosseguir")
         plano = {
             "schema": 1, "politica": "excluir_todos_os_membros_de_grupos_duplicados_sem_relabeling",
@@ -200,16 +216,24 @@ def preparar(origens: dict[str, Path], destino: Path, pontos: int = 57,
             "saidas": {f: inventario(p) for f, p in pastas.items()},
             "contagens": {f: len(list(p.glob("*.npy"))) for f, p in pastas.items()},
         }
+        # Sem WLASL, mantém o relatório anterior byte-semanticamente compatível.
+        # Com WLASL, a política faz parte do fingerprint mesmo sem colisões.
+        if "wlasl" in fontes_pretreino:
+            plano["exclusao_rotulos_asl"] = conflitos_asl
         plano = json.loads(json.dumps(plano))
         registro = destino / "preparacao.json"
         if destino.exists():
             if not registro.is_file() or json.loads(registro.read_text()) != plano:
                 raise ValueError("Destino já preenchido por outra entrada/preparação; use outro diretório")
-            for f, (_, pasta) in FONTES.items():
+            for f in esperadas:
+                _, pasta = FONTES[f]
                 if inventario(destino / pasta) != plano["saidas"][f]:
                     raise ValueError(f"Saída preparada foi alterada: {f}; não retomar")
         else:
             pv.escrever(staging / "preparacao.json", plano)
             staging.rename(destino)
     print("Corpus preparado:", plano["contagens"], "| excluídos:", len(plano["excluidos"]))
+    for conflito in conflitos_asl["conflitos"]:
+        print(f"[rótulos] {conflito['rotulo']}: {len(conflito['wlasl'])} clipes WLASL "
+              "excluídos por conflito com Libras (originais preservados)")
     return plano

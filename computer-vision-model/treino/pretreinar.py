@@ -50,6 +50,7 @@ import dados as dd
 import gcn as gg
 import modelo as mm
 import representacao as rp
+from rotulos_pretreino import exclusao_rotulos_asl
 from treinar import DatasetSinais, canais_gcn
 
 AQUI = Path(__file__).resolve().parent
@@ -139,6 +140,8 @@ def carregar_corpora(dirs: list[Path], min_clipes_por_classe: int,
     Classes com pouquíssimos exemplos são descartadas: elas não ensinam
     representação (o modelo decora), inflam a camada de saída e desequilibram o
     treino. O corte é explícito para que a perda apareça no log, não em silêncio.
+    Antes desse corte, exclui WLASL com rótulos presentes nas fontes Libras
+    selecionadas. A auditoria ainda valida todos os arquivos, inclusive excluídos.
 
     `com_z`/`z_recentrado`/`imputar`/`lacuna_maxima` PRECISAM bater com a
     representação do checkpoint que vai receber este backbone via
@@ -191,6 +194,26 @@ def carregar_corpora(dirs: list[Path], min_clipes_por_classe: int,
             f"a auditoria aprovou clipes com prefixo {faltam}, mas fontes={fontes!r} "
             f"não os aceita — seriam descartados em silêncio. Inclua a fonte "
             f"correspondente em --fontes ou retire o corpus do comando.")
+
+    # Protege também a CLI direta, sem passar pela cópia de entrada do notebook.
+    # Usar os registros auditados (antes de min_frames/min_classe), não só os
+    # clipes carregados: ASL não pode resgatar uma classe Libras pouco frequente.
+    if "W" in auditados:
+        por_arquivo = {f"{r['corpus']}/{r['arquivo']}": r for r in verificado["amostras"]}
+        conflitos_asl = exclusao_rotulos_asl({n: r["registro"] for n, r in por_arquivo.items()})
+        excluidos = {n for c in conflitos_asl["conflitos"] for n in c["wlasl"]}
+        ids_excluidos = {por_arquivo[n]["id"] for n in excluidos}
+        verificado["exclusao_rotulos_asl"] = conflitos_asl
+        if auditoria is not None:
+            auditoria.update(verificado)
+        for conflito in conflitos_asl["conflitos"]:
+            print(f"[rótulos] {conflito['rotulo']}: {len(conflito['wlasl'])} clipes WLASL "
+                  "excluídos por conflito com Libras (originais preservados)")
+        if not any(r["registro"]["fonte"] == "wlasl" and n not in excluidos
+                   for n, r in por_arquivo.items()):
+            raise ValueError("Nenhum clipe de wlasl restou após excluir rótulos ASL conflitantes; "
+                             "revise as fontes do experimento")
+        clipes = [c for c in clipes if c.proveniencia["id"] not in ids_excluidos]
 
     contagem: dict[str, int] = {}
     for c in clipes:
