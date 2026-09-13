@@ -59,6 +59,39 @@ stream continua ligando e desligando por estado (3.3).
 **Pronto quando** três turnos seguidos iniciados por botão, sem preview, coletam frames e
 mostram "pode sinalizar".
 
+**Como ficou a onda 1.**
+- `LandmarkPipeline.carregarModelos()` é chamado pelo `CameraViewModel` ao abrir o app (a etapa 1
+  do aquecimento do 6.4, antes de o `Aquecimento` existir). Se ainda não terminou no "iniciar", o
+  `startSession()` liga a coleta mesmo assim e dispara uma nova tentativa fora da thread de frames.
+- "Aguarde…" e "Pode sinalizar" aparecem na linha de estado mínima da onda 1 (ver 10.1); a faixa
+  do 10.2 a substitui na onda 4.
+- `framesExtraidosNaSessao` conta os frames que passaram pelo MediaPipe na sessão (base do 3.5 e
+  do 3.8).
+- **Testes automatizados:**
+  - `LandmarkPipelineTurnosTest`: três turnos seguidos, cada um com a sessão aberta antes do
+    primeiro frame e `stop()` no fim, alimentados com os frames HEVC do `plant.mp4`. Todos coletam
+    frames, sem erro;
+  - `FluxoOnda1Test`: "Iniciar" pela tela, sem preview, mostra "Aguarde…" e não mostra o erro
+    falso.
+
+**Achado depois da onda 1: o MediaPipe nunca produziu landmarks, em aparelho nenhum.** Dois
+defeitos, corrigidos antes da onda 2:
+1. **Formato da imagem.** O `LandmarkExtractor` entregava o frame YUV_420_888 pelo
+   `MediaImageBuilder`, e o `AndroidPacketCreator` do MediaPipe (conferido no bytecode da 0.10.14 e
+   em execução na 0.10.35) só aceita `android.media.Image` em RGBA_8888: **toda** extração lançava,
+   e o `LandmarkPipeline` só registrava no log. Pôr o `ImageReader` em RGBA não serve (o
+   decodificador entrega YV12 e o `ImageReader` recusa). Correção: `YuvParaArgb` (função pura, com
+   teste JVM) converte para um `Bitmap` ARGB reaproveitado, entregue pelo `BitmapImageBuilder`.
+   Custo medido no emulador, frame 540x960: conversão com mediana de 5 ms; pose + mãos, 35 ms.
+2. **Versão.** A 0.10.14 não traz a biblioteca nativa para x86_64 (o emulador do guia não a
+   carregava) e a de arm64 é alinhada a 4 KB (não carrega em aparelhos com página de 16 KB).
+   Subiu para **0.10.35**, que traz x86_64 e arm64 alinhadas a 16 KB, sem mudança de API no app.
+
+**Testes automatizados (revistos):** o `LandmarkPipelineTurnosTest` roda no emulador com o
+`pessoa.mp4` (uma pessoa de corpo inteiro, ver `androidTest/assets/pessoa.LEIAME.txt`): nos três
+turnos, todos os frames passam pelo MediaPipe e "pode sinalizar" acende. Na medição, 115 de 115
+extrações com pose.
+
 ## 3.2 Stream pausado pelo toque na haste
 
 **Decisão.** Tratar o estado `PAUSED`, com plano completo.

@@ -35,6 +35,15 @@ configurações de demo.
 
 **Emulador usado nesta sessão:** AVD `Pixel_7` (API 33, x86_64). Sem janela:
 
+> **MediaPipe neste emulador (achado e corrigido em 2026-09-13):** até a 0.10.14 o AAR do
+> MediaPipe não trazia `x86_64`, e esta imagem é só x86_64: o `LandmarkExtractor` não carregava, e
+> o "erro falso" do A1 era, aqui, um erro verdadeiro. Além disso, **em qualquer aparelho** o
+> MediaPipe recusava o frame em YUV e nenhum landmark saía. Com a **0.10.35** e a conversão
+> `YuvParaArgb` ([3.1](prontidao-demo/03-captura-e-landmarks.md#31-a-corrida-do-iniciar-defeito-a)),
+> o reconhecimento roda no emulador: o `LandmarkPipelineTurnosTest` usa o `pessoa.mp4` e exige
+> pose em todos os frames. Os cenários com landmarks voltam a valer no AVD, com a ressalva de que
+> GPU, temperatura e desempenho só o aparelho ARM mostra.
+
 ```bash
 ~/Android/Sdk/emulator/emulator -avd Pixel_7 -no-window -no-audio -no-snapshot-save -gpu swiftshader_indirect &
 adb wait-for-device && adb shell getprop sys.boot_completed   # "1" = pronto

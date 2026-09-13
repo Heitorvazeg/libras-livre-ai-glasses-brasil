@@ -20,6 +20,13 @@
  *
  * Custo: o MediaPipe (caro) só roda ENQUANTO a sessão está aberta. Fora disso o ImageReader
  * é drenado sem inferência, então o overhead em repouso é só o do segundo decode.
+ *
+ * Ciclo de vida do MediaPipe (docs/prontidao-demo/03-captura-e-landmarks.md §3.1, defeito A):
+ * carregado UMA VEZ por [carregarModelos], ao abrir o app e fora da thread de frames; fica ocioso
+ * na memória entre as capturas e só fecha em [dispose]. Antes ele nascia no primeiro frame e
+ * fechava a cada fim de stream, e como o "iniciar" chega com o stream STREAMING — antes do
+ * primeiro frame —, a sessão encontrava o extrator nulo e não coletava nada a partir do segundo
+ * turno.
  */
 package com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.reconhecimento
 
@@ -36,12 +43,18 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.joinAll
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 
 /** Estado do reconhecimento, observado pela UI (via CameraViewModel). */
 data class LibrasState(
     val modelsReady: Boolean = false,
     val isCollecting: Boolean = false,
+    // O primeiro frame normalizável da sessão (pose com os dois ombros) chegou (3.1). Antes dele,
+    // quem sinaliza sinaliza para ninguém: o stream ainda está subindo ou o tronco não está no
+    // quadro.
+    val podeSinalizar: Boolean = false,
     val isClassifying: Boolean = false,
     val lastResult: String? = null,
     val error: String? = null,
@@ -63,17 +76,35 @@ class LandmarkPipeline(
     private const val TAG = "Libras:Pipeline"
     private const val MAX_IMAGES = 3
     private const val MIN_FRAMES_PARA_CLASSIFICAR = 5
+    // Quanto o dispose() espera a thread de frames sair de uma extração antes de fechar o MediaPipe.
+    private const val JOIN_THREAD_MS = 1_000L
+    const val ERRO_MODELOS = "Modelos do MediaPipe não carregaram — veja libras/README.md (assets)."
   }
 
   private var decoder: HevcDecoder? = null
   private var imageReader: ImageReader? = null
   private var readerThread: HandlerThread? = null
-  private var extractor: LandmarkExtractor? = null
+  // Threads de frames de streams anteriores, já com quitSafely(): o dispose() espera cada uma
+  // terminar antes de fechar o extrator que ela pode estar usando.
+  private val threadsEncerradas = mutableListOf<HandlerThread>()
+
+  // Escrito pela coroutine de carregamento, lido pela thread de frames.
+  @Volatile private var extractor: LandmarkExtractor? = null
+  private val carregamento = Mutex()
+  @Volatile private var descartado = false
 
   private var frameW = 0
   private var frameH = 0
 
   @Volatile private var collecting = false
+  @Volatile private var aguardandoPrimeiroFrame = false
+
+  /**
+   * Frames que passaram pelo MediaPipe na sessão atual, normalizáveis ou não. Zera a cada
+   * [startSession]. É a prova de que a sessão coleta (3.1) e a base das contagens do 3.5/3.8.
+   */
+  @Volatile var framesExtraidosNaSessao = 0
+    private set
 
   // Guarda handGapImputer/boundaryDetector/classificacoesEmVoo — escritos pela thread do
   // ImageReader (onFrame) e lidos/trocados por startSession()/endSession() (chamados da
@@ -89,6 +120,32 @@ class LandmarkPipeline(
   @Volatile private var lastTsMs = 0L
 
   /**
+   * Carrega o MediaPipe, se ainda não estiver carregado. Idempotente; roda em
+   * [Dispatchers.Default], nunca na thread de frames. Devolve false se os modelos não carregaram
+   * — o erro vai para [LibrasState.error] já aqui, e não no meio de uma sessão.
+   */
+  suspend fun carregarModelos(): Boolean =
+      carregamento.withLock {
+        if (extractor != null) return@withLock true
+        withContext(Dispatchers.Default) {
+          runCatching { LandmarkExtractor(context) }
+              .onSuccess { criado ->
+                if (descartado) {
+                  criado.close()
+                } else {
+                  extractor = criado
+                  onState { copy(modelsReady = true, error = if (error == ERRO_MODELOS) null else error) }
+                }
+              }
+              .onFailure {
+                Log.e(TAG, "Não consegui criar o LandmarkExtractor (modelos ausentes?)", it)
+                onState { copy(modelsReady = false, error = ERRO_MODELOS) }
+              }
+              .isSuccess
+        }
+      }
+
+  /**
    * Recebe um frame HEVC comprimido do stream (chamado de handleVideoFrame). Cria o
    * decoder/ImageReader de inferência na primeira vez, com as dimensões e o CSD do stream.
    */
@@ -98,18 +155,26 @@ class LandmarkPipeline(
     decoder?.decodeFrame(bytes, presentationTimeUs)
   }
 
-  /** Abre uma sessão: passa a acumular sinais (um ou mais) até [endSession]. */
+  /**
+   * Abre uma sessão: passa a acumular sinais (um ou mais) até [endSession]. Liga a coleta mesmo
+   * sem nenhum frame ainda — é o caso normal, porque o stream fica STREAMING antes do primeiro
+   * frame. [LibrasState.podeSinalizar] vira true no primeiro frame normalizável.
+   */
   fun startSession() {
-    if (extractor == null) {
-      onState { copy(error = "Modelos do MediaPipe não carregaram — veja libras/README.md (assets).") }
-      return
-    }
     synchronized(sessionLock) {
       handGapImputer = HandGapImputer()
       boundaryDetector = SignBoundaryDetector(onBoundary = ::classificarSegmentoAtual)
     }
+    aguardandoPrimeiroFrame = true
+    framesExtraidosNaSessao = 0
     collecting = true
-    onState { copy(isCollecting = true, error = null, lastResult = null) }
+    onState {
+      copy(isCollecting = true, podeSinalizar = false, lastResult = null,
+          error = if (error == ERRO_MODELOS) error else null)
+    }
+    // O aquecimento ainda não terminou, ou falhou: tenta de novo, fora desta thread. Frames que
+    // chegarem antes são drenados sem extração.
+    if (extractor == null) scope.launch { carregarModelos() }
   }
 
   /**
@@ -121,8 +186,9 @@ class LandmarkPipeline(
    */
   suspend fun endSession() {
     collecting = false
+    aguardandoPrimeiroFrame = false
     synchronized(sessionLock) { boundaryDetector?.forcarFechamento() }
-    onState { copy(isCollecting = false) }
+    onState { copy(isCollecting = false, podeSinalizar = false) }
     val pendentes = synchronized(sessionLock) { classificacoesEmVoo.toList() }
     pendentes.joinAll()
   }
@@ -156,10 +222,8 @@ class LandmarkPipeline(
   }
 
   /**
-   * Libera decoder, ImageReader, thread e modelos. Chamar ao parar o STREAM — não fecha o
-   * [classifier] aqui de propósito: o stream (e portanto stop()) pode reiniciar várias vezes
-   * na vida do pipeline (reconexão dos óculos etc.), mas o classificador é o mesmo pelo tempo
-   * todo. Ver [dispose] para o teardown final, chamado só uma vez.
+   * Libera decoder, ImageReader e thread. Chamar ao parar o STREAM, que reinicia a cada turno.
+   * NÃO fecha o MediaPipe nem o [classifier]: os dois vivem o app inteiro (ver [dispose]).
    */
   fun stop() {
     collecting = false
@@ -167,42 +231,36 @@ class LandmarkPipeline(
     decoder = null
     imageReader?.close()
     imageReader = null
-    readerThread?.quitSafely()
+    readerThread?.let {
+      it.quitSafely()
+      threadsEncerradas.removeAll { t -> !t.isAlive }
+      threadsEncerradas.add(it)
+    }
     readerThread = null
-    extractor?.close()
-    extractor = null
     frameW = 0
     frameH = 0
   }
 
   /** Teardown final — chamar só quando o pipeline inteiro vai embora (ex.: onCleared do ViewModel). */
   fun dispose() {
+    descartado = true
     stop()
+    // Fechar o MediaPipe no meio de uma extração pode derrubar o processo (mapa de riscos §2.4):
+    // espera as threads de frames saírem antes.
+    threadsEncerradas.forEach { it.join(JOIN_THREAD_MS) }
+    threadsEncerradas.clear()
+    extractor?.close()
+    extractor = null
     classifier.close()
   }
 
   /**
-   * Cria (uma vez) o ImageReader + HandlerThread + HevcDecoder + LandmarkExtractor.
-   * Devolve non-null quando o pipeline está pronto; null se os modelos não carregaram.
+   * Cria (uma vez por stream) o ImageReader + HandlerThread + HevcDecoder. Devolve null só se as
+   * dimensões ainda não chegaram; o extrator não é pré-condição (frames sem ele são drenados).
    */
   private fun ensurePipeline(width: Int, height: Int, config: ByteArray?): Unit? {
     if (decoder != null) return Unit
     if (width <= 0 || height <= 0) return null
-
-    // Extrator primeiro: se os modelos não estão nos assets, nem monta o resto.
-    if (extractor == null) {
-      extractor =
-          runCatching { LandmarkExtractor(context) }
-              .onFailure {
-                Log.e(TAG, "Não consegui criar o LandmarkExtractor (modelos ausentes?)", it)
-                onState {
-                  copy(modelsReady = false,
-                      error = "Modelos do MediaPipe não encontrados em assets/ — ver libras/README.md.")
-                }
-              }
-              .getOrNull() ?: return null
-      onState { copy(modelsReady = true) }
-    }
 
     frameW = width
     frameH = height
@@ -218,11 +276,17 @@ class LandmarkPipeline(
       // tamanho variável.
       val image = r.acquireLatestImage() ?: return@setOnImageAvailableListener
       try {
-        if (collecting) {
+        val ex = extractor
+        if (collecting && ex != null) {
           val ts = nextTimestampMs()
-          val fl = extractor?.extract(image, ts)
+          val fl = ex.extract(image, ts)
+          framesExtraidosNaSessao++
           val normalizado = fl?.let { LandmarkNormalizer.normalize(it, frameW, frameH) }
           if (normalizado != null) {
+            if (aguardandoPrimeiroFrame) {
+              aguardandoPrimeiroFrame = false
+              onState { copy(podeSinalizar = true) }
+            }
             synchronized(sessionLock) {
               handGapImputer.offer(normalizado)
               boundaryDetector?.onFrame(normalizado, ts)

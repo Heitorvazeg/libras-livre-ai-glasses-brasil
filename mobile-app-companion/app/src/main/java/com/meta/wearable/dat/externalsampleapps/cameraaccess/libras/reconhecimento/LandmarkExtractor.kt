@@ -21,9 +21,11 @@
 package com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.reconhecimento
 
 import android.content.Context
+import android.graphics.Bitmap
 import android.media.Image
 import android.util.Log
-import com.google.mediapipe.framework.image.MediaImageBuilder
+import com.google.mediapipe.framework.image.BitmapImageBuilder
+import java.nio.ByteBuffer
 import com.google.mediapipe.tasks.core.BaseOptions
 import com.google.mediapipe.tasks.vision.core.RunningMode
 import com.google.mediapipe.tasks.vision.handlandmarker.HandLandmarker
@@ -61,6 +63,14 @@ class LandmarkExtractor(context: Context) {
               .build(),
       )
 
+  // Buffers reaproveitados entre frames (a thread de frames é uma só): o frame YUV é copiado em
+  // bloco para arrays e convertido para um Bitmap ARGB — ver YuvParaArgb para o porquê.
+  private var planoY = ByteArray(0)
+  private var planoU = ByteArray(0)
+  private var planoV = ByteArray(0)
+  private var argb = IntArray(0)
+  private var bitmap: Bitmap? = null
+
   /**
    * Extrai os landmarks de um frame. Devolve null se não houver pose confiável (sem
    * tronco não há como o servidor normalizar — mesmo critério da PoC, aplicado lá).
@@ -69,7 +79,7 @@ class LandmarkExtractor(context: Context) {
    * @param timestampMs carimbo monotônico crescente exigido pelo modo VIDEO.
    */
   fun extract(image: Image, timestampMs: Long): FrameLandmarks? {
-    val mpImage = MediaImageBuilder(image).build()
+    val mpImage = BitmapImageBuilder(paraBitmap(image)).build()
 
     val poseResult: PoseLandmarkerResult = poseLandmarker.detectForVideo(mpImage, timestampMs)
     val poses = poseResult.landmarks()
@@ -103,8 +113,35 @@ class LandmarkExtractor(context: Context) {
     return FrameLandmarks(pose = pose, leftHand = left, rightHand = right)
   }
 
+  private fun paraBitmap(image: Image): Bitmap {
+    val largura = image.width
+    val altura = image.height
+    val (py, pu, pv) = image.planes
+    planoY = copiar(py.buffer, planoY)
+    planoU = copiar(pu.buffer, planoU)
+    planoV = copiar(pv.buffer, planoV)
+    if (argb.size != largura * altura) argb = IntArray(largura * altura)
+    YuvParaArgb.converter(
+        largura, altura, planoY, py.rowStride, planoU, planoV, pu.rowStride, pu.pixelStride, argb)
+    val destino =
+        bitmap?.takeIf { it.width == largura && it.height == altura }
+            ?: Bitmap.createBitmap(largura, altura, Bitmap.Config.ARGB_8888).also { bitmap = it }
+    destino.setPixels(argb, 0, largura, 0, 0, largura, altura)
+    return destino
+  }
+
+  // O último plano pode vir sem o preenchimento da última linha: o array é do tamanho do buffer.
+  private fun copiar(buffer: ByteBuffer, reuso: ByteArray): ByteArray {
+    val origem = buffer.duplicate().apply { rewind() }
+    val destino = if (reuso.size == origem.remaining()) reuso else ByteArray(origem.remaining())
+    origem.get(destino)
+    return destino
+  }
+
   fun close() {
     runCatching { poseLandmarker.close() }
     runCatching { handLandmarker.close() }
+    bitmap?.recycle()
+    bitmap = null
   }
 }
