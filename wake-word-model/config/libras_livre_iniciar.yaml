@@ -1,0 +1,63 @@
+# Config de treino do classificador "Libras Livre, iniciar" — formato do
+# custom_model.yml do openWakeWord (ver train.py). Caminhos relativos a
+# wake-word-model/ (treinar.sh sempre roda a partir daqui).
+#
+# target_phrase/n_samples/n_samples_val/tts_batch_size/piper_sample_generator_path só
+# são lidos dentro do bloco --generate_clips do train.py, que este projeto NUNCA passa
+# (ver dados/sintetizar.py e README.md "Por que pulamos --generate_clips"). Ficam
+# preenchidos mesmo assim, prontos pro dia em que existir um piper-sample-generator
+# pt-BR de verdade (ver _vendor/piper-sample-generator-stub/generate_samples.py).
+
+model_name: "libras_livre_iniciar"
+target_phrase:
+  - "Libras Livre, iniciar"
+custom_negative_phrases: []
+n_samples: 450
+n_samples_val: 100
+tts_batch_size: 50
+piper_sample_generator_path: "./_vendor/piper-sample-generator-stub"
+
+output_dir: "./treino"
+
+rir_paths:
+  - "./ruido/mit_rirs"
+background_paths:
+  - "./ruido/esc50_background"
+background_paths_duplication_rate:
+  - 1
+
+false_positive_validation_data_path: "./ruido/validation_set_features.npy"
+
+# >1 reaproveita cada clipe gerado várias vezes com augmentation diferente — parcial
+# compensação por termos poucas centenas de clipes, não os 20k+ recomendados.
+augmentation_rounds: 2
+augmentation_batch_size: 16
+
+# ACAV100M: pool de negativos pré-computado do openWakeWord (~2.000h, ~17,3 GB —
+# ver dados/baixar_ruido.py). A primeira rodada pulou isto (achava inviável); com
+# 103-280 falsos-positivos/hora medidos sem ele (ver resultados/*/relatorio.md),
+# virou prioridade — é a fonte de robustez contra falso-positivo que faltava (ver
+# docs/wake-word-treino-plano.md §3/§4). Os outros negativos continuam vindo de
+# dados/sintetizar.py (confusáveis pt-BR + frase irmã + ruído ambiente).
+feature_data_files:
+  ACAV100M_sample: "./ruido/openwakeword_features_ACAV100M_2000_hrs_16bit.npy"
+batch_n_per_class:
+  ACAV100M_sample: 1024
+  adversarial_negative: 32
+  positive: 32
+
+model_type: "dnn"
+layer_size: 32
+
+# Bem abaixo do default (50000) — dataset pequeno, mais que isso é só overfitting sem
+# ganho real. auto_train já faz early-stopping/checkpoint-averaging por conta própria.
+steps: 3000
+# Bem abaixo do default (1500). Com feature_data_files vazio (rodada anterior) e
+# negativos/positivos na mesma ordem de grandeza, 1500 colapsou o classificador —
+# saída praticamente constante (~0,045) pra QUALQUER entrada (medido: ver
+# resultados/relatorio.md da rodada sem ACAV100M). Mantido em 3 nesta rodada
+# mesmo já tendo ACAV100M (acima) — mudar uma variável de cada vez: se o
+# falso-positivo ainda estiver alto com o ACAV100M sozinho, subir isto é o próximo
+# passo, não o primeiro.
+max_negative_weight: 3
+target_false_positives_per_hour: 0.2

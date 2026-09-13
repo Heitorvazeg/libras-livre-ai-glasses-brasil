@@ -1,0 +1,51 @@
+# Trilha de treino da wake word (openWakeWord) — stack própria, separada de
+# ../computer-vision-model/requirements.txt (mediapipe/tensorflow) e
+# ../contextualization-model/requirements.txt (transformers/sentencepiece).
+#
+# CPU only nesta trilha (sem GPU na sessão em que isto foi escrito) — o índice extra
+# evita puxar ~2 GB de libs CUDA que o wheel padrão do PyPI traz por default.
+--extra-index-url https://download.pytorch.org/whl/cpu
+
+torch>=2.4
+torchaudio>=2.4
+torchinfo==1.8.0
+torchmetrics>=1.2.0,<2
+speechbrain>=0.5.14,<2
+audiomentations>=0.33.0,<1
+torch-audiomentations>=0.11.0,<1
+acoustics==0.2.6
+mutagen>=1.47.0,<2
+pyyaml>=6.0,<7
+scipy>=1.3,<2
+scikit-learn>=1,<2
+onnxruntime>=1.10.0,<2
+onnx>=1.14.0,<2
+# torch.onnx.export desta versão de torch usa o exportador novo baseado em dynamo,
+# que importa onnxscript incondicionalmente (mesmo pro caminho legado que train.py usa).
+onnxscript>=0.7.0
+
+# openwakeword/data.py importa isto incondicionalmente (usado só por
+# generate_adversarial_texts, que este projeto não chama — ver README.md "Por que
+# pulamos --generate_clips" — mas o import roda de qualquer jeito).
+pronouncing>=0.2.0,<1
+
+# Síntese das frases (mesmo motor do TTS do app — ver dados/sintetizar.py)
+sherpa-onnx>=1.10.0
+
+# Download/preparo de ruído de fundo (dados/baixar_ruido.py)
+soundfile>=0.12
+librosa>=0.10
+
+# Fala real em português — MLS Portuguese vem em .parquet (dados/baixar_fala_pt.py)
+pandas>=2.0
+pyarrow>=15.0
+
+tqdm>=4.0
+
+# openwakeword em si (train.py, data.py) NÃO está aqui: o pacote publicado no PyPI
+# não traz train.py, e o setup.py do repositório fonte exige tensorflow-cpu==2.8.1 +
+# onnx_tf (só usados pra converter pra .tflite, que a integração Android não usa —
+# ver docs/wake-word-treino-plano.md §2) e speexdsp-ns (sem wheel disponível aqui).
+# treinar.sh clona o repositório e instala com `pip install -e . --no-deps`, contando
+# com os pacotes acima pra tudo que train.py/data.py realmente importam pra treinar e
+# exportar .onnx.

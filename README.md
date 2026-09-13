@@ -185,6 +185,7 @@ trabalho novo, não uma flag.
 | Navegar a documentação de decisões | [`docs/README.md`](./docs/README.md) |
 | Rodar ou entender a trilha de visão | [`computer-vision-model/README.md`](./computer-vision-model/README.md) |
 | Rodar ou entender a trilha de contextualização | [`contextualization-model/README.md`](./contextualization-model/README.md) |
+| Treinar os classificadores de wake word (pt-BR) | [`wake-word-model/README.md`](./wake-word-model/README.md) |
 | Buildar e rodar o app | [`mobile-app-companion/README.md`](./mobile-app-companion/README.md) |
 | Ver como a IA está plugada no app | [`.../cameraaccess/libras/README.md`](./mobile-app-companion/app/src/main/java/com/meta/wearable/dat/externalsampleapps/cameraaccess/libras/README.md) |
 
