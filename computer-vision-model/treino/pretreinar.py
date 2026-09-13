@@ -132,7 +132,8 @@ def carregar_corpora(dirs: list[Path], min_clipes_por_classe: int,
                      auditoria: dict | None = None,
                      fontes: str = "vlibrasil,malta",
                      com_z: bool = False, z_recentrado: bool = False,
-                     imputar: bool = True, lacuna_maxima: int = 5) -> list[dd.Clipe]:
+                     imputar: bool = True, lacuna_maxima: int = 5,
+                     avaliacao: Path | None = None) -> list[dd.Clipe]:
     """Junta um ou mais diretórios de landmarks num corpus só.
 
     Classes com pouquíssimos exemplos são descartadas: elas não ensinam
@@ -148,7 +149,7 @@ def carregar_corpora(dirs: list[Path], min_clipes_por_classe: int,
     pior, carregaria parcialmente e ninguém notaria a diferença de referencial
     do z entre pré-treino e fine-tuning.
     """
-    verificado = auditar_corpora(dirs, manifesto)
+    verificado = auditar_corpora(dirs, manifesto, avaliacao)
     if auditoria is not None:
         auditoria.update(verificado)
     registros = {(r["corpus"], r["arquivo"]): r for r in verificado["amostras"]}
@@ -254,6 +255,8 @@ def main() -> None:
     ap.add_argument("--corpus", action="append", required=True, type=Path,
                     help="diretório de landmarks (repita para juntar vários)")
     ap.add_argument("--manifesto-avaliacao", type=Path, default=pv.MANIFESTO)
+    ap.add_argument("--avaliacao", type=Path,
+                    help="landmarks de avaliação isolados (ex.: MINDS em Kaggle Working)")
     ap.add_argument("--auditar", action="store_true",
                     help="confere isolamento/proveniência e sai sem construir ou treinar modelo")
     ap.add_argument("--arquitetura", default="resnet", choices=["resnet", "gcn"])
@@ -307,6 +310,11 @@ def main() -> None:
                     help="desliga a imputação de lacunas curtas de mão (ligada por padrão)")
     args = ap.parse_args()
 
+    if args.z_recentrado and not args.com_z:
+        ap.error("--z-recentrado exige --com-z")
+    if args.avaliacao is not None and not any(args.avaliacao.glob("*.npy")):
+        ap.error("--avaliacao deve apontar para landmarks existentes; isolamento não pode usar pasta vazia")
+
     torch.set_num_threads(args.threads)
     if args.dispositivo == "auto":
         args.dispositivo = "cuda" if torch.cuda.is_available() else "cpu"
@@ -319,6 +327,7 @@ def main() -> None:
                                   fontes=args.fontes,
                                   com_z=args.com_z, z_recentrado=args.z_recentrado,
                                   imputar=not args.sem_imputacao,
+                                  avaliacao=args.avaliacao,
                                   manifesto=args.manifesto_avaliacao, auditoria=auditoria)
     except (ValueError, OSError) as e:
         raise SystemExit(f"[auditoria] ABORTADO: {e}") from e

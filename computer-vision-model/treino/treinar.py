@@ -169,7 +169,7 @@ def aplicar_backbone(modelo, caminho: Path, arquitetura: str, args=None) -> int:
                          f"'{arquitetura}' — arquiteturas não são intercambiáveis")
     if args is not None and arquitetura == "gcn":
         pre = (dados.get("meta") or {}).get("args") or {}
-        CHAVES_REPRESENTACAO = ("com_z", "z_recentrado", "ossos", "movimento")
+        CHAVES_REPRESENTACAO = ("com_z", "z_recentrado", "ossos", "movimento", "sem_imputacao")
         diffs = [(k, bool(pre.get(k)), bool(getattr(args, k, False))) for k in CHAVES_REPRESENTACAO
                 if bool(pre.get(k)) != bool(getattr(args, k, False))]
         if diffs:
@@ -179,7 +179,7 @@ def aplicar_backbone(modelo, caminho: Path, arquitetura: str, args=None) -> int:
                 "Os shapes podem até bater — --ossos e --movimento dobram os canais "
                 "igual — mas os pesos foram aprendidos para um referencial diferente "
                 "do que vão receber agora. Use exatamente as mesmas flags de "
-                "representação (--com-z/--z-recentrado/--ossos/--movimento) nas duas "
+                "representação (--com-z/--z-recentrado/--ossos/--movimento/--sem-imputacao) nas duas "
                 "chamadas, ou refaça o pré-treino com a representação do fine-tuning.")
     pesos = dados["backbone"]
     faltando, inesperados = modelo.load_state_dict(pesos, strict=False)
@@ -446,6 +446,8 @@ def main() -> None:
                          "próprio punho, desfazendo o offset do ombro que extract.py "
                          "aplica indevidamente aos blocos de mão")
     ap.add_argument("--fontes", default="minds", choices=["minds", "vlibrasil", "todas"])
+    ap.add_argument("--landmarks",
+                    help="diretório explícito de landmarks; padrão: paths.landmarks da PoC")
     ap.add_argument("--sem-imputacao", action="store_true",
                     help="desliga o preenchimento de lacunas curtas de mão — existe para "
                          "medir o efeito da imputação contra o mesmo pipeline sem ela")
@@ -485,7 +487,7 @@ def main() -> None:
     dispositivo = torch.device(args.dispositivo)
 
     cfg = yaml.safe_load(CONFIG.read_text(encoding="utf-8"))
-    lm_dir = POC / cfg["paths"]["landmarks"]
+    lm_dir = Path(args.landmarks) if args.landmarks is not None else POC / cfg["paths"]["landmarks"]
     clipes = dd.carregar(lm_dir, fontes=args.fontes, imputar=not args.sem_imputacao,
                          com_z=args.com_z, z_recentrado=args.z_recentrado)
     if not clipes:
@@ -566,6 +568,8 @@ def main() -> None:
             # rodou. É o pior modo de falha possível: número plausível e falso.
             iguais = {k: v for k, v in r.get("args", {}).items() if k not in IGNORAR_NA_RETOMADA}
             atuais = {k: v for k, v in vars(args).items() if k not in IGNORAR_NA_RETOMADA}
+            # Rodadas anteriores ao override explícito usavam o mesmo default.
+            iguais.setdefault("landmarks", None)
             if iguais != atuais:
                 difs = {k: (iguais.get(k), atuais.get(k))
                         for k in set(iguais) | set(atuais) if iguais.get(k) != atuais.get(k)}
