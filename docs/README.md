@@ -61,6 +61,7 @@ Fotografias de um momento. Não são atualizados — são consultados pelo que m
 |---|---|---|
 | [`investigacao-expansao-dataset.md`](investigacao-expansao-dataset.md) | estado da arte e opções de expansão do dataset | 2026-09-09 |
 | [`auditoria-pretreino-2026-09-10.md`](auditoria-pretreino-2026-09-10.md) | regularização e auditoria do corpus de pré-treino | 2026-09-10 |
+| [`riscos-demo-2026-09-13.md`](riscos-demo-2026-09-13.md) | riscos da demo por funcionalidade, calibração do detector de fronteiras e plano até o primeiro APK | 2026-09-13 |
 
 Relatórios gerados por execução ficam junto do código que os produziu, não aqui:
 `computer-vision-model/PoC/results/`, `computer-vision-model/treino/resultados-*/`
