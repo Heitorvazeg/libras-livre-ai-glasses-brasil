@@ -85,6 +85,8 @@ import torch
 from torch import nn
 from torch.nn import functional as F
 
+import cabeca_gcn as cg
+import gcn as gg
 import modelo as md
 import representacao as rp
 
@@ -93,6 +95,7 @@ sys.path.insert(0, str(AQUI.parent / "datasets"))
 import proveniencia as pv  # noqa: E402
 
 LADO = 224
+N_POSE, N_MAO = gg.N_POSE, gg.N_MAO
 # Máxima divergência tolerada entre PyTorch e TFLite no mesmo tensor de entrada.
 # Em float32 é ruído de aritmética acumulada numa ResNet-18: acima disso é
 # diferença de GRAFO, não de precisão. Nos modos quantizados a perda de precisão é
@@ -151,36 +154,120 @@ class ClassificadorLandmarks(nn.Module):
         return self.rede(self.cabeca(seq))
 
 
-def montar(checkpoint: Path | None, modo: str, num_classes: int = 20
-           ) -> tuple[nn.Module, list[str], dict]:
+def _config_cabeca_gcn(origem: dict) -> dict:
+    """Flags da cabeça lidas do CHECKPOINT, nunca da configuração atual do projeto.
+
+    Montar a cabeça com ossos quando o checkpoint treinou sem eles produz um
+    modelo que converte, roda e classifica errado — o tipo de erro que este
+    arquivo inteiro existe para evitar. Por isso a fonte é `meta["args"]`, e a
+    contagem de canais resultante é conferida contra `config_modelo.canais_ent`
+    logo depois: se divergirem, alguma flag foi lida errado.
+    """
+    meta = origem.get("meta", {})
+    args = meta.get("args", {}) or meta.get("proveniencia", {}).get("args", {})
+    if origem.get("smoke"):
+        args = {"com_z": True, "z_recentrado": True, "ossos": True,
+                "movimento": False, "sem_imputacao": False}
+    # EXIGIR A CHAVE, NÃO ACEITAR O DEFAULT. A guarda de `canais_ent` compara um
+    # número só contra cinco flags, e duas delas não mudam canal nenhum:
+    # `z_recentrado` e `sem_imputacao`. Um checkpoint cujo metadado não traga
+    # `z_recentrado` seria exportado SEM recentrar o z — a feature que vale
+    # +2,1 pp — com a contagem de canais batendo perfeitamente. O mesmo vale para
+    # a imputação, que ainda seria declarada como embutida no sidecar.
+    # `ossos` e `movimento` também colidem entre si na guarda (ambos dobram), e
+    # só se separam sendo lidos explicitamente.
+    faltando = [k for k in ("com_z", "z_recentrado", "ossos", "movimento",
+                            "sem_imputacao") if k not in args]
+    if faltando:
+        raise SystemExit(
+            f"o checkpoint não declara {', '.join(faltando)} nos metadados. Assumir "
+            "o padrão exportaria uma cabeça diferente da que treinou, e a conferência "
+            "de canais não pega a diferença — `z_recentrado` e `sem_imputacao` não "
+            "mudam a contagem. Regenere o checkpoint com um treinar.py que grave "
+            "todas as flags de representação.")
+    return {"z_recentrado": bool(args["z_recentrado"]),
+            "imputar": not bool(args["sem_imputacao"]),
+            "ossos": bool(args["ossos"]),
+            "movimento": bool(args["movimento"]),
+            "com_z": bool(args["com_z"])}
+
+
+def montar(checkpoint: Path | None, modo: str, num_classes: int = 20,
+           arquitetura: str = "resnet") -> tuple[nn.Module, list[str], dict]:
     """Modelo pronto para exportar, com os rótulos e a proveniência do checkpoint.
 
     Sem checkpoint (`--smoke`) constrói pesos aleatórios: serve para validar o
     toolchain de conversão, nunca para gerar artefato de entrega.
     """
     if checkpoint is None:
-        rede = md.construir(num_classes, pretreinado=False).eval()
+        origem = {"smoke": True, "arquitetura": arquitetura,
+                  "aviso": "pesos aleatórios — não é modelo de entrega"}
         rotulos = [f"classe{i:02d}" for i in range(num_classes)]
-        origem = {"smoke": True, "aviso": "pesos aleatórios — não é modelo de entrega"}
+        if arquitetura == "gcn":
+            cfg = _config_cabeca_gcn(origem)
+            canais = (3 if cfg["com_z"] else 2) * (2 if cfg["ossos"] else 1) \
+                * (2 if cfg["movimento"] else 1)
+            rede = gg.construir(num_classes, canais_ent=canais)
+        else:
+            rede = md.construir(num_classes, pretreinado=False)
     else:
         rede, rotulos, meta = md.carregar(checkpoint)
-        if not isinstance(rede, md.ResNet):
+        origem = {"arquivo": checkpoint.name, "sha256": pv.hash_arquivo(checkpoint),
+                  "meta": meta, "arquitetura": "gcn" if isinstance(rede, gg.STGCN) else "resnet"}
+        if not isinstance(rede, (md.ResNet, gg.STGCN)):
             raise SystemExit(
                 f"{checkpoint.name} é um checkpoint {type(rede).__name__}; o export "
-                "cobre a ResNet-18, que é o modelo do MVP (ver treino/README.md).")
-        origem = {"arquivo": checkpoint.name, "sha256": pv.hash_arquivo(checkpoint),
-                  "meta": meta}
+                "cobre ResNet-18 e ST-GCN.")
     rede.eval()
+
+    if origem["arquitetura"] == "gcn":
+        if modo != "landmarks":
+            raise SystemExit("ST-GCN só exporta no --modo landmarks: ele consome o "
+                             "esqueleto, não uma imagem montada.")
+        cfg = _config_cabeca_gcn(origem)
+        # FONTE ÚNICA. `resolver_layout` precisa saber quantas coordenadas a
+        # entrada tem, e essa decisão é a MESMA que monta a cabeça. Deixar cada
+        # um derivar por conta própria já produziu divergência silenciosa aqui:
+        # a cabeça montada para 3 coordenadas recebendo entrada de 2 gerou metade
+        # dos canais e só estourou lá dentro, no BatchNorm.
+        origem["cabeca"] = cfg
+        cabeca = cg.CabecaGCN(z_recentrado=cfg["z_recentrado"], imputar=cfg["imputar"],
+                              ossos=cfg["ossos"], movimento=cfg["movimento"])
+        esperado = rede.config["canais_ent"]
+        obtido = (3 if cfg["com_z"] else 2) * (2 if cfg["ossos"] else 1) \
+            * (2 if cfg["movimento"] else 1)
+        if obtido != esperado:
+            raise SystemExit(
+                f"a cabeça montada pelas flags do checkpoint produz {obtido} canais, "
+                f"mas a rede foi treinada com {esperado}. Alguma flag de "
+                "representação não está no checkpoint — exportação recusada.")
+        return cg.ClassificadorGCN(rede, cabeca).eval(), rotulos, origem
+
     modelo_final = ClassificadorLandmarks(rede) if modo == "landmarks" else rede
     return modelo_final.eval(), rotulos, origem
 
 
-def entrada_exemplo(modo: str, frames: int, pontos: int) -> torch.Tensor:
-    """Tensor com o shape do contrato — define o shape fixo do grafo exportado."""
-    if modo == "landmarks":
-        # Faixa realista: landmarks em unidades de ombro ficam em [-1,56; +1,84].
-        return torch.empty(1, frames, pontos, 2).uniform_(-1.8, 1.8)
-    return torch.rand(1, 3, LADO, LADO)
+def entrada_exemplo(modo: str, frames: int, pontos: int, dims: int = 2,
+                    lacunas: bool = False) -> torch.Tensor:
+    """Tensor com o shape do contrato — define o shape fixo do grafo exportado.
+
+    `lacunas` zera blocos de mão para exercitar o caminho de imputação da cabeça
+    do GCN. Sem isso a paridade roda sempre em dado denso: `uniform_` nunca
+    produz um bloco exatamente zerado, então o gather/where da imputação e o osso
+    pulso->punho com mão ausente ficariam sem conferência — e é justamente o
+    único trecho com lógica dependente de dado, onde um conversor erraria.
+    """
+    if modo != "landmarks":
+        return torch.rand(1, 3, LADO, LADO)
+    # Faixa realista: landmarks em unidades de ombro ficam em [-1,56; +1,84].
+    x = torch.empty(1, frames, pontos, dims).uniform_(-1.8, 1.8)
+    if lacunas and pontos >= N_POSE + 2 * N_MAO:
+        import gcn as _gg
+        a, b = _gg.N_POSE, _gg.N_POSE + _gg.N_MAO
+        c, d = b, b + _gg.N_MAO
+        x[:, frames // 4:frames // 4 + 3, a:b] = 0.0        # curta: imputada
+        x[:, frames // 2:frames // 2 + 12, c:d] = 0.0       # longa: fica zerada
+    return x
 
 
 def resolver_layout(origem: dict, pontos_cli: int | None) -> dict:
@@ -194,9 +281,25 @@ def resolver_layout(origem: dict, pontos_cli: int | None) -> dict:
     meta = origem.get("meta", {})
     prov = meta.get("proveniencia", {})
     opcoes = [meta.get("args", {}), prov.get("args", {})]
-    if (any(a.get("com_z") or a.get("z_recentrado") for a in opcoes)
-            or meta.get("limite_escala_z") is not None):
-        raise SystemExit("checkpoint usa z/3D; exportador atual é exclusivamente 2D — "
+    usa_z = (any(a.get("com_z") or a.get("z_recentrado") for a in opcoes)
+             or meta.get("limite_escala_z") is not None)
+    # Para o GCN, quem manda é a config com que a cabeça foi de fato construída
+    # em `montar` — não uma segunda leitura dos mesmos metadados.
+    if origem.get("arquitetura") == "gcn":
+        # Sem a config da cabeça não há como saber quantas coordenadas a entrada
+        # tem, e adivinhar pelos metadados aqui foi o que já produziu uma cabeça
+        # de 3 coordenadas recebendo entrada de 2. A invariante é `montar` rodar
+        # antes; se não rodou, é erro de uso e tem que falhar alto.
+        if "cabeca" not in origem:
+            raise SystemExit("resolver_layout chamado antes de montar() para um "
+                             "checkpoint GCN: a configuração da cabeça é quem "
+                             "define o número de coordenadas da entrada.")
+        usa_z = bool(origem["cabeca"]["com_z"])
+    # A ResNet continua 2D: a cabeça Skeleton-DML monta a imagem a partir de x,y e
+    # não há caminho testado para o z ali. O ST-GCN consome o esqueleto direto e a
+    # sua cabeça trata as três coordenadas, então para ele o z é suportado.
+    if usa_z and origem.get("arquitetura") != "gcn":
+        raise SystemExit("checkpoint usa z/3D; o export da ResNet é exclusivamente 2D — "
                          "não é seguro descartar z, mesmo no modo imagem")
     limite = meta.get("limite_escala", rp.LIMITE)
     if limite != rp.LIMITE:
@@ -233,7 +336,9 @@ def resolver_layout(origem: dict, pontos_cli: int | None) -> dict:
     else:
         raise SystemExit("checkpoint sem metadado de pontos; forneça --pontos explicitamente "
                          "para legado ou regenere um checkpoint com mapa de pose")
-    return {"pontos": pontos, "dimensoes": 2, "coordenadas": ["x", "y"],
+    dims = 3 if (usa_z and origem.get("arquitetura") == "gcn") else 2
+    return {"pontos": pontos, "dimensoes": dims,
+            "coordenadas": ["x", "y", "z"][:dims],
             "fonte_layout": fonte, "pose_ordenada": ordem,
             "maos": [{"lado": "esquerda", "indices": list(range(21))},
                      {"lado": "direita", "indices": list(range(21))}],
@@ -301,18 +406,43 @@ def converter(modelo_torch: nn.Module, exemplo: torch.Tensor, destino: Path,
 
 
 def _via_ai_edge(modelo_torch, exemplo, destino: Path, quantizacao: str) -> None:
-    try:
-        import ai_edge_torch
-    except ImportError as e:  # pragma: no cover - depende do ambiente
+    # O pacote foi renomeado: `ai-edge-torch` virou `litert-torch` e parou de
+    # receber atualizações. O nome antigo ainda instala, mas o módulo importado
+    # fica sem `convert` — falha em atributo, não em import, o que engana. Tentar
+    # o nome novo primeiro e cair no antigo mantém os dois ambientes funcionando.
+    convert = None
+    for mod in ("litert_torch", "ai_edge_torch"):
+        try:
+            m = __import__(mod)
+        except ImportError:
+            continue
+        if hasattr(m, "convert"):
+            convert = m.convert
+            break
+    if convert is None:  # pragma: no cover - depende do ambiente
         raise SystemExit(
-            f"ai-edge-torch indisponível ({e}). Ele exige torch<2.10 — com um torch "
-            "mais novo o pip resolve para a 0.2.0, que depende de torch_xla e quebra "
-            "com 'undefined symbol'. Ver treino/README.md §exportação."
-        ) from e
+            "conversor indisponível: instale `litert-torch` (o antigo `ai-edge-torch` "
+            "foi renomeado e o módulo legado não expõe mais `convert`). "
+            "Ver treino/README.md §exportação.")
 
+    # A API mudou junto com o nome: o antigo aceitava `_ai_edge_converter_flags`
+    # (flags cruas do conversor TFLite); o novo não tem esse parâmetro. Passar a
+    # chave errada dá TypeError, o que é bom — o modo silencioso seria o conversor
+    # ACEITAR e ignorar, que é exatamente o que `_conferir_precisao` já vigia.
+    import inspect
+    kwargs = {}
+    aceita = inspect.signature(convert).parameters
     flags = _flags_quantizacao(quantizacao)
-    edge = ai_edge_torch.convert(modelo_torch, (exemplo,),
-                                 _ai_edge_converter_flags=flags or None)
+    if flags:
+        if "_ai_edge_converter_flags" in aceita:
+            kwargs["_ai_edge_converter_flags"] = flags
+        else:
+            raise SystemExit(
+                f"quantização {quantizacao!r} pedida, mas o conversor instalado não "
+                "expõe as flags do TFLite. Converta sem quantização ou volte ao "
+                "ai-edge-torch antigo; `_conferir_precisao` recusaria o arquivo de "
+                "qualquer forma.")
+    edge = convert(modelo_torch, (exemplo,), **kwargs)
     edge.export(str(destino))
 
 
@@ -339,7 +469,7 @@ def _via_onnx(modelo_torch, exemplo, destino: Path, quantizacao: str) -> None:
 
 
 def conferir_paridade(modelo_torch: nn.Module, destino: Path, modo: str, frames: int,
-                      pontos: int, amostras: int = 8) -> dict:
+                      pontos: int, amostras: int = 8, dims: int = 2) -> dict:
     """Compara PyTorch e o .tflite gravado, no mesmo tensor de entrada.
 
     É a única verificação que prova que a conversão preservou o modelo. Sem ela o
@@ -355,8 +485,10 @@ def conferir_paridade(modelo_torch: nn.Module, destino: Path, modo: str, frames:
     ent, sai = interp.get_input_details()[0], interp.get_output_details()[0]
 
     piores, discordancias = [], 0
-    for _ in range(amostras):
-        x = entrada_exemplo(modo, frames, pontos)
+    for i in range(amostras):
+        # Metade das amostras com lacunas de mão: o caminho de imputação e o osso
+        # pulso->punho com mão ausente só existem quando há bloco zerado.
+        x = entrada_exemplo(modo, frames, pontos, dims, lacunas=bool(i % 2))
         with torch.no_grad():
             esperado = modelo_torch(x).numpy()
         interp.set_tensor(ent["index"], x.numpy().astype(ent["dtype"]))
@@ -382,7 +514,7 @@ def escrever_sidecar(destino: Path, rotulos: list[str], origem: dict, modo: str,
     e falar a palavra errada.
     """
     sidecar = destino.with_suffix(".json")
-    contrato = _contrato(modo, args)
+    contrato = _contrato(modo, args, origem.get("cabeca"))
     if (paridade["shape_entrada"] != contrato["shape"]
             or paridade["dtype_entrada"] != contrato["dtype"]
             or paridade["shape_saida"] != [1, len(rotulos)]):
@@ -398,21 +530,49 @@ def escrever_sidecar(destino: Path, rotulos: list[str], origem: dict, modo: str,
     return sidecar
 
 
-def _contrato(modo: str, args: dict) -> dict:
+def _contrato(modo: str, args: dict, cabeca: dict | None = None) -> dict:
     layout = args["layout"]
     if modo == "landmarks":
-        return {"shape": [1, args["frames"], layout["pontos"], 2], "dtype": "float32",
-                "layout_landmarks": layout,
+        gcn = args.get("arquitetura") == "gcn"
+        # POR FLAG, NÃO SÓ PELA ARQUITETURA. `imputacao_embutida: gcn` mentia
+        # para um checkpoint `--sem-imputacao`: a cabeça saía sem imputar
+        # (`origem["cabeca"]["imputar"] is False`) e o sidecar continuava
+        # declarando `true` — no MESMO arquivo que já carrega a config real em
+        # `origem.cabeca`. Cada flag agora reflete o que a cabeça de fato monta.
+        cabeca = cabeca or {}
+        imputa = gcn and bool(cabeca.get("imputar", True))
+        recentra = gcn and bool(cabeca.get("z_recentrado"))
+        tem_ossos = gcn and bool(cabeca.get("ossos"))
+        partes = []
+        if gcn:
+            if recentra:
+                partes.append("recentragem do z")
+            if imputa:
+                partes.append("imputação de lacunas curtas")
+            if tem_ossos:
+                partes.append("ossos")
+            partes.append("reamostragem temporal")
+            pre = ("O pré-processamento do ST-GCN (" + ", ".join(partes)
+                  + ") está dentro do grafo.")
+        else:
+            pre = "O pré-processamento Skeleton-DML está dentro do grafo."
+        return {"shape": [1, args["frames"], layout["pontos"], layout["dimensoes"]],
+                "dtype": "float32", "layout_landmarks": layout,
                 "descricao": "landmarks normalizados em unidades de ombro (origem no "
                              "ponto médio dos ombros, escala = distância entre eles), "
                              "ordem [pose | mão esquerda 21 | mão direita 21]; mão "
-                             "ausente = zeros. O pré-processamento Skeleton-DML está "
-                             "dentro do grafo.",
+                             "ausente = zeros. " + pre,
                 "frames_fixos": args["frames"],
                 "temporal": {"frames": args["frames"], "dinamico": False,
-                             "reamostragem_embutida": False,
+                             "reamostragem_embutida": gcn,
+                             "reamostragem_alvo": gg.T_FIXO if gcn else None,
                              "politica_app": "exigir_shape_exato; adaptação temporal a validar com dados reais"},
-                "normalizacao_embutida": False, "imputacao_embutida": False}
+                "normalizacao_embutida": False,
+                # O app NÃO deve imputar quando o grafo já imputa: imputar duas
+                # vezes não é idempotente, a segunda passada interpola sobre valores
+                # que a primeira inventou. Para um checkpoint `--sem-imputacao`
+                # isto agora sai False, e o app É responsável por imputar.
+                "imputacao_embutida": imputa}
     return {"shape": [1, 3, LADO, LADO], "dtype": "float32",
             "layout_landmarks_preprocessamento": layout,
             "descricao": "imagem Skeleton-DML já montada, em [0,1] (SEM normalização "
@@ -437,6 +597,9 @@ def main() -> None:
                          "dinamica=int8 nos pesos=11,3MB (efeito na acurácia NÃO medido)")
     ap.add_argument("--backend", choices=["ai-edge", "onnx"], default="ai-edge",
                     help="conversor; 'onnx' só é confiável no --modo imagem (ver docstring)")
+    ap.add_argument("--arquitetura", choices=["resnet", "gcn"], default="resnet",
+                    help="só com --smoke: qual rede construir com pesos aleatórios; "
+                         "com --checkpoint a arquitetura vem do próprio arquivo")
     ap.add_argument("--smoke", action="store_true",
                     help="pesos aleatórios: valida o toolchain, não gera entrega")
     args = ap.parse_args()
@@ -457,10 +620,12 @@ def main() -> None:
             "ou --modo imagem se precisar do onnx. Ver a docstring deste arquivo.")
 
     modelo_torch, rotulos, origem = montar(args.checkpoint if not args.smoke else None,
-                                           args.modo)
+                                           args.modo, arquitetura=args.arquitetura)
     args.layout = resolver_layout(origem, args.pontos)
+    args.arquitetura = origem.get("arquitetura", "resnet")
     args.pontos = args.layout["pontos"]
-    exemplo = entrada_exemplo(args.modo, args.frames, args.pontos)
+    exemplo = entrada_exemplo(args.modo, args.frames, args.pontos,
+                              args.layout["dimensoes"])
     print(f"[export] modo={args.modo} entrada={tuple(exemplo.shape)} "
           f"classes={len(rotulos)} quantizacao={args.quantizacao}")
 
@@ -471,7 +636,7 @@ def main() -> None:
           f"backend={backend}, tensores={precisao['tipos_tensores']})")
 
     paridade = conferir_paridade(modelo_torch, args.saida, args.modo, args.frames,
-                                 args.pontos)
+                                 args.pontos, dims=args.layout["dimensoes"])
     print(f"[export] paridade PyTorch↔TFLite: max_dif={paridade['max_dif_logit']:.2e} "
           f"top1_discordante={paridade['discordancias_top1']}/{paridade['amostras']}")
     tol = TOL_LOGITS[args.quantizacao]

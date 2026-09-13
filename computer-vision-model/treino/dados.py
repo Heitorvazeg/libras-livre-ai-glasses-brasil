@@ -82,12 +82,39 @@ def recentrar_z(seq: np.ndarray) -> np.ndarray:
     return saida
 
 
+# `todas` CONTINUA SENDO M+V, o que sempre foi. Acrescentar T aqui pareceu
+# natural e é armadilha: `todas` alimenta a partição LOSO do treinar.py, e
+# incluir MALTA faria as rodadas girarem também sobre as 8 pseudo-pessoas
+# dele — inclusive `TUFS`, que são 2.039 clipes sob um ID que não é uma
+# pessoa. A média reportada deixaria de ser o número do protocolo sem que
+# nada no comando mudasse. Quem quer MALTA pede por nome ou compõe.
+PREFIXOS_FONTE = {"minds": ("M",), "vlibrasil": ("V",), "malta": ("T",),
+                  "wlasl": ("W",), "todas": ("M", "V")}
+
+
+def prefixos_aceitos(fontes: str) -> tuple[str, ...]:
+    """`fontes` ('vlibrasil', 'vlibrasil,malta', ...) -> tupla de prefixos de pessoa.
+
+    Extraído de `carregar` para que quem só precisa saber "essa configuração
+    aceita o prefixo X?" — como a guarda de `pretreinar.carregar_corpora` — não
+    precise repetir o parsing, nem inferir a resposta a partir do que sobrou
+    depois de filtros que nada têm a ver com configuração (frames curtos, por
+    exemplo). É checagem de ELEGIBILIDADE, não de resultado de leitura.
+    """
+    pedidos = [f.strip() for f in fontes.split(",") if f.strip()]
+    if not pedidos or any(f not in PREFIXOS_FONTE for f in pedidos):
+        raise ValueError(f"fontes={fontes!r} — use um ou mais de {sorted(PREFIXOS_FONTE)}, "
+                         "separados por vírgula")
+    return tuple(sorted({p for f in pedidos for p in PREFIXOS_FONTE[f]}))
+
+
 def carregar(lm_dir: Path, fontes: str = "minds", min_frames: int = 3,
              imputar: bool = True, lacuna_maxima: int = 5,
              com_z: bool = False, z_recentrado: bool = False) -> list[Clipe]:
     """Lê os .npy de `lm_dir`, ficando com x,y (e z, se `com_z`).
 
-    `fontes`: 'minds' (pessoas M*), 'vlibrasil' (V*) ou 'todas'. O padrão é
+    `fontes`: 'minds' (M*), 'vlibrasil' (V*), 'malta' (T*), 'wlasl' (W*) ou
+    'todas' (M+V+T), e aceita composição por vírgula ('vlibrasil,malta'). O padrão é
     MINDS porque é a única fonte com pessoas suficientes por sinal para a
     avaliação signer-independent valer — a V-LIBRASIL tem sempre os mesmos 3
     articuladores (docs/vocabulario-mvp-proposta.md).
@@ -101,16 +128,19 @@ def carregar(lm_dir: Path, fontes: str = "minds", min_frames: int = 3,
     mãos ao referencial do punho (ver recentrar_z). O .npy sempre tem as 3 dims, então
     trocar de variante NÃO exige reextrair — são horas de MediaPipe economizadas.
     """
-    prefixos = {"minds": ("M",), "vlibrasil": ("V",), "todas": ("M", "V")}
-    if fontes not in prefixos:
-        raise ValueError(f"fontes={fontes!r} — use um de {sorted(prefixos)}")
-    aceitos = prefixos[fontes]
+    aceitos = prefixos_aceitos(fontes)
 
     clipes: list[Clipe] = []
     curtos: list[str] = []
+    ignorados: dict[str, int] = {}
     for arquivo in sorted(lm_dir.glob("*.npy")):
         pessoa, sinal, rep = parse_nome(arquivo.stem)
         if not pessoa.startswith(aceitos):
+            # Contar em vez de descartar calado. Pedir uma fonte que o diretório
+            # não tem — ou esquecer de incluí-la em `fontes` — sumia com milhares
+            # de clipes sem uma linha de log, e o treino seguia com menos dado do
+            # que o operador acreditava ter.
+            ignorados[pessoa[:1]] = ignorados.get(pessoa[:1], 0) + 1
             continue
         arr = np.load(arquivo)
         if arr.ndim != 3:
@@ -132,6 +162,10 @@ def carregar(lm_dir: Path, fontes: str = "minds", min_frames: int = 3,
             seq = imputar_maos(seq, lacuna_maxima)
         clipes.append(Clipe(pessoa, sinal, rep, seq))
 
+    if ignorados:
+        detalhe = ", ".join(f"{n} com prefixo {p!r}" for p, n in sorted(ignorados.items()))
+        print(f"[dados] fontes={fontes}: {sum(ignorados.values())} clipe(s) fora do "
+              f"filtro ({detalhe})")
     if curtos:
         print(f"[dados] {len(curtos)} clipe(s) descartado(s) por ter < {min_frames} frames "
               f"válidos: {', '.join(curtos[:5])}{' ...' if len(curtos) > 5 else ''}")
