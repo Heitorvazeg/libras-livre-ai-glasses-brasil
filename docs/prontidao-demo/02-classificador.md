@@ -203,6 +203,44 @@ sessão mista → fala só as conhecidas.
 **Pronto quando** os dois testes passam com o modelo `--smoke` e voltam a rodar quando o
 checkpoint real chegar.
 
+**Como ficou a onda 2 (2.1–2.4, 2.6, 2.7).**
+- **2.1:** `LandmarkNormalizer.N_CANAIS = 3`, z pela fórmula do `extract.py`; o detector e a
+  checagem de ausência de mão seguem só com x,y, e o `HandGapImputer` interpola os três canais.
+- **2.2:** `ReamostragemTemporal.kt`, com valores de referência do `np.interp`. O número de frames
+  vem do sidecar.
+- **2.3:** a imputação roda por segmento recortado (1.1), antes da reamostragem.
+- **2.4:** `AtribuicaoMaos.kt` (atribuição gulosa pelo par mão–pulso mais próximo), usada pelo
+  `LandmarkExtractor`; o rótulo de handedness não decide mais.
+- **2.6:** `SidecarClassificador.kt` (leitura e `ValidacaoClassificador`: sha256, shape, dtype,
+  pontos, dimensões, frames, ordem da pose, número de rótulos, temperatura) e
+  `TfliteSignClassifier.kt` (reamostra para o contrato, softmax com temperatura, margem). Modelo
+  recusado → `ModeloRecusado` com os motivos, erro fixo na tela e `ClassificadorRecusado` no lugar
+  (nenhuma classificação sai). Sem `sinal_classifier.tflite` nos assets, o app usa o
+  `PlaceholderSignClassifier` com os modos `roteiro`/`alta`/`baixa`/`aleatoria`, escolhidos nas
+  configurações de demo. O teste de rótulos × léxico (com a lista de não falados) existe e é pulado
+  enquanto o modelo não está nos assets.
+- **Toolchain do export, medido em 2026-09-13:** o `treino/README.md` pede `torch<2.10` com
+  `ai-edge-torch`, mas o pacote virou `litert-torch`, que exige torch ≥ 2.11. Funcionou com
+  **torch 2.13 + litert-torch 0.9.4 + torchvision 0.28** (CPU). Não mexemos no README da trilha;
+  fica para quem cuida dela.
+- **2.7:** o gerador do fixture mora em **`scripts/fixture_paridade_classificador.py`** e não em
+  `computer-vision-model/treino/`: é ferramenta do app e só lê o código da trilha (sem gravar nada
+  lá). Ele exporta o `--smoke` com semente fixa para `androidTest/assets/smoke_sinal_classifier.*`
+  e grava `paridade_classificador.json`. Testes:
+  - `ParidadeCaminhoAppTest` (JVM): normalização, imputação e reamostragem em Kotlin contra o
+    Python (tolerância 2e-4);
+  - `ClassificadorSmokeTest` (instrumentado): o sidecar carrega; sidecar adulterado (sha256, pose
+    trocada) é recusado; o `.tflite` reproduz os logits do PyTorch; o caminho inteiro do app, dos
+    landmarks crus aos logits, reproduz o PyTorch (tolerância 2e-3).
+- **Divergência no 2.7 (top-1):** com pesos aleatórios o GCN responde **sempre a mesma classe**, com
+  margem de 0,003 a 0,024 logit, para qualquer entrada — um top-1 igual não provaria nada. O teste
+  compara os logits e só confere o top-1 contra o caminho do treino quando a margem passa de 0,5,
+  o que só acontece com o checkpoint real.
+- **Pendente:** o checkpoint de entrega. O time aponta um modelo de ~96% cujos arquivos não estão no
+  repositório; o `--smoke` usa as flags da configuração de entrega registrada (ossos + z
+  recentrado, 94,6/94,9%). Quando o checkpoint chegar: exportar, copiar `sinal_classifier.*` para os
+  assets do app, rodar o script do fixture com ele e os testes acima.
+
 ## 2.8 Confiança e o fluxo "repita"
 
 **Decisão.** Softmax no app; se o modelo vier com confiança exagerada, uma **temperatura**

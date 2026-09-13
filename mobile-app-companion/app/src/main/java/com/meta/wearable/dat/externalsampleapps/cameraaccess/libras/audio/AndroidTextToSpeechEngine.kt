@@ -44,7 +44,7 @@ class AndroidTextToSpeechEngine(context: Context) : TtsEngine {
         }
       }
 
-  override suspend fun speakAndAwait(text: String) {
+  override suspend fun speakAndAwait(text: String, onInicioAudio: () -> Unit) {
     if (!ready) {
       Log.w(TAG, "TTS ainda não está pronto — ignorando \"$text\"")
       return
@@ -53,7 +53,9 @@ class AndroidTextToSpeechEngine(context: Context) : TtsEngine {
     suspendCancellableCoroutine<Unit> { cont ->
       tts.setOnUtteranceProgressListener(
           object : UtteranceProgressListener() {
-            override fun onStart(id: String?) {}
+            override fun onStart(id: String?) {
+              if (id == utteranceId) runCatching(onInicioAudio)
+            }
 
             override fun onDone(id: String?) {
               if (id == utteranceId && cont.isActive) cont.resume(Unit)

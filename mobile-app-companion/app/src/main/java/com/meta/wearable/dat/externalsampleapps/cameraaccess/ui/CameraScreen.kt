@@ -87,8 +87,11 @@ import com.meta.wearable.dat.externalsampleapps.cameraaccess.R
 import com.meta.wearable.dat.externalsampleapps.cameraaccess.camera.CameraUiState
 import com.meta.wearable.dat.externalsampleapps.cameraaccess.camera.CameraViewModel
 import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.audio.WakeWord
+import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.diagnostico.AmostraMetricas
+import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.diagnostico.MarcaEtapa
 import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.dialogo.Conversa
 import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.dialogo.DialogState
+import java.util.Locale
 import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.dialogo.TurnoConversa
 import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.reconhecimento.LibrasState
 import com.meta.wearable.dat.externalsampleapps.cameraaccess.wearables.WearablesViewModel
@@ -205,6 +208,9 @@ fun CameraScreen(
     ) {
       LinhaDeEstado(libras = ui.libras, dialogState = ui.dialogState)
       PainelConversa(conversa = ui.conversa)
+      if (ui.painelMetricas) {
+        PainelMetricas(amostra = ui.metricas, etapas = ui.etapasTurno, arquivoGravacao = ui.arquivoGravacao)
+      }
     }
 
     ui.activePreview?.let { preview ->
@@ -886,6 +892,38 @@ private fun TurnoNoPainel(turno: TurnoConversa, destaque: Boolean) {
     if (sinais.isNotEmpty()) LinhaDoPainel(R.string.conversa_sinais, sinais, destaque)
     turno.falado?.let { LinhaDoPainel(R.string.conversa_falado, "“$it”", destaque) }
     turno.resposta?.let { LinhaDoPainel(R.string.conversa_resposta, "“$it”", destaque) }
+  }
+}
+
+/**
+ * Painel de métricas (docs/prontidao-demo/03 §3.8, 06 §6.5): uma amostra por segundo e a tabela de
+ * tempos do último turno. Ligado pelas configurações de demo; é ferramenta de medição, não de palco.
+ */
+@Composable
+private fun PainelMetricas(amostra: AmostraMetricas?, etapas: List<MarcaEtapa>, arquivoGravacao: String?) {
+  val linhas = buildList {
+    if (amostra == null) {
+      add("medindo…")
+    } else {
+      add("fps óculos %.1f · decod %.1f · proc %.1f".format(Locale.ROOT, amostra.fpsRecebido, amostra.fpsDecodificado, amostra.fpsProcessado))
+      add("sem pose %.0f%% · fila cheia %d".format(Locale.ROOT, amostra.pctSemPose, amostra.filaCheia))
+      val s = amostra.sistema
+      add(
+          "térmico ${s.estadoTermico ?: "—"} (folga ${s.folgaTermica?.let { "%.2f".format(Locale.ROOT, it) } ?: "—"}) · " +
+              "bateria ${s.bateriaPct?.let { "$it%" } ?: "—"} · RAM ${s.ramAppMb?.let { "$it MB" } ?: "—"}")
+    }
+    etapas.forEach { add("${it.etapa.nome}: ${it.ms} ms${it.detalhe?.let { d -> " ($d)" } ?: ""}") }
+    arquivoGravacao?.let { add("gravando $it") }
+  }
+  Column(
+      modifier =
+          Modifier.fillMaxWidth()
+              .clip(RoundedCornerShape(12.dp))
+              .background(Color.Black.copy(alpha = 0.7f))
+              .padding(horizontal = 12.dp, vertical = 8.dp)
+              .testTag("painel_metricas"),
+  ) {
+    linhas.forEach { Text(text = it, color = AppColor.Green, fontSize = 11.sp, fontFamily = FontFamily.Monospace) }
   }
 }
 

@@ -92,6 +92,20 @@ import android.os.SystemClock
 import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.avatar.DesfechoAvatar
 import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.avatar.TetosAvatar
 import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.dialogo.Conversas
+import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.diagnostico.ConfiguracoesDemo
+import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.diagnostico.Etapa
+import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.diagnostico.GravadorSessao
+import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.diagnostico.LeitorSistema
+import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.diagnostico.LeituraSistema
+import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.diagnostico.Metricas
+import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.reconhecimento.ClassificadorRecusado
+import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.reconhecimento.ModeloRecusado
+import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.reconhecimento.SignClassifier
+import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.reconhecimento.TfliteSignClassifier
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.isActive
 
 class CameraViewModel(
     application: Application,
@@ -133,16 +147,48 @@ class CameraViewModel(
   // §4 item 10, §8 item 4). Pra voltar ao motor nativo do Android (fallback, sem depender dos
   // assets de tts/pt_br/), troque por Speaker(application) — construtor usa
   // AndroidTextToSpeechEngine por padrão quando nenhum TtsEngine é passado.
+  // Diagnóstico da demo (docs/prontidao-demo: 1.9 gravador, 3.8 painel, 6.5 tempo por etapa, 10.6
+  // configurações). As configurações são a mesma instância que o menu de debug altera.
+  private val configuracoes = ConfiguracoesDemo.de(application)
+  private val gravador = GravadorSessao(application.getExternalFilesDir(null) ?: application.filesDir)
+  private val leitorSistema = LeitorSistema(application)
+  private val metricas =
+      Metricas(
+          onMarca = { marca ->
+            gravador.evento(SystemClock.uptimeMillis(), marca.turno, "latencia", Metricas.linhaLog(marca))
+          })
+
   private val speaker = Speaker(application, PiperSherpaOnnxTtsEngine(application))
   private val landmarkPipeline =
       LandmarkPipeline(
           context = application,
           scope = viewModelScope,
-          classifier = PlaceholderSignClassifier(),
+          classifier = criarClassificador(),
           onState = { transform -> _uiState.update { it.copy(libras = it.libras.transform()) } },
-          onRecognized = { text -> dialogOrchestrator.onSignRecognized(text) },
+          onRecognized = { classificacao -> dialogOrchestrator.onSignRecognized(classificacao) },
           onRecognitionFailed = { dialogOrchestrator.onSignRecognitionFailed() },
+          metricas = metricas,
+          onFrameProcessado = { frame -> gravador.frame(frame, metricas.turno) },
+          onEvento = { nome, detalhe -> gravador.evento(SystemClock.uptimeMillis(), metricas.turno, nome, detalhe) },
       )
+
+  /**
+   * O classificador do app (2.6). Com `sinal_classifier.tflite` nos assets, o modelo validado pelo
+   * sidecar; se o sidecar recusar, o erro fica na tela e toda classificação falha com o motivo —
+   * nunca um modelo errado rodando em silêncio. Sem o `.tflite`, o placeholder no modo escolhido nas
+   * configurações de demo.
+   */
+  private fun criarClassificador(): SignClassifier {
+    val assets = getApplication<Application>().assets
+    val temModelo = runCatching { assets.list("")?.contains("${TfliteSignClassifier.NOME_PADRAO}.tflite") == true }.getOrDefault(false)
+    if (!temModelo) return PlaceholderSignClassifier(modo = { configuracoes.valores.value.modoPlaceholder })
+    return runCatching<SignClassifier> { TfliteSignClassifier(assets) }.getOrElse { e ->
+      val motivo = (e as? ModeloRecusado)?.message ?: (ModeloRecusado.PREFIXO + (e.message ?: e.javaClass.simpleName))
+      Log.e(TAG, motivo, e)
+      _uiState.update { it.copy(libras = it.libras.copy(error = motivo)) }
+      ClassificadorRecusado(motivo)
+    }
+  }
   private val audioSessionManager = AudioSessionManager(application)
 
   // Sentido OUVINTE -> SURDO (docs/vlibras-webview-plano.md). O tradutor fala com o endpoint
@@ -158,6 +204,11 @@ class CameraViewModel(
           context = application,
           onState = { s ->
             _uiState.update { it.copy(avatarState = s) }
+            // 6.5: "texto -> avatar sinalizando" termina quando a animação começa de verdade.
+            if (s == AvatarState.ANIMANDO) {
+              inicioTextoAvatarMs?.let { metricas.marcar(Etapa.TEXTO_AVATAR, SystemClock.elapsedRealtime() - it) }
+              inicioTextoAvatarMs = null
+            }
             // Falhou no meio da espera do ⑦ (renderer morto, Unity que não ficou pronto): desiste
             // agora. Sem isto o turno pagaria os AVATAR_TIMEOUT_MS inteiros para chegar à mesma
             // conclusão que o AvatarPlayer já tinha.
@@ -283,11 +334,58 @@ class CameraViewModel(
             onConversa = { evento ->
               _uiState.update { it.copy(conversa = Conversas.reduzir(it.conversa, evento)) }
             },
+            metricas = metricas,
         )
     dialogOrchestrator.attachWakeWordDetector(wakeWordDetector)
     // 3.1: o MediaPipe carrega ao abrir o app, fora da thread de frames, e fica ocioso até a
     // captura. Antes ele nascia no primeiro frame, e o "iniciar" chegava antes dele.
     viewModelScope.launch { landmarkPipeline.carregarModelos() }
+
+    // 1.9: com o gravador ligado, um CSV por sessão com os óculos — abre quando a sessão começa (ou
+    // quando o interruptor é ligado no meio dela) e fecha quando qualquer um dos dois termina.
+    viewModelScope.launch {
+      combine(configuracoes.valores, uiState.map { it.hasSession }.distinctUntilChanged()) { valores, sessao ->
+            valores to sessao
+          }
+          .collect { (valores, sessao) ->
+            if (valores.gravadorSessao && sessao) {
+              if (gravador.arquivo == null) withContext(Dispatchers.IO) { gravador.abrir() }
+            } else if (gravador.arquivo != null) {
+              withContext(Dispatchers.IO) { gravador.fechar() }
+            }
+            _uiState.update {
+              it.copy(painelMetricas = valores.painelMetricas, arquivoGravacao = gravador.arquivo?.name)
+            }
+          }
+    }
+
+    // 3.8: uma amostra por segundo. A leitura do sistema (getPss) só roda com o painel ou o gravador
+    // ligados; os contadores de fps são baratos e fecham a janela sempre.
+    viewModelScope.launch {
+      while (isActive) {
+        delay(1_000)
+        val valores = configuracoes.valores.value
+        val ligado = valores.painelMetricas || gravador.arquivo != null
+        val sistema = if (ligado) withContext(Dispatchers.Default) { leitorSistema.ler() } else LeituraSistema()
+        val filaCheia = landmarkPipeline.filaCheiaDecoder + (hevcDecoder?.vezesFilaCheia ?: 0)
+        val amostra = metricas.amostrar(SystemClock.uptimeMillis(), sistema, filaCheia)
+        if (!ligado) continue
+        if (valores.painelMetricas) {
+          _uiState.update { it.copy(metricas = amostra, etapasTurno = metricas.etapasDoTurnoAtual()) }
+        }
+        val ts = SystemClock.uptimeMillis()
+        val turno = metricas.turno
+        gravador.metrica(ts, turno, "fps_recebido", amostra.fpsRecebido.toString())
+        gravador.metrica(ts, turno, "fps_decodificado", amostra.fpsDecodificado.toString())
+        gravador.metrica(ts, turno, "fps_processado", amostra.fpsProcessado.toString())
+        gravador.metrica(ts, turno, "pct_sem_pose", amostra.pctSemPose.toString())
+        gravador.metrica(ts, turno, "fila_cheia", amostra.filaCheia.toString())
+        sistema.folgaTermica?.let { gravador.metrica(ts, turno, "folga_termica", it.toString()) }
+        sistema.estadoTermico?.let { gravador.metrica(ts, turno, "estado_termico", it.toString()) }
+        sistema.bateriaPct?.let { gravador.metrica(ts, turno, "bateria_pct", it.toString()) }
+        sistema.ramAppMb?.let { gravador.metrica(ts, turno, "ram_app_mb", it.toString()) }
+      }
+    }
     viewModelScope.launch {
       dialogOrchestrator.state.collect { state -> _uiState.update { it.copy(dialogState = state) } }
     }
@@ -299,6 +397,9 @@ class CameraViewModel(
 
   // Completado por pularAvatar(): o "Pular" do operador encerra o ⑦ em qualquer ponto.
   @Volatile private var puloDoAvatar: CompletableDeferred<Unit>? = null
+
+  // Início da etapa "texto -> avatar sinalizando" do turno em curso (6.5).
+  @Volatile private var inicioTextoAvatarMs: Long? = null
 
   /**
    * Estado ⑦: traduz o texto do atendente para glosa e manda o avatar sinalizar, suspendendo até
@@ -315,6 +416,7 @@ class CameraViewModel(
     // dito enquanto a glosa vem da rede, e os dois caminhos de falha (sem rede, player caído)
     // encontram a tela aberta mostrando o texto em vez de devolverem preto.
     _uiState.update { it.copy(avatarVisivel = true, avatarLegenda = text) }
+    inicioTextoAvatarMs = SystemClock.elapsedRealtime()
     val pulo = CompletableDeferred<Unit>().also { puloDoAvatar = it }
     return try {
       coroutineScope {
@@ -593,6 +695,7 @@ class CameraViewModel(
 
   private fun handleVideoFrame(videoFrame: VideoFrame) {
     if (!videoFrame.isCompressed) return
+    metricas.frameRecebido()
 
     val buffer = videoFrame.buffer
     val width = videoFrame.width
@@ -944,6 +1047,7 @@ class CameraViewModel(
     cleanupSession()
     videoRecorder.close()
     landmarkPipeline.dispose()
+    gravador.encerrar()
     avatarPlayer.release()
     glossContextualizer.close()
     speaker.shutdown()

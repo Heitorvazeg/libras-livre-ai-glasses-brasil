@@ -27,7 +27,11 @@
 
 package com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.dialogo
 
+import android.os.SystemClock
 import android.util.Log
+import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.diagnostico.Etapa
+import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.diagnostico.Metricas
+import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.reconhecimento.Classificacao
 import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.audio.AudioSessionManager
 import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.audio.Speaker
 import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.audio.SttEngine
@@ -76,6 +80,8 @@ class DialogOrchestrator(
     // O que o painel de conversa mostra (docs/prontidao-demo/10-tela.md §10.1): cada sinal, a frase
     // falada, a resposta transcrita e como o ⑦ terminou. Só informa; não decide nada.
     private val onConversa: (EventoConversa) -> Unit = {},
+    // Tempo por etapa de cada turno (docs/prontidao-demo/06 §6.5). Opcional: sem ele, nada é medido.
+    private val metricas: Metricas? = null,
 ) {
 
   companion object {
@@ -107,6 +113,9 @@ class DialogOrchestrator(
   // [contextualizer], que decide como ela vira frase — esta classe não sabe (nem deve saber) se
   // a resolução veio do modelo, do template ou do passthrough.
   private val palavrasReconhecidas = mutableListOf<String>()
+
+  // Instante em que a escuta foi encerrada: começo da etapa "fim da fala -> texto" (6.5).
+  private var fimDaFalaMs: Long? = null
 
   /** Liga a fonte de wake words (hoje, [SpeechRecognizerWakeWordDetector]) — chamar uma vez, na
    * criação. */
@@ -145,10 +154,11 @@ class DialogOrchestrator(
    * boundary do SignBoundaryDetector, não mais uma vez por sessão inteira (§5.3). Só acumula;
    * quem decide quando falar é [endSignSession].
    */
-  fun onSignRecognized(text: String) {
-    if (text.isNotBlank()) {
-      palavrasReconhecidas.add(text)
-      onConversa(EventoConversa.SinalClassificado(SinalNaConversa(glosa = text)))
+  fun onSignRecognized(classificacao: Classificacao) {
+    if (classificacao.glosa.isNotBlank()) {
+      palavrasReconhecidas.add(classificacao.glosa)
+      onConversa(
+          EventoConversa.SinalClassificado(SinalNaConversa(classificacao.glosa, classificacao.confianca)))
     }
     // Conta como atividade — reinicia o timeout de 1 min de inatividade (§7 Fase 7).
     resetIdleTimeout(DialogState.CAPTURANDO_SINAIS) { endSignSession() }
@@ -175,6 +185,8 @@ class DialogOrchestrator(
   private fun beginSignSession() {
     if (startingSignSession) return
     startingSignSession = true
+    // O relógio da etapa "iniciar -> pode sinalizar" começa no comando, antes de a câmera subir.
+    metricas?.novoTurno(SystemClock.uptimeMillis())
     scope.launch {
       try {
         if (!ensureCameraActive()) {
@@ -215,11 +227,19 @@ class DialogOrchestrator(
       val glosas = palavrasReconhecidas.toList()
       palavrasReconhecidas.clear()
       if (glosas.isNotEmpty()) {
+        val inicioContextualizacao = SystemClock.elapsedRealtime()
         val resultado = contextualizer.contextualize(glosas)
+        metricas?.marcar(
+            Etapa.CONTEXTUALIZACAO,
+            SystemClock.elapsedRealtime() - inicioContextualizacao,
+            "origem=${resultado.origem}")
         Log.i(TAG, "glosas=$glosas -> \"${resultado.texto}\" (${resultado.origem})")
         if (resultado.texto.isNotBlank()) {
           onConversa(EventoConversa.FraseFalada(resultado.texto, resultado.origem))
-          speaker.speakAndAwait(resultado.texto)
+          val inicioFala = SystemClock.elapsedRealtime()
+          speaker.speakAndAwait(resultado.texto) {
+            metricas?.marcar(Etapa.FRASE_PRIMEIRO_AUDIO, SystemClock.elapsedRealtime() - inicioFala)
+          }
         }
       }
       setState(DialogState.AGUARDANDO_RESPOSTA)
@@ -248,6 +268,7 @@ class DialogOrchestrator(
     // Pode ser chamado pela wake word real, pelo botão de fallback, ou pelo timeout de
     // inatividade acima — cancela o timer nos três casos (idempotente se já disparou).
     cancelIdleTimeout()
+    fimDaFalaMs = SystemClock.elapsedRealtime()
     setState(DialogState.TRANSCREVENDO)
     // Corta a captura agora — como se o atendente tivesse parado de falar neste instante. O
     // resultado chega de forma assíncrona via o onResult/onError já configurado em
@@ -257,6 +278,8 @@ class DialogOrchestrator(
 
   private fun onAttendantTranscribed(rawText: String) {
     if (_state.value != DialogState.TRANSCREVENDO) return
+    fimDaFalaMs?.let { metricas?.marcar(Etapa.FIM_FALA_TEXTO, SystemClock.elapsedRealtime() - it) }
+    fimDaFalaMs = null
     val text = rawText.replace(TRAILING_ENCERRAR_PATTERN, "").trim()
     scope.launch {
       onConversa(EventoConversa.RespostaTranscrita(text))

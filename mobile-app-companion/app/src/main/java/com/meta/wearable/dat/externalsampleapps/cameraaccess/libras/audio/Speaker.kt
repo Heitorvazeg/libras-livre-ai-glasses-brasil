@@ -21,7 +21,8 @@ class Speaker(context: Context, private val engine: TtsEngine = AndroidTextToSpe
    * sequenciar a transição ③→④ sem `delay()` arbitrário (ver
    * docs/orquestracao-dialogo-audio-plano.md §6.2).
    */
-  suspend fun speakAndAwait(text: String) = engine.speakAndAwait(text)
+  suspend fun speakAndAwait(text: String, onInicioAudio: () -> Unit = {}) =
+      engine.speakAndAwait(text, onInicioAudio)
 
   fun stop() = engine.stop()
 

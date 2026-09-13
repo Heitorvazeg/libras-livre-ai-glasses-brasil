@@ -114,9 +114,10 @@ Cada onda acrescenta os testes listados no seu arquivo do plano.
 # CSVs das sessões (gravador, 1.9)
 adb pull /sdcard/Android/data/com.meta.wearable.dat.externalsampleapps.cameraaccess/files/sessoes
 
-# latência por etapa (6.5)
-adb logcat -s Libras:Latencia
+# latência por etapa (6.5) — a tag não tem ':' (o filtro -s do logcat não aceita)
+adb logcat -s LibrasLatencia
 python scripts/latencia_por_etapa.py sessoes/<arquivo>.csv          # [onda 2]
+adb logcat -d -s LibrasLatencia | python scripts/latencia_por_etapa.py -
 
 # memória
 adb shell dumpsys meminfo com.meta.wearable.dat.externalsampleapps.cameraaccess

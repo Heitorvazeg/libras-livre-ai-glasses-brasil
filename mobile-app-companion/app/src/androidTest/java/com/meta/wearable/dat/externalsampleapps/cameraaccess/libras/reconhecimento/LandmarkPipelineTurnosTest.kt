@@ -27,6 +27,9 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.runBlocking
+import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.diagnostico.FormatoCsv
+import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.diagnostico.GravadorSessao
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Assume.assumeTrue
@@ -53,6 +56,11 @@ class LandmarkPipelineTurnosTest {
     )
     val lock = Any()
     var estado = LibrasState()
+    // 1.9: o gravador de sessão acompanha os três turnos; no fim, uma linha de frame por frame que
+    // passou pelo MediaPipe.
+    val gravador = GravadorSessao(context.getExternalFilesDir(null)!!)
+    val csv = gravador.abrir()
+    var linhasDeFrame = 0
     val pipeline =
         LandmarkPipeline(
             context = context,
@@ -60,7 +68,12 @@ class LandmarkPipelineTurnosTest {
             classifier = PlaceholderSignClassifier(),
             onState = { mudar -> synchronized(lock) { estado = estado.mudar() } },
             onRecognized = {},
+            onFrameProcessado = { f ->
+              linhasDeFrame++
+              gravador.frame(f, turno = 1)
+            },
         )
+    var framesExtraidosTotal = 0
     try {
       assertTrue("o MediaPipe não carregou no aquecimento", pipeline.carregarModelos())
       val video = lerVideoAnnexB("pessoa.mp4", maxAmostras = 45)
@@ -91,10 +104,18 @@ class LandmarkPipelineTurnosTest {
 
         pipeline.endSession()
         pipeline.stop() // fim do stream, como o CameraViewModel faz a cada turno
+        framesExtraidosTotal += pipeline.framesExtraidosNaSessao
       }
     } finally {
       pipeline.dispose()
+      gravador.encerrar()
     }
+    val linhas = csv.readLines()
+    assertEquals(FormatoCsv.cabecalho(), linhas.first())
+    assertEquals("uma linha por frame processado", framesExtraidosTotal, linhas.count { it.startsWith("frame,") })
+    assertEquals(framesExtraidosTotal, linhasDeFrame)
+    android.util.Log.i("PipelineTurnosTest", "CSV da sessão: ${csv.absolutePath} (${linhas.size - 1} linhas)")
+    Unit // o JUnit exige método de teste void: o bloco do runBlocking não pode terminar num Int
   }
 
   /** Amostras do MP4 em Annex-B (start codes), como o stream dos óculos entrega. */

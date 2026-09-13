@@ -204,3 +204,33 @@ faixa de estado ([10.2](10-tela.md#102-faixa-de-estado)).
 `SignBoundaryDetectorTest.kt` testa a máquina de estados antiga (limiar por frame, pausa de
 700 ms) e **precisa ser reescrito** junto com 1.2–1.6. Os casos novos estão listados em cada
 subponto acima.
+
+---
+
+## Como ficou a onda 2
+
+- **1.1:** `libras/reconhecimento/Segmentador.kt` junta o detector e uma janela de frames com
+  timestamp (retenção limitada ao maior segmento possível) e entrega cópias do recorte
+  `[inicio − preRollMs, fimDoMovimento + posRollMs]`. O `LandmarkPipeline` imputa as mãos sobre
+  essas cópias (2.3). Teste: `SegmentadorTest` (6 s parado + 1 s de sinal → segmento de 1,0–1,8 s).
+- **1.2–1.6:** `SignBoundaryDetector` reescrito; `SignBoundaryDetectorTest` reescrito com os casos
+  do plano (24 × 12 fps, tremor σ = 0,014, uma mão só, histerese, espasmos de 1 a 4 frames, sinal
+  de 300 ms, oclusão de 600 × 1.000 ms, duração máxima, fechamento forçado).
+- **Divergência no 1.5 (como medir a duração):** `ultimoMovimento − inicio`, literal, faz um
+  espasmo de 4 frames medir ~290 ms e passar do mínimo, porque a velocidade compara com um frame de
+  ~110 ms atrás (o movimento continua "visível" por essa janela) e a média móvel estica o fim. A
+  duração mínima passou a ser medida na velocidade **bruta**: do primeiro frame da sequência que
+  levou à entrada até o último frame em movimento, menos `idade da referência − um frame`. Estado,
+  pausa e recorte continuam na velocidade suavizada. Resultado nos testes: espasmo de 4 frames
+  ≈ 167 ms (descartado), sinal de 300 ms ≈ 251 ms (aceito).
+- **Fechamento forçado** (fim da sessão) também aplica a duração mínima: um espasmo no fim da
+  sessão continua não sendo sinal.
+- **1.8:** `ParametrosSegmentacao` com os valores da tabela, marcados como estimados. A edição nas
+  configurações de demo é da onda 4.
+- **1.9:** `libras/diagnostico/GravadorSessao.kt`. Um CSV por **sessão com os óculos** (abre quando a
+  sessão começa com o gravador ligado, ou quando o interruptor liga no meio dela). Colunas: `tipo`,
+  `ts_ms`, `turno`, `estado`, as cinco velocidades, presença de pose e mãos, `nome`, `detalhe` e
+  `p00_x … p56_z`. Linhas `frame` (uma por frame que passou pelo MediaPipe, com os pontos vazios sem
+  pose), `evento` (segmento, descarte, classificação, latência) e `metrica` (3.8). Formatação e
+  escrita numa thread própria. Testes: `GravadorSessaoTest` (colunas, escape, arquivo) e o
+  `LandmarkPipelineTurnosTest` instrumentado (uma linha por frame processado).

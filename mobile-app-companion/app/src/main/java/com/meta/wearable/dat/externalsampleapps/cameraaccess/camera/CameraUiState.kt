@@ -18,6 +18,8 @@ import android.net.Uri
 import com.meta.wearable.dat.camera.types.StreamState
 import com.meta.wearable.dat.core.session.DeviceSessionState
 import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.avatar.AvatarState
+import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.diagnostico.AmostraMetricas
+import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.diagnostico.MarcaEtapa
 import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.dialogo.Conversa
 import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.dialogo.DialogState
 import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.reconhecimento.LibrasState
@@ -63,6 +65,12 @@ data class CameraUiState(
     // Libras Livre: painel de conversa (docs/prontidao-demo/10-tela.md §10.1). Independe do stream:
     // o resultado de um turno fica visível até o próximo "iniciar".
     val conversa: Conversa = Conversa(),
+    // Libras Livre: diagnóstico da demo (docs/prontidao-demo 3.8, 6.5, 1.9). Só preenchido com o
+    // painel ou o gravador ligados nas configurações de demo.
+    val painelMetricas: Boolean = false,
+    val metricas: AmostraMetricas? = null,
+    val etapasTurno: List<MarcaEtapa> = emptyList(),
+    val arquivoGravacao: String? = null,
 ) {
   /** A session exists and is connected (or connecting); a stream can be started. */
   val hasSession: Boolean

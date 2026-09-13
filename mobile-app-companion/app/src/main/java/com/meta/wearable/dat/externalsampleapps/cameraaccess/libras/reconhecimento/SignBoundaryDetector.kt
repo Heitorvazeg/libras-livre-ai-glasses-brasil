@@ -1,21 +1,23 @@
 /*
- * Libras Livre — detecção automática de início/fim de sinalização (Fase 2 de
- * docs/sign-boundary-detector-plano.md §4).
+ * Libras Livre — detecção de início e fim de cada sinal (docs/prontidao-demo/01-segmentacao.md).
  *
- * Decide, quadro a quadro, quando uma pessoa está SINALIZANDO ou PARADA — é o que delimita
- * cada sinal individual DENTRO de uma sessão (a sessão inteira é aberta/fechada pela wake
- * word, via DialogOrchestrator; ver docs/orquestracao-dialogo-audio-plano.md).
+ * Decide, frame a frame, se a pessoa está SINALIZANDO ou PARADA. Consome a saída já normalizada do
+ * LandmarkNormalizer (57 pontos, em larguras de ombro) e só olha o passado (causal).
  *
- * Consome a saída JÁ NORMALIZADA de LandmarkNormalizer (57 pontos x 2 canais, em unidades de
- * "distância entre ombros") — não recalcula origem/escala por conta própria (§4.1 revisado
- * de docs/sign-boundary-detector-plano.md).
+ * O que mudou em relação à primeira versão, e por quê (mapa de riscos §3.1):
+ *   - 1.2: velocidade em ombros/s, comparando com o frame mais recente que tenha pelo menos
+ *     `janelaVelocidadeMs` de idade, dividida pelo intervalo real. O limiar antigo era deslocamento
+ *     entre dois frames, e mudava de sentido quando o celular processava menos fps;
+ *   - 1.3: média da velocidade dos 21 pontos por mão (só com a mão presente nos dois frames) e
+ *     MÁXIMO entre mão esquerda, mão direita e pulsos. A soma de 42 distâncias acumulava tremor e
+ *     mudava de escala com o número de mãos visíveis;
+ *   - 1.4: média móvel exponencial e dois limiares (entrada e saída);
+ *   - 1.5: a duração mínima é medida no MOVIMENTO (último movimento − início), não incluindo a
+ *     pausa; abaixo dela o segmento é descartado sem classificar;
+ *   - 1.6: com as duas mãos ausentes, o relógio da pausa para; o sinal só fecha por oclusão depois
+ *     de `tetoOclusaoMs`.
  *
- * ONLINE/CAUSAL: só olha o passado (frame anterior), nunca o futuro — ver §6 do plano.
- *
- * PARÂMETROS NÃO CALIBRADOS: as Fases 0/1 do plano (calibração com dado real) estão
- * bloqueadas no ambiente onde isto foi implementado (sem device/emulador, sem o dataset da
- * PoC no checkout — ver §0/§7 do plano). Os defaults abaixo são os "pontos de partida
- * sugeridos" do §4.4, não valores medidos — calibrar é trabalho futuro, não deste commit.
+ * Parâmetros em ParametrosSegmentacao, ESTIMADOS e não calibrados (1.8).
  */
 package com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.reconhecimento
 
@@ -26,147 +28,200 @@ enum class EstadoSinalizacao {
   PARADO,
 }
 
+enum class MotivoFechamento {
+  PAUSA,
+  OCLUSAO,
+  DURACAO_MAXIMA,
+  FIM_DA_SESSAO,
+}
+
+/**
+ * Onde o movimento de um sinal começou e terminou, no relógio dos frames.
+ *
+ * [inicioMs] e [fimDoMovimentoMs] seguem a velocidade SUAVIZADA (estado e pausa) e delimitam o
+ * recorte (1.1), com folga. [duracaoMovimentoMs], que decide a duração mínima (1.5), é medida na
+ * velocidade BRUTA: do primeiro frame da sequência que levou à entrada até o último frame em
+ * movimento, menos o que a janela de velocidade acrescenta (idade da referência − um frame). A
+ * velocidade compara com um frame de ~110 ms atrás, então um deslocamento continua "visível" por
+ * essa janela depois de acabar, e a média móvel ainda estica o fim: sem essas correções, um espasmo
+ * de 4 frames mediria ~290 ms e passaria da duração mínima.
+ */
+data class LimitesSegmento(
+    val inicioMs: Long,
+    val fimDoMovimentoMs: Long,
+    val duracaoMovimentoMs: Long,
+    val motivo: MotivoFechamento,
+)
+
+/**
+ * Velocidades do último frame, em ombros/s. Nulo = sem medida (mão ausente em um dos dois frames,
+ * ou ainda sem frame de referência). Vai para o gravador de sessão (1.9).
+ */
+data class MedicaoVelocidade(
+    val maoEsq: Float?,
+    val maoDir: Float?,
+    val pulsos: Float?,
+    val final: Float,
+    val suavizada: Float,
+)
+
 class SignBoundaryDetector(
-    // NÃO CALIBRADO (ver header) — soma das distâncias euclidianas (mãos+braços, em unidades
-    // de distância-entre-ombros) abaixo disso é considerado "parado".
-    private val limiarVelocidade: Float = 0.5f,
-    // NÃO CALIBRADO — peso de cada grupo na combinação do deslocamento (§4.1). Começa 1:1.
-    private val pesoMao: Float = 1f,
-    private val pesoBraco: Float = 1f,
-    // NÃO CALIBRADO — quanto tempo sustentado abaixo do limiar até considerar fim (§4.2).
-    private val janelaSustentacaoMs: Long = 700,
-    // NÃO CALIBRADO — tolerância pra oclusão total (as duas mãos ausentes) antes de forçar
-    // fim mesmo sem ter medido "parado" — maior que janelaSustentacaoMs de propósito (§4.3).
-    private val tetoOclusaoMs: Long = 1200,
-    // NÃO CALIBRADO — segmento mais curto que isso não dispara boundary (ruído/falso início).
-    private val duracaoMinimaMs: Long = 300,
-    // NÃO CALIBRADO — teto de segurança: força fim mesmo sem detectar pausa (§4.4).
-    private val duracaoMaximaMs: Long = 8_000,
-    // Disparado (síncrono, na mesma chamada de onFrame/forcarFechamento) a cada transição
-    // SINALIZANDO -> PARADO com duração >= duracaoMinimaMs — é o "boundary" que dispara a
-    // classificação do segmento acumulado desde o boundary anterior (§5).
-    private val onBoundary: () -> Unit,
+    private val parametros: ParametrosSegmentacao = ParametrosSegmentacao(),
+    // Síncronos, na mesma chamada de onFrame/forcarFechamento.
+    private val onBoundary: (LimitesSegmento) -> Unit,
+    private val onDescartado: (LimitesSegmento) -> Unit = {},
 ) {
 
   companion object {
-    // Índices dentro do vetor de 57 pontos de LandmarkNormalizer — cotovelo_esq/pulso_esq e
-    // cotovelo_dir/pulso_dir (ver docs/sign-boundary-detector-plano.md §4.1 revisado).
-    private val BRACO_ESQ = intArrayOf(9, 11)
-    private val BRACO_DIR = intArrayOf(10, 12)
+    // Índices dentro do vetor de 57 pontos (POSE_SUBSET do LandmarkNormalizer): pulso_esq, pulso_dir.
+    private const val PULSO_ESQ = 11
+    private const val PULSO_DIR = 12
   }
 
+  private class Amostra(val tsMs: Long, val pontos: Array<FloatArray>)
+
+  // Frames recentes, do mais antigo ao mais novo; guarda só o necessário para achar a referência.
+  private val recentes = ArrayDeque<Amostra>()
+
   private var estado = EstadoSinalizacao.PARADO
-  private var frameAnterior: Array<FloatArray>? = null
+  private var suavizada = 0f
+  private var temSuavizada = false
+  private var tsAnterior: Long? = null
 
-  // Timestamp do último instante com deslocamento >= limiarVelocidade, enquanto SINALIZANDO
-  // — é contra isso que janelaSustentacaoMs é medida (§4.2).
+  private var tsInicio = 0L
   private var tsUltimoMovimento = 0L
-  // Timestamp de quando as DUAS mãos ficaram ausentes ao mesmo tempo, ou null se não estão
-  // (nesse instante) — oclusão de uma mão só não conta (§4.3).
-  private var tsInicioOclusaoTotal: Long? = null
-  private var tsInicioSegmento = 0L
+  // Duração mínima pela velocidade bruta (ver LimitesSegmento): início da sequência de frames
+  // brutos em movimento ainda PARADO, e o fim ajustado do último frame bruto em movimento.
+  private var inicioSequenciaBrutaMs: Long? = null
+  private var inicioBrutoMs = 0L
+  private var fimBrutoAjustadoMs = 0L
+  private var pausaAcumuladaMs = 0L
+  private var oclusaoAcumuladaMs = 0L
 
-  /** O estado atual — exposto só pra inspeção/teste, quem decide o que fazer é [onBoundary]. */
   val estadoAtual: EstadoSinalizacao
     get() = estado
 
-  /**
-   * Processa um frame já normalizado. [timestampMs] precisa ser monotônico crescente (mesmo
-   * relógio usado pra extrair os landmarks — ver LandmarkPipeline.nextTimestampMs()).
-   */
+  /** A medição do último frame processado, ou null antes de haver referência. */
+  var ultimaMedicao: MedicaoVelocidade? = null
+    private set
+
+  /** Processa um frame normalizado. [timestampMs] precisa ser estritamente crescente. */
   fun onFrame(frame: Array<FloatArray>, timestampMs: Long) {
-    val anterior = frameAnterior
-    frameAnterior = frame
+    val dtMs = tsAnterior?.let { timestampMs - it } ?: 0L
+    tsAnterior = timestampMs
 
-    val maoEsqAusente = maoAusente(frame, LandmarkNormalizer.OFFSET_MAO_ESQ)
-    val maoDirAusente = maoAusente(frame, LandmarkNormalizer.OFFSET_MAO_DIR)
-    val ambasAusentes = maoEsqAusente && maoDirAusente
+    val referencia = referenciaPara(timestampMs)
+    recentes.addLast(Amostra(timestampMs, frame))
+    descartarAntigos(timestampMs)
 
-    tsInicioOclusaoTotal = if (ambasAusentes) (tsInicioOclusaoTotal ?: timestampMs) else null
+    val ambasAusentes =
+        maoAusente(frame, LandmarkNormalizer.OFFSET_MAO_ESQ) &&
+            maoAusente(frame, LandmarkNormalizer.OFFSET_MAO_DIR)
 
-    // Sem frame anterior não dá pra medir deslocamento nenhum — só a bookkeeping de oclusão
-    // acima já foi feita, o resto espera o próximo frame.
-    if (anterior == null) return
-
-    val deslocamento = if (ambasAusentes) 0f else calcularDeslocamento(anterior, frame)
+    val medicao = referencia?.let { medir(it, frame, timestampMs) }
+    ultimaMedicao = medicao
+    if (referencia == null || medicao == null) return
+    val v = medicao.suavizada
+    val brutoEmMovimento = medicao.final >= parametros.limiarSaida
+    // O que a janela acrescenta ao fim de um movimento: a referência tem esta idade, e o movimento
+    // real terminou no máximo um frame antes do frame atual.
+    val fimBrutoDesteFrame = timestampMs - maxOf(0L, (timestampMs - referencia.tsMs) - dtMs)
 
     when (estado) {
       EstadoSinalizacao.PARADO -> {
-        if (!ambasAusentes && deslocamento >= limiarVelocidade) {
+        inicioSequenciaBrutaMs = if (brutoEmMovimento) inicioSequenciaBrutaMs ?: timestampMs else null
+        if (v >= parametros.limiarEntrada) {
           estado = EstadoSinalizacao.SINALIZANDO
-          tsInicioSegmento = timestampMs
+          tsInicio = timestampMs
           tsUltimoMovimento = timestampMs
+          inicioBrutoMs = inicioSequenciaBrutaMs ?: timestampMs
+          fimBrutoAjustadoMs = if (brutoEmMovimento) fimBrutoDesteFrame else inicioBrutoMs
+          inicioSequenciaBrutaMs = null
+          pausaAcumuladaMs = 0L
+          oclusaoAcumuladaMs = 0L
         }
       }
       EstadoSinalizacao.SINALIZANDO -> {
-        if (!ambasAusentes && deslocamento >= limiarVelocidade) {
+        if (brutoEmMovimento) fimBrutoAjustadoMs = fimBrutoDesteFrame
+        if (v >= parametros.limiarSaida) {
           tsUltimoMovimento = timestampMs
+          pausaAcumuladaMs = 0L
+        } else if (!ambasAusentes) {
+          pausaAcumuladaMs += dtMs
         }
-        val oclusaoLongaDemais =
-            tsInicioOclusaoTotal != null && timestampMs - tsInicioOclusaoTotal!! >= tetoOclusaoMs
-        val pausaSustentada = timestampMs - tsUltimoMovimento >= janelaSustentacaoMs
-        val duracaoExcedida = timestampMs - tsInicioSegmento >= duracaoMaximaMs
+        oclusaoAcumuladaMs = if (ambasAusentes) oclusaoAcumuladaMs + dtMs else 0L
 
-        if (oclusaoLongaDemais || pausaSustentada || duracaoExcedida) {
-          fecharSegmento(timestampMs)
-        }
+        val motivo =
+            when {
+              oclusaoAcumuladaMs >= parametros.tetoOclusaoMs -> MotivoFechamento.OCLUSAO
+              pausaAcumuladaMs >= parametros.pausaMs -> MotivoFechamento.PAUSA
+              timestampMs - tsInicio >= parametros.duracaoMaximaMs -> MotivoFechamento.DURACAO_MAXIMA
+              else -> null
+            }
+        if (motivo != null) fechar(motivo)
       }
     }
   }
 
   /**
-   * Força o fim do segmento em aberto, se houver — sem esperar sustentação nem checar
-   * duracaoMinimaMs (o objetivo é não perder o último sinal ao fechar a sessão, ver
-   * docs/sign-boundary-detector-plano.md §5.3). Devolve true se havia um segmento SINALIZANDO
-   * (e portanto [onBoundary] foi chamado). Chamar só ao encerrar a sessão inteira.
+   * Fecha o segmento em aberto, ao encerrar a sessão. Aplica a duração mínima como qualquer outro
+   * fechamento: um espasmo no fim da sessão continua não sendo sinal. Devolve true se chamou
+   * [onBoundary].
    */
   fun forcarFechamento(): Boolean {
     if (estado != EstadoSinalizacao.SINALIZANDO) return false
+    return fechar(MotivoFechamento.FIM_DA_SESSAO)
+  }
+
+  private fun fechar(motivo: MotivoFechamento): Boolean {
     estado = EstadoSinalizacao.PARADO
-    onBoundary()
-    return true
-  }
-
-  private fun fecharSegmento(timestampMs: Long) {
-    val duracaoSegmento = timestampMs - tsInicioSegmento
-    estado = EstadoSinalizacao.PARADO
-    if (duracaoSegmento >= duracaoMinimaMs) {
-      onBoundary()
+    val duracao = maxOf(0L, fimBrutoAjustadoMs - inicioBrutoMs)
+    val limites = LimitesSegmento(tsInicio, tsUltimoMovimento, duracao, motivo)
+    return if (limites.duracaoMovimentoMs >= parametros.duracaoMinimaMs) {
+      onBoundary(limites)
+      true
+    } else {
+      onDescartado(limites)
+      false
     }
-    // Segmento curto demais: descarta silenciosamente (ruído/falso início, §4.4) — quem
-    // acumula os frames (LandmarkPipeline/HandGapImputer) começa um buffer novo de qualquer
-    // forma no próximo segmento.
   }
 
-  private fun calcularDeslocamento(anterior: Array<FloatArray>, atual: Array<FloatArray>): Float {
-    val dMaoEsq = deslocamentoMao(anterior, atual, LandmarkNormalizer.OFFSET_MAO_ESQ)
-    val dMaoDir = deslocamentoMao(anterior, atual, LandmarkNormalizer.OFFSET_MAO_DIR)
-    val dBracoEsq = deslocamentoPontos(anterior, atual, BRACO_ESQ)
-    val dBracoDir = deslocamentoPontos(anterior, atual, BRACO_DIR)
-    return pesoMao * (dMaoEsq + dMaoDir) + pesoBraco * (dBracoEsq + dBracoDir)
-  }
+  // O frame mais recente (já guardado) com pelo menos janelaVelocidadeMs de idade.
+  private fun referenciaPara(tsMs: Long): Amostra? =
+      recentes.lastOrNull { tsMs - it.tsMs >= parametros.janelaVelocidadeMs }
 
-  // Soma das distâncias euclidianas ponto a ponto da mão — pula o grupo inteiro (devolve 0,
-  // não conta como "parado") se a mão estiver ausente em QUALQUER um dos dois frames: ausência
-  // não é deslocamento zero (§4.1) — é a mesma convenção de LandmarkNormalizer/HandGapImputer
-  // (bloco de N_MAO pontos somando zero = ausente).
-  private fun deslocamentoMao(anterior: Array<FloatArray>, atual: Array<FloatArray>, offset: Int): Float {
-    if (maoAusente(anterior, offset) || maoAusente(atual, offset)) return 0f
-    var soma = 0f
-    for (i in 0 until LandmarkNormalizer.N_MAO) {
-      soma += distancia(anterior[offset + i], atual[offset + i])
+  // Mantém uma única amostra mais velha que a janela: é a que pode ainda servir de referência.
+  private fun descartarAntigos(tsMs: Long) {
+    while (recentes.size >= 2 && tsMs - recentes[1].tsMs >= parametros.janelaVelocidadeMs) {
+      recentes.removeFirst()
     }
-    return soma
   }
 
-  // Pontos de pose (braço) — LandmarkNormalizer só devolve um frame não-nulo quando a pose
-  // inteira foi detectada, então não existe "braço ausente" separado a checar aqui.
-  private fun deslocamentoPontos(anterior: Array<FloatArray>, atual: Array<FloatArray>, indices: IntArray): Float {
+  private fun medir(referencia: Amostra, atual: Array<FloatArray>, tsMs: Long): MedicaoVelocidade {
+    val dtS = (tsMs - referencia.tsMs) / 1000f
+    val maoEsq = velocidadeMao(referencia.pontos, atual, LandmarkNormalizer.OFFSET_MAO_ESQ, dtS)
+    val maoDir = velocidadeMao(referencia.pontos, atual, LandmarkNormalizer.OFFSET_MAO_DIR, dtS)
+    val pulsos =
+        maxOf(
+            distancia(referencia.pontos[PULSO_ESQ], atual[PULSO_ESQ]),
+            distancia(referencia.pontos[PULSO_DIR], atual[PULSO_DIR]),
+        ) / dtS
+    val final = maxOf(maoEsq ?: 0f, maoDir ?: 0f, pulsos)
+    suavizada =
+        if (temSuavizada) parametros.alfaSuavizacao * final + (1 - parametros.alfaSuavizacao) * suavizada
+        else final
+    temSuavizada = true
+    return MedicaoVelocidade(maoEsq, maoDir, pulsos, final, suavizada)
+  }
+
+  private fun velocidadeMao(anterior: Array<FloatArray>, atual: Array<FloatArray>, offset: Int, dtS: Float): Float? {
+    if (maoAusente(anterior, offset) || maoAusente(atual, offset)) return null
     var soma = 0f
-    for (i in indices) soma += distancia(anterior[i], atual[i])
-    return soma
+    for (i in 0 until LandmarkNormalizer.N_MAO) soma += distancia(anterior[offset + i], atual[offset + i])
+    return soma / LandmarkNormalizer.N_MAO / dtS
   }
 
+  // Só x e y: o z do MediaPipe é ruidoso e a segmentação não precisa dele.
   private fun distancia(a: FloatArray, b: FloatArray): Float {
     val dx = a[0] - b[0]
     val dy = a[1] - b[1]

@@ -76,6 +76,29 @@ class LandmarkNormalizerTest {
   }
 
   @Test
+  fun zUsaALarguraAOrigemDosOmbrosEAMesmaEscalaDeXY() {
+    // 2.1: ombros com z 0,1 e 0,3 -> z·w = 10 e 30 (w=100) -> origemZ = 20; escala = 20 (x,y).
+    val comZ =
+        ombros +
+            mapOf(
+                11 to floatArrayOf(0.4f, 0.5f, 0.1f, 1f),
+                12 to floatArrayOf(0.6f, 0.5f, 0.3f, 1f),
+                0 to floatArrayOf(0.5f, 0.4f, 0.5f, 1f), // nariz: z·w = 50 -> (50 - 20) / 20 = 1,5
+            )
+    val maoEsq = List(21) { floatArrayOf(0.3f, 0.6f, 0.2f) } // z·w = 20 -> 0
+    val out =
+        LandmarkNormalizer.normalize(FrameLandmarks(pose33(comZ), maoEsq, null), width = 100, height = 200)!!
+    assertEquals(3, LandmarkNormalizer.N_CANAIS)
+    assertEquals(1.5f, out[0][2], 1e-4f)
+    assertEquals(0f, out[LandmarkNormalizer.OFFSET_MAO_ESQ][2], 1e-4f)
+    // A escala do z é a de x,y: um z grande não mexe em x e y.
+    assertEquals(0f, out[0][0], 1e-4f)
+    assertEquals(-1f, out[0][1], 1e-4f)
+    // Mão ausente continua com os três canais zerados.
+    for (c in 0 until 3) assertEquals(0f, out[LandmarkNormalizer.OFFSET_MAO_DIR][c], 0f)
+  }
+
+  @Test
   fun ombroPoucoVisivelDescartaOFrame() {
     val comOmbroFraco = ombros + (11 to floatArrayOf(0.4f, 0.5f, 0f, 0.2f)) // visibility < 0.5
     val frame = FrameLandmarks(pose = pose33(comOmbroFraco), leftHand = null, rightHand = null)

@@ -154,11 +154,28 @@ segundo plano e em sequência (para não disputar CPU consigo mesmo):
   - fim da fala do atendente → texto;
   - texto → avatar sinalizando.
 - **Saída:**
-  - uma linha de log `Libras:Latencia turno=<n> etapa=<nome> ms=<valor> [detalhe]`;
+  - uma linha de log com a tag **`LibrasLatencia`** (sem `:`; ver abaixo) e o texto
+    `turno=<n> etapa=<nome> ms=<valor> [detalhe]`;
   - uma linha `tipo=evento` no CSV;
   - a tabela do último turno no overlay.
-- `scripts/latencia_por_etapa.py` agrega um CSV (ou `adb logcat -s Libras:Latencia`) em
+- `scripts/latencia_por_etapa.py` agrega um CSV (ou `adb logcat -s LibrasLatencia`) em
   mediana, p90 e máximo por etapa.
+
+**Como ficou a onda 2.**
+- **Divergência (tag):** `adb logcat -s Libras:Latencia` não funciona — o filtro do logcat trata o
+  `:` como separador de prioridade e rejeita a expressão, mesmo com `:V` no fim (conferido no
+  emulador). A tag é `LibrasLatencia`.
+- Etapas e onde são marcadas: "iniciar → pode sinalizar" (turno numerado no comando, marcado no
+  primeiro frame normalizável); "fim do movimento → segmento" e "classificação" no
+  `LandmarkPipeline`; "contextualização" (com a origem), "frase → primeiro áudio" (o `TtsEngine`
+  ganhou `onInicioAudio`, chamado no primeiro trecho do Piper e no `onStart` do TTS do Android) e
+  "fim da fala → texto" no `DialogOrchestrator`; "texto → avatar sinalizando" no `CameraViewModel`,
+  quando o avatar entra em ANIMANDO.
+- Cada marca vira linha de log, linha `evento` `latencia` no CSV (1.9) e entra na tabela do
+  overlay (3.8), que mostra o turno atual.
+- `scripts/latencia_por_etapa.py` só usa a biblioteca padrão, lê CSV ou logcat (arquivo ou `-`) e
+  marca com `←` as etapas cuja mediana passa da meta do 6.6. Teste: `MetricasTest` fixa o formato
+  da linha que o script lê.
 
 ## 6.6 Metas
 

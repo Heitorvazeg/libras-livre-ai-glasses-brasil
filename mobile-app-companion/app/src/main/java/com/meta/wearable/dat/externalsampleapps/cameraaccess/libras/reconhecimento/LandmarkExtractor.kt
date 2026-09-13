@@ -41,6 +41,8 @@ class LandmarkExtractor(context: Context) {
     private const val HAND_MODEL = "hand_landmarker.task"
     private const val N_POSE = 33
     private const val N_HAND = 21
+    private const val PULSO_ESQ = 15
+    private const val PULSO_DIR = 16
   }
 
   private val poseLandmarker: PoseLandmarker =
@@ -94,23 +96,23 @@ class LandmarkExtractor(context: Context) {
     }
 
     val handResult: HandLandmarkerResult = handLandmarker.detectForVideo(mpImage, timestampMs)
-    var left: List<FloatArray>? = null
-    var right: List<FloatArray>? = null
-    val hands = handResult.landmarks()
-    val handedness = handResult.handedness()
-    for (i in hands.indices) {
-      val pontos = hands[i].map { lm -> floatArrayOf(lm.x(), lm.y(), lm.z()) }
-      if (pontos.size != N_HAND) continue
-      // handedness[i][0].categoryName() == "Left" / "Right" (convenção do MediaPipe,
-      // a mesma do Holistic que gerou as referências).
-      val label = handedness.getOrNull(i)?.firstOrNull()?.categoryName()
-      when (label) {
-        "Left" -> left = pontos
-        "Right" -> right = pontos
-      }
-    }
+    val maos =
+        handResult.landmarks()
+            .map { mao -> mao.map { lm -> floatArrayOf(lm.x(), lm.y(), lm.z()) } }
+            .filter { it.size == N_HAND }
 
-    return FrameLandmarks(pose = pose, leftHand = left, rightHand = right)
+    // 2.4: o lado vem do pulso da pose mais próximo do punho (ponto 0), em pixels, e não do rótulo
+    // de handedness do HandLandmarker — é o que o Holistic do treino faz.
+    val largura = image.width.toFloat()
+    val altura = image.height.toFloat()
+    fun px(p: FloatArray) = AtribuicaoMaos.Ponto(p[0] * largura, p[1] * altura)
+    val lados = AtribuicaoMaos.atribuir(maos.map { px(it[0]) }, px(pose[PULSO_ESQ]), px(pose[PULSO_DIR]))
+
+    return FrameLandmarks(
+        pose = pose,
+        leftHand = lados.esquerda?.let { maos[it] },
+        rightHand = lados.direita?.let { maos[it] },
+    )
   }
 
   private fun paraBitmap(image: Image): Bitmap {

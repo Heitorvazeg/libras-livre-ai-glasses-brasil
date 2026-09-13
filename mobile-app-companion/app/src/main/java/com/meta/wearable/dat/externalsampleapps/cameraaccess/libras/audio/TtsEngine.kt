@@ -18,8 +18,12 @@
 package com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.audio
 
 interface TtsEngine {
-  /** Fala [text] e suspende até terminar (erro incluso — nunca lança). Chamável da main thread. */
-  suspend fun speakAndAwait(text: String)
+  /**
+   * Fala [text] e suspende até terminar (erro incluso — nunca lança). Chamável da main thread.
+   * [onInicioAudio] é chamado uma vez, quando o primeiro trecho de áudio é entregue à saída — é a
+   * etapa "frase -> primeiro áudio" do painel (docs/prontidao-demo/06 §6.5).
+   */
+  suspend fun speakAndAwait(text: String, onInicioAudio: () -> Unit = {})
 
   /** Interrompe a fala em andamento, se houver. */
   fun stop()

@@ -74,7 +74,7 @@ class PiperSherpaOnnxTtsEngine(context: Context) : TtsEngine {
     private const val ESPEAK_DATA_SUBDIR = "espeak-ng-data"
   }
 
-  override suspend fun speakAndAwait(text: String) {
+  override suspend fun speakAndAwait(text: String, onInicioAudio: () -> Unit) {
     if (text.isBlank()) return
     val engine = ensureLoaded() ?: return
     val audioTrack = ensureAudioTrack(engine.sampleRate())
@@ -89,11 +89,16 @@ class PiperSherpaOnnxTtsEngine(context: Context) : TtsEngine {
     suspendCancellableCoroutine<Unit> { cont ->
       cont.invokeOnCancellation { stopped = true }
       Thread {
+            var primeiroTrecho = true
             runCatching {
                   engine.generateWithCallback(text = text, sid = 0, speed = 1.0f) { samples ->
                     if (stopped) {
                       0 // sinaliza pro motor nativo interromper a geração
                     } else {
+                      if (primeiroTrecho) {
+                        primeiroTrecho = false
+                        runCatching(onInicioAudio)
+                      }
                       audioTrack.write(samples, 0, samples.size, AudioTrack.WRITE_BLOCKING)
                       1
                     }

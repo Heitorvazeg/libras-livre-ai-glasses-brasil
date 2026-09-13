@@ -1,32 +1,29 @@
 /*
  * Libras Livre — pipeline de reconhecimento no app (o "onde a IA entra").
  *
- * Liga o vídeo dos óculos ao classificador local, reusando peças que já existem no app. O
- * caminho de um sinal:
+ * Liga o vídeo dos óculos ao classificador local. O caminho de um sinal:
  *
  *   frames HEVC (handleVideoFrame)
- *     -> HevcDecoder DEDICADO renderiza para um ImageReader (o preview segue no
- *        decoder original; este é um segundo decoder só para inferência)
- *     -> android.media.Image (YUV) -> MediaPipe Pose+Hands (LandmarkExtractor)
- *     -> LandmarkNormalizer (normaliza por ombros — 57 pontos x 2 canais)
- *     -> HandGapImputer (acumula o segmento em curso, preenche lacunas curtas de mão)
- *     -> SignBoundaryDetector (decide onde cada sinal começa/termina)
- *     -> a cada boundary: SignClassifier.classify() -> onRecognized(palavra)
+ *     -> HevcDecoder DEDICADO renderiza para um ImageReader (o preview segue no decoder original)
+ *     -> android.media.Image (YUV) -> ARGB -> MediaPipe Pose+Hands (LandmarkExtractor)
+ *     -> LandmarkNormalizer (normaliza por ombros — 57 pontos × 3 coordenadas)
+ *     -> Segmentador (detector de fronteiras + recorte com margem de repouso, 1.1–1.6)
+ *     -> a cada segmento: HandGapImputer na linha do tempo real (2.3)
+ *        -> SignClassifier.classify() (reamostra pelo tempo, 2.2) -> onRecognized(classificação)
  *
- * A SEGMENTAÇÃO de cada sinal individual é automática (SignBoundaryDetector — ver
- * docs/sign-boundary-detector-plano.md). startSession()/endSession() delimitam a SESSÃO
- * inteira (pode ter vários sinais), disparados pela wake word via DialogOrchestrator — não
- * mais um sinal por vez.
+ * startSession()/endSession() delimitam a SESSÃO de captura inteira (vários sinais), abertas pelo
+ * DialogOrchestrator.
  *
- * Custo: o MediaPipe (caro) só roda ENQUANTO a sessão está aberta. Fora disso o ImageReader
- * é drenado sem inferência, então o overhead em repouso é só o do segundo decode.
+ * Custo: o MediaPipe só roda ENQUANTO a sessão está aberta. Fora disso o ImageReader é drenado sem
+ * inferência, então o overhead em repouso é só o do segundo decode.
  *
  * Ciclo de vida do MediaPipe (docs/prontidao-demo/03-captura-e-landmarks.md §3.1, defeito A):
  * carregado UMA VEZ por [carregarModelos], ao abrir o app e fora da thread de frames; fica ocioso
- * na memória entre as capturas e só fecha em [dispose]. Antes ele nascia no primeiro frame e
- * fechava a cada fim de stream, e como o "iniciar" chega com o stream STREAMING — antes do
- * primeiro frame —, a sessão encontrava o extrator nulo e não coletava nada a partir do segundo
- * turno.
+ * na memória entre as capturas e só fecha em [dispose].
+ *
+ * Diagnóstico (1.9, 3.8, 6.5): cada frame processado vai para [onFrameProcessado] (gravador de
+ * sessão), os eventos de segmento e classificação para [onEvento], e as contagens e tempos para
+ * [metricas]. Tudo opcional; sem ouvinte, nada é montado.
  */
 package com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.reconhecimento
 
@@ -37,6 +34,9 @@ import android.os.Handler
 import android.os.HandlerThread
 import android.os.SystemClock
 import android.util.Log
+import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.diagnostico.Etapa
+import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.diagnostico.FrameProcessado
+import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.diagnostico.Metricas
 import com.meta.wearable.dat.externalsampleapps.cameraaccess.stream.HevcDecoder
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -65,11 +65,14 @@ class LandmarkPipeline(
     private val scope: CoroutineScope,
     private val classifier: SignClassifier,
     private val onState: (LibrasState.() -> LibrasState) -> Unit,
-    // Quem fala o resultado (e quando) é decisão do DialogOrchestrator, não deste pipeline —
-    // ver docs/orquestracao-dialogo-audio-plano.md §6.5. Dispara UMA VEZ POR SINAL (boundary)
-    // agora, não mais uma vez por sessão inteira — ver docs/sign-boundary-detector-plano.md §5.3.
-    private val onRecognized: (sinal: String) -> Unit,
+    // Quem fala o resultado (e quando) é decisão do DialogOrchestrator. Dispara UMA VEZ POR SINAL.
+    private val onRecognized: (Classificacao) -> Unit,
     private val onRecognitionFailed: () -> Unit = {},
+    private val parametros: ParametrosSegmentacao = ParametrosSegmentacao(),
+    private val metricas: Metricas? = null,
+    // Chamado na thread de frames: quem recebe precisa só enfileirar (o gravador faz isso).
+    private val onFrameProcessado: ((FrameProcessado) -> Unit)? = null,
+    private val onEvento: (nome: String, detalhe: String) -> Unit = { _, _ -> },
 ) {
 
   companion object {
@@ -87,6 +90,8 @@ class LandmarkPipeline(
   // Threads de frames de streams anteriores, já com quitSafely(): o dispose() espera cada uma
   // terminar antes de fechar o extrator que ela pode estar usando.
   private val threadsEncerradas = mutableListOf<HandlerThread>()
+  // "Fila do decodificador cheia" dos decoders de streams anteriores (3.8).
+  @Volatile private var filaCheiaAcumulada = 0
 
   // Escrito pela coroutine de carregamento, lido pela thread de frames.
   @Volatile private var extractor: LandmarkExtractor? = null
@@ -106,18 +111,19 @@ class LandmarkPipeline(
   @Volatile var framesExtraidosNaSessao = 0
     private set
 
-  // Guarda handGapImputer/boundaryDetector/classificacoesEmVoo — escritos pela thread do
-  // ImageReader (onFrame) e lidos/trocados por startSession()/endSession() (chamados da
-  // coroutine do DialogOrchestrator). Reentrante: onBoundary (chamado de dentro de onFrame,
-  // já sob o lock) pode chamar classificarSegmentoAtual(), que toma o lock de novo.
+  // Guarda segmentador/classificacoesEmVoo — escritos pela thread do ImageReader e trocados por
+  // startSession()/endSession(). Reentrante: o segmento é entregue de dentro de onFrame, já sob o lock.
   private val sessionLock = Any()
-  private var handGapImputer = HandGapImputer()
-  private var boundaryDetector: SignBoundaryDetector? = null
+  private var segmentador: Segmentador? = null
   private val classificacoesEmVoo = mutableListOf<Job>()
 
   // Modo VIDEO do MediaPipe exige timestamps estritamente crescentes por detector,
   // inclusive ENTRE capturas — por isso um relógio monotônico que nunca reinicia.
   @Volatile private var lastTsMs = 0L
+
+  /** Total de "fila do decodificador cheia" do decoder de inferência, desde que o app abriu. */
+  val filaCheiaDecoder: Int
+    get() = filaCheiaAcumulada + (decoder?.vezesFilaCheia ?: 0)
 
   /**
    * Carrega o MediaPipe, se ainda não estiver carregado. Idempotente; roda em
@@ -162,15 +168,22 @@ class LandmarkPipeline(
    */
   fun startSession() {
     synchronized(sessionLock) {
-      handGapImputer = HandGapImputer()
-      boundaryDetector = SignBoundaryDetector(onBoundary = ::classificarSegmentoAtual)
+      segmentador =
+          Segmentador(
+              parametros = parametros,
+              onSegmento = ::onSegmento,
+              onDescartado = { limites ->
+                Log.d(TAG, "Movimento de ${limites.duracaoMovimentoMs} ms descartado (espasmo)")
+                onEvento("descartado", descricao(limites))
+              },
+          )
     }
     aguardandoPrimeiroFrame = true
     framesExtraidosNaSessao = 0
     collecting = true
     onState {
       copy(isCollecting = true, podeSinalizar = false, lastResult = null,
-          error = if (error == ERRO_MODELOS) error else null)
+          error = if (error == ERRO_MODELOS || error?.startsWith(ModeloRecusado.PREFIXO) == true) error else null)
     }
     // O aquecimento ainda não terminou, ou falhou: tenta de novo, fora desta thread. Frames que
     // chegarem antes são drenados sem extração.
@@ -178,41 +191,51 @@ class LandmarkPipeline(
   }
 
   /**
-   * Fecha a sessão. Se havia um sinal em curso (segmento em aberto, sem boundary ainda),
-   * força a classificação dele antes de retornar — não perde silenciosamente o último sinal
-   * (docs/sign-boundary-detector-plano.md §5.3). Suspende até TODAS as classificações
-   * disparadas durante a sessão (a forçada aqui, e quaisquer outras ainda em voo) terminarem
-   * — é assim que quem chama sabe que já pode ler a lista completa de sinais reconhecidos.
+   * Fecha a sessão. Se havia um sinal em curso, força o fechamento dele (com a duração mínima do
+   * 1.5) antes de retornar. Suspende até TODAS as classificações disparadas durante a sessão
+   * terminarem — é assim que quem chama sabe que já pode ler a lista completa de sinais.
    */
   suspend fun endSession() {
     collecting = false
     aguardandoPrimeiroFrame = false
-    synchronized(sessionLock) { boundaryDetector?.forcarFechamento() }
+    synchronized(sessionLock) { segmentador?.forcarFechamento() }
     onState { copy(isCollecting = false, podeSinalizar = false) }
     val pendentes = synchronized(sessionLock) { classificacoesEmVoo.toList() }
     pendentes.joinAll()
   }
 
-  private fun classificarSegmentoAtual() {
-    val frames: List<Array<FloatArray>>
-    synchronized(sessionLock) {
-      frames = handGapImputer.snapshot()
-      handGapImputer = HandGapImputer() // o próximo segmento da sessão começa vazio
-    }
+  // Chamado de dentro de onFrame (thread de frames, sob o sessionLock) ou de endSession.
+  private fun onSegmento(frames: List<FrameComTempo>, limites: LimitesSegmento) {
+    metricas?.marcar(Etapa.FIM_MOVIMENTO_SEGMENTO, SystemClock.uptimeMillis() - limites.fimDoMovimentoMs)
+    onEvento("segmento", descricao(limites) + ",frames=${frames.size}")
     if (frames.size < MIN_FRAMES_PARA_CLASSIFICAR) {
       Log.d(TAG, "Segmento com ${frames.size} frames — curto demais, ignorado")
       return
     }
     onState { copy(isClassifying = true, error = null) }
     val job = scope.launch {
-      val resultado = withContext(Dispatchers.Default) { runCatching { classifier.classify(frames) } }
+      val resultado =
+          withContext(Dispatchers.Default) {
+            runCatching {
+              // 2.3: imputa as mãos no segmento recortado, na linha do tempo real, antes de o
+              // classificador reamostrar. Os frames são cópias (Segmentador), então podem mudar.
+              val imputador = HandGapImputer()
+              frames.forEach { imputador.offer(it.pontos) }
+              val inicio = SystemClock.elapsedRealtime()
+              val c = classifier.classify(SegmentoSinal(imputador.snapshot(), LongArray(frames.size) { frames[it].tsMs }))
+              metricas?.marcar(Etapa.CLASSIFICACAO, SystemClock.elapsedRealtime() - inicio, "glosa=${c.glosa}")
+              c
+            }
+          }
       resultado
-          .onSuccess { sinal ->
-            onState { copy(isClassifying = false, lastResult = sinal, error = null) }
-            onRecognized(sinal)
+          .onSuccess { c ->
+            onEvento("classificacao", "glosa=${c.glosa},confianca=${c.confianca},margem=${c.margem}")
+            onState { copy(isClassifying = false, lastResult = c.glosa, error = null) }
+            onRecognized(c)
           }
           .onFailure { e ->
             Log.e(TAG, "Falha na classificação", e)
+            onEvento("falha_classificacao", e.message ?: e.javaClass.simpleName)
             onState { copy(isClassifying = false, error = e.message ?: "Falha ao classificar") }
             onRecognitionFailed()
           }
@@ -221,12 +244,16 @@ class LandmarkPipeline(
     job.invokeOnCompletion { synchronized(sessionLock) { classificacoesEmVoo.remove(job) } }
   }
 
+  private fun descricao(l: LimitesSegmento) =
+      "inicio=${l.inicioMs},fim_movimento=${l.fimDoMovimentoMs},duracao_movimento=${l.duracaoMovimentoMs},motivo=${l.motivo}"
+
   /**
    * Libera decoder, ImageReader e thread. Chamar ao parar o STREAM, que reinicia a cada turno.
    * NÃO fecha o MediaPipe nem o [classifier]: os dois vivem o app inteiro (ver [dispose]).
    */
   fun stop() {
     collecting = false
+    decoder?.let { filaCheiaAcumulada += it.vezesFilaCheia }
     decoder?.stop()
     decoder = null
     imageReader?.close()
@@ -272,27 +299,12 @@ class LandmarkPipeline(
     val reader = ImageReader.newInstance(width, height, ImageFormat.YUV_420_888, MAX_IMAGES)
     reader.setOnImageAvailableListener({ r ->
       // acquireLatestImage descarta frames intermediários se a inferência não acompanhar
-      // o frame rate — subamostragem natural; o classificador lida com sequências de
-      // tamanho variável.
+      // o frame rate — subamostragem natural; a reamostragem pelo tempo (2.2) absorve.
       val image = r.acquireLatestImage() ?: return@setOnImageAvailableListener
+      metricas?.frameDecodificado()
       try {
         val ex = extractor
-        if (collecting && ex != null) {
-          val ts = nextTimestampMs()
-          val fl = ex.extract(image, ts)
-          framesExtraidosNaSessao++
-          val normalizado = fl?.let { LandmarkNormalizer.normalize(it, frameW, frameH) }
-          if (normalizado != null) {
-            if (aguardandoPrimeiroFrame) {
-              aguardandoPrimeiroFrame = false
-              onState { copy(podeSinalizar = true) }
-            }
-            synchronized(sessionLock) {
-              handGapImputer.offer(normalizado)
-              boundaryDetector?.onFrame(normalizado, ts)
-            }
-          }
-        }
+        if (collecting && ex != null) processar(ex, image)
       } catch (e: Throwable) {
         Log.e(TAG, "Erro extraindo/normalizando landmarks do frame", e)
       } finally {
@@ -309,6 +321,34 @@ class LandmarkPipeline(
           config?.let { d.decodeFrame(it, 0) }
         }
     return Unit
+  }
+
+  private fun processar(ex: LandmarkExtractor, image: android.media.Image) {
+    val ts = nextTimestampMs()
+    val fl = ex.extract(image, ts)
+    framesExtraidosNaSessao++
+    val normalizado = fl?.let { LandmarkNormalizer.normalize(it, frameW, frameH) }
+    metricas?.frameProcessado(comPose = normalizado != null)
+    if (normalizado != null && aguardandoPrimeiroFrame) {
+      aguardandoPrimeiroFrame = false
+      metricas?.marcarDesdeOInicio(Etapa.INICIAR_PODE_SINALIZAR, SystemClock.uptimeMillis())
+      onState { copy(podeSinalizar = true) }
+    }
+    val seg: Segmentador?
+    synchronized(sessionLock) {
+      seg = segmentador
+      if (normalizado != null) seg?.onFrame(normalizado, ts)
+    }
+    onFrameProcessado?.invoke(
+        FrameProcessado(
+            tsMs = ts,
+            estado = if (normalizado != null) seg?.estadoAtual else null,
+            medicao = if (normalizado != null) seg?.ultimaMedicao else null,
+            pose = normalizado != null,
+            maoEsq = fl?.leftHand != null,
+            maoDir = fl?.rightHand != null,
+            pontos = normalizado,
+        ))
   }
 
   private fun nextTimestampMs(): Long {

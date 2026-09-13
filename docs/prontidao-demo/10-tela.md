@@ -154,3 +154,9 @@ frame, a medir no painel.
 **Teste.**
 - **JVM:** padrões e "voltar ao padrão".
 - **Manual:** mudar um seletor, fechar e reabrir o app e conferir que o valor persistiu.
+
+**Como ficou a onda 2 (parte mínima).** `libras/diagnostico/ConfiguracoesDemo.kt` com gravador de
+sessão, painel de métricas e modo do placeholder (padrões: desligado, desligado, roteiro), numa
+instância única do app. A seção `SecaoConfiguracoesDemo` fica no topo da folha do menu de debug,
+acima do `MockDeviceKitScreen`, com "Voltar ao padrão". Valor ilegível no armazenamento cai no
+padrão. Teste: `ConfiguracoesDemoTest` (JVM). A onda 4 acrescenta os outros seletores.

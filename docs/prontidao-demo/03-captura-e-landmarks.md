@@ -210,6 +210,14 @@ da inferência, selecionável nas configurações de demo. O preview continua em
 
 **Pronto quando** uma sessão no emulador gera o overlay e as linhas de métrica no CSV.
 
+**Como ficou a onda 2.** `libras/diagnostico/Metricas.kt` (contadores atômicos, uma amostra por
+segundo, marcas por etapa do 6.5) e `LeitorSistema.kt` (folga e estado térmico, bateria, RAM do app
+por `Debug.getPss`). O `CameraViewModel` amostra a cada segundo; a leitura do sistema só roda com o
+painel ou o gravador ligados. O overlay `PainelMetricas` aparece abaixo do painel de conversa com
+"Painel de métricas" ligado nas configurações de demo, e o gravador escreve uma linha `metrica` por
+valor. "Fila do decodificador cheia" soma o decoder de inferência (acumulado entre streams) e o do
+preview. A bateria dos óculos não entra: o SDK não a expõe (7.4). Teste: `MetricasTest` (JVM).
+
 ## 3.9 MediaPipe em CPU ou GPU (P2)
 
 **Decisão.** O hardware da demo é incerto, então a comparação é feita no aparelho.

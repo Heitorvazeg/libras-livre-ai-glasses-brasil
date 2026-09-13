@@ -67,6 +67,13 @@
     <string name="avatar_failed" description="Shown when the VLibras player could not start; the caption below is the fallback">O avatar não pôde ser carregado. A resposta está escrita abaixo.</string>
     <string name="avatar_retry" description="Button that retries loading the VLibras player">Tentar de novo</string>
     <string name="avatar_pular" description="Button that ends the avatar step right away, leaving the caption on screen">Pular</string>
+
+    <!-- Libras Livre: configurações de demo no menu de debug (docs/prontidao-demo/10-tela.md §10.6) -->
+    <string name="demo_config_title" description="Title of the demo settings section in the debug menu">Configurações de demo</string>
+    <string name="demo_config_reset" description="Button that restores every demo setting to its default">Voltar ao padrão</string>
+    <string name="demo_config_recorder" description="Switch that records each glasses session to a CSV file">Gravador de sessão (CSV)</string>
+    <string name="demo_config_metrics" description="Switch that shows the metrics overlay (fps, stage timings, thermal, battery, RAM)">Painel de métricas</string>
+    <string name="demo_config_placeholder" description="Label of the selector for the fake sign classifier mode used while there is no model">Classificador sem modelo (placeholder)</string>
     <string name="avatar_caption_label" description="Label above the written form of what the hearing person said">O atendente disse</string>
     <string name="avatar_waiting" description="Shown on the avatar screen while no answer has been signed yet">Aguardando a resposta do atendente…</string>
 
