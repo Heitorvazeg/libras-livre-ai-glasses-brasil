@@ -7,6 +7,12 @@ premissa de que o classificador de visão já está exportado (`sinal_classifier
 com o sidecar `.json`) e pergunta: *o que ainda impede a demo de funcionar diante de
 uma banca, com óculos reais, num ambiente que não controlamos?*
 
+> **Decidido depois (2026-09-13).** O time revisou este mapa ponto a ponto. As decisões, o
+> plano de implementação e as prioridades estão em [`prontidao-demo/`](prontidao-demo/README.md);
+> onde divergirem das recomendações daqui, **vale o plano**. A lista das divergências está no fim
+> do [README do plano](prontidao-demo/README.md#onde-este-plano-diverge-do-mapa-de-riscos). Este
+> arquivo continua como a fotografia do diagnóstico.
+
 ## Como ler
 
 Cada risco traz uma etiqueta de evidência. É a mesma disciplina de
