@@ -42,8 +42,8 @@ contextualização glosa → português, síntese de voz, transcrição e wake w
 ### 2.2 Token do Maven privado da Meta
 
 As bibliotecas `mwdat-*` vêm de um repositório Maven no GitHub Packages, que
-exige autenticação. Gere um *personal access token (classic)* e declare-o de uma
-das duas formas:
+exige autenticação. Gere um *personal access token (classic)* com o escopo
+**`read:packages`** (basta ele) e declare-o de uma das duas formas:
 
 ```bash
 echo "github_token=SEU_TOKEN" >> local.properties
@@ -51,14 +51,28 @@ echo "github_token=SEU_TOKEN" >> local.properties
 export GITHUB_TOKEN=SEU_TOKEN
 ```
 
+Buildando pelo terminal, sem abrir o Android Studio antes, o Gradle também precisa
+achar o SDK: `export ANDROID_HOME=~/Android/Sdk` ou `sdk.dir=...` no mesmo
+`local.properties` (o Studio escreve essa linha sozinho).
+
 Sem o token, o *sync* do Gradle falha nas dependências dos óculos. Ver o
 [setup do SDK](https://wearables.developer.meta.com/docs/develop/dat/build-integration-android#step-2-add-the-sdk-to-gradle).
 
-### 2.3 Baixar os modelos — obrigatório
+### 2.3 Modelos: os nossos vêm no clone, os externos são baixados
 
-**Nenhum modelo pesado é versionado no git** (ver
-[`app/src/main/assets/.gitignore`](./app/src/main/assets/.gitignore)). O script
-baixa todos de uma vez e é idempotente — pula o que já existe:
+A regra do projeto: **modelos internos** (treinados por nós) são versionados no
+git e já vêm com o clone; **modelos externos** (de terceiros) ficam fora e são
+baixados por script (ver
+[`app/src/main/assets/.gitignore`](./app/src/main/assets/.gitignore)).
+
+| Já vem no clone | Arquivos |
+|---|---|
+| Contextualização glosa → português | `modelo_contextualizacao.tflite` (45 MiB) + `glosa_ids.json` + `destokenizar.json` + `modelo_contextualizacao.proveniencia.json` |
+| Léxico de glosas | `lexico-glosas.json` |
+| Wake word pt-BR | `wakeword/libras_livre_{iniciar,encerrar}.onnx[.data]` |
+
+Os externos são baixados de uma vez pelo script, que é idempotente — pula o que
+já existe (~16 s numa conexão boa, medido em clone limpo em 2026-09-13):
 
 ```bash
 ./download-assets.sh
@@ -72,26 +86,30 @@ baixa todos de uma vez e é idempotente — pula o que já existe:
 | Wake word (fixos) | `melspectrogram.onnx`, `embedding_model.onnx` | release v0.5.1 do `dscripka/openWakeWord` |
 | Avatar (Unity WebGL) | `vlibras/vlibras.js`, `vlibras/target/` (13,5 MB) | `spbgovbr-vlibras/vlibras-player-webjs` (LGPLv3) |
 
-Sem os arquivos `.task`, o app sobe mas a captura mostra o erro "Modelos do
-MediaPipe não encontrados".
+**O build confere.** Gerar o APK (ou rodar os testes instrumentados) sem algum
+desses arquivos falha com a lista do que falta — a tarefa `verificarAssets`, em
+`app/build.gradle.kts`. Os testes de unidade não dependem deles. Para um build
+rápido sem os modelos, `-PlibrasLivre.permitirAssetsFaltando=true` troca a falha
+por um aviso — o APK resultante sobe, mas sem reconhecimento, fala ou avatar.
 
 O player do avatar exige `npm` na máquina: o build Unity vem pronto no repositório
 oficial, mas o wrapper `vlibras.js` sai de um `webpack`. Sem npm o script avisa e
 segue — o resto dos assets continua sendo baixado.
 
-Dois assets **não** são baixáveis pelo script:
+**Atualizar o modelo de contextualização** (só quando ele for retreinado): o
+`.tflite` e as duas tabelas que ele exige andam juntos, e o carimbo de
+proveniência precisa ser atualizado no mesmo commit. O teste
+`ModeloContextualizacaoProvenienciaTest` falha se um deles mudar sem os outros.
 
-- **`modelo_contextualizacao.tflite`** (46 MB) — gerado pela trilha de
-  contextualização. Sem ele, o app cai no contextualizador por template, sem
-  erro. Para gerá-lo:
-  ```bash
-  cd ../contextualization-model && python exportacao/para_tflite.py --experimento v2
-  cp artefatos/modelo_contextualizacao.tflite ../mobile-app-companion/app/src/main/assets/
-  ```
-- **`wakeword/libras_livre_{iniciar,encerrar}.onnx`** — precisam ser **treinados**.
-  O openWakeWord só publica modelos prontos em inglês. Enquanto não existirem, o
-  motor real não sobe e o fallback é o `SpeechRecognizer` do Android mais os
-  botões Iniciar/Encerrar da tela.
+```bash
+cd ../contextualization-model && python exportacao/para_tflite.py --experimento v2
+cp artefatos/{modelo_contextualizacao.tflite,glosa_ids.json,destokenizar.json} \
+   ../mobile-app-companion/app/src/main/assets/
+# atualize os sha256 em assets/modelo_contextualizacao.proveniencia.json e rode:
+cd ../mobile-app-companion && ./gradlew testDebugUnitTest
+```
+
+A variante `-fp16` (88 MiB) não é usada pelo app e não é versionada.
 
 ### 2.4 Build e execução
 
@@ -116,7 +134,11 @@ emulador.
 
 Os testes de unidade cobrem a paridade numérica de `LandmarkNormalizer` e
 `HandGapImputer` contra o pipeline Python de `../computer-vision-model/treino`,
-além do `SignBoundaryDetector` e das guardas da contextualização.
+além do `SignBoundaryDetector`, das guardas da contextualização e dos contratos dos
+modelos versionados: o carimbo do `.tflite` (`ModeloContextualizacaoProvenienciaTest`) e
+as tabelas duplicadas entre a trilha e o app (`TabelasDuplicadasTest`). Entre os
+instrumentados, `WakeWordModelosCarregamTest` confere que os classificadores de wake word
+carregam no ONNX Runtime do Android.
 
 ---
 
@@ -221,15 +243,18 @@ Todos rodam localmente. Nenhuma chamada de rede acontece no fluxo de tradução.
 | Tradução PT → glosa | endpoint público do VLibras, com cache em disco | legenda em texto |
 | Avatar em Libras | player VLibras (Unity/WebGL) em WebView | legenda em texto |
 
-Duas lacunas importantes, ambas com trabalho conhecido pela frente:
+Lacunas importantes, todas com trabalho conhecido pela frente:
 
-- **A classificação de sinal ainda é um placeholder.** O `.tflite` real depende do
-  export do ST-GCN em `../computer-vision-model/treino/exportar.py`, que hoje só
-  cobre a ResNet-18. `TfliteSignClassifier` substituirá a implementação atual sem
-  mudar `LandmarkPipeline` nem `DialogOrchestrator`.
-- **O wake word real (`OpenWakeWordDetector`) não está ativo.** O motor está
-  implementado e a dependência de ONNX Runtime já está no build; falta treinar os
-  dois classificadores pt-BR (§2.3).
+- **A classificação de sinal ainda é um placeholder.** O export do ST-GCN já existe
+  (`../computer-vision-model/treino/exportar.py --arquitetura gcn`, com o
+  pré-processamento dentro do grafo); falta o checkpoint treinado e o
+  `TfliteSignClassifier`, que substituirá a implementação atual sem mudar
+  `LandmarkPipeline` nem `DialogOrchestrator`. O contrato de entrada precisa ser
+  alinhado antes: o modelo de entrega usa z, e o `LandmarkNormalizer` hoje só entrega x e y.
+- **O wake word offline (`OpenWakeWordDetector`) não está ativo.** Os dois
+  classificadores pt-BR estão treinados, versionados (§2.3) e carregam no ONNX Runtime
+  (`WakeWordModelosCarregamTest`); falta validar recall e falso positivo em hardware real
+  antes de trocar o motor em `CameraViewModel`.
 - **O avatar é a única peça que depende de rede.** Traduzir a frase exige o endpoint
   público do VLibras, e o Unity busca cada sinal do dicionário na hora. O cache de
   glosa cobre repetições; o espelho local do dicionário ainda não existe
@@ -286,9 +311,11 @@ Detalhes do lado do treino:
 
 ## 6. O que falta
 
-- [ ] Export do ST-GCN para `.tflite` e troca do `PlaceholderSignClassifier` pelo real
+- [x] Export do ST-GCN para `.tflite` (`treino/exportar.py --arquitetura gcn`)
+- [ ] Checkpoint treinado do ST-GCN no app e troca do `PlaceholderSignClassifier` pelo real
 - [ ] Calibração dos parâmetros do `SignBoundaryDetector` com dado real
-- [ ] Treino dos classificadores pt-BR de wake word e ativação do `OpenWakeWordDetector`
+- [x] Treino dos classificadores pt-BR de wake word, versionados e carregando no app
+- [ ] Validação do wake word offline em hardware e ativação do `OpenWakeWordDetector`
 - [ ] Medição da taxa de fallback da contextualização em campo
 - [x] Entrega da resposta para a pessoa surda (estado ⑦: avatar VLibras + legenda)
 - [ ] Espelho local do dicionário de sinais, para o avatar funcionar sem internet
@@ -305,12 +332,13 @@ Detalhes do lado do treino:
 | Sintoma | Causa provável |
 |---|---|
 | Sync do Gradle falha em `com.meta.wearable:mwdat-*` | token ausente ou expirado em `local.properties` |
-| Banner "Modelos do MediaPipe não encontrados" | `./download-assets.sh` não foi executado |
-| Log "modelo_contextualizacao.tflite indisponível" | esperado; o app usa o template (§2.3) |
+| Build falha com "Assets obrigatórios ausentes" | `./download-assets.sh` não foi executado, ou falhou no meio — a mensagem lista o que falta (§2.3) |
+| Banner "Modelos do MediaPipe não encontrados" | APK gerado com `-PlibrasLivre.permitirAssetsFaltando=true` sem os `.task` |
+| Log "modelo_contextualizacao.tflite indisponível" | **não esperado**: o modelo vem no clone. O app cai no template; rode `./gradlew testDebugUnitTest` — o `ModeloContextualizacaoProvenienciaTest` diz o que falta (§2.3) |
 | Avatar não aparece e o log diz "sem WebGL nesta WebView" | WebView sem aceleração; o app cai na legenda |
 | Avatar não aparece e o log diz "vlibras.js ausente" | `./download-assets.sh` não rodou, ou rodou sem npm |
 | Avatar abre e fica no spinner até "Unity não ficou pronto" | WebView sem aceleração ou aparelho sem fôlego para o Unity; use **Tentar de novo** |
-| Os botões Iniciar/Encerrar funcionam, mas a voz não dispara a sessão | permissão de microfone negada, ou wake word real ausente |
+| Os botões Iniciar/Encerrar funcionam, mas a voz não dispara a sessão | permissão de microfone negada, ou o `SpeechRecognizer` do aparelho sem rede |
 | Áudio some ao entrar no estado ⑤ | esperado: o HFP derruba o A2DP enquanto o mic dos óculos está ativo |
 
 Para questões do próprio SDK dos óculos, veja a

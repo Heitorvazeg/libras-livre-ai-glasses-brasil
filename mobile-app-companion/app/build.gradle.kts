@@ -90,6 +90,74 @@ android {
 
 kotlin { compilerOptions { jvmTarget = JvmTarget.JVM_17 } }
 
+// Assets que o APK precisa e que NÃO vêm no clone (externos, baixados por ../download-assets.sh)
+// — mesmos caminhos que o script confere — mais o modelo interno versionado. Sem esta checagem
+// o build passa e gera um APK que "funciona" em fallbacks silenciosos: sem MediaPipe não há
+// reconhecimento, sem Piper/Vosk não há fala nem escuta, sem o player não há avatar.
+//
+// Pendurada nas tarefas merge*Assets, e não no preBuild: só quem empacota assets (APK, testes
+// instrumentados) precisa deles; os testes de unidade continuam rodando sem baixar nada.
+// Para um build rápido sem os modelos: -PlibrasLivre.permitirAssetsFaltando=true (vira aviso).
+val assetsObrigatorios =
+    listOf(
+        "pose_landmarker_lite.task",
+        "hand_landmarker.task",
+        "tts/pt_br/pt_BR-edresson-low.onnx",
+        "tts/pt_br/tokens.txt",
+        "tts/pt_br/espeak-ng-data",
+        "vosk-model-small-pt-0.3/final.mdl",
+        "melspectrogram.onnx",
+        "embedding_model.onnx",
+        "vlibras/target/playerweb.data.unityweb",
+        "vlibras/vlibras.js",
+        "modelo_contextualizacao.tflite",
+    )
+val verificarAssets =
+    tasks.register("verificarAssets") {
+      group = "verification"
+      description = "Falha se faltar algum asset obrigatório (rode ../download-assets.sh)."
+      val raiz = layout.projectDirectory.dir("src/main/assets").asFile
+      val permitirFaltando =
+          providers.gradleProperty("librasLivre.permitirAssetsFaltando").map { it.toBoolean() }.orElse(false)
+      doLast {
+        val faltando =
+            assetsObrigatorios.filterNot { caminho ->
+              val arquivo = File(raiz, caminho)
+              if (arquivo.isDirectory) !arquivo.list().isNullOrEmpty() else arquivo.length() > 0
+            }
+        if (faltando.isEmpty()) return@doLast
+        val mensagem =
+            "Assets obrigatórios ausentes em app/src/main/assets/:\n" +
+                faltando.joinToString("\n") { "  - $it" } +
+                "\nRode ./download-assets.sh (a partir de mobile-app-companion/). " +
+                "modelo_contextualizacao.tflite vem no clone — se só ele faltar, o checkout está incompleto. " +
+                "Para buildar mesmo assim: -PlibrasLivre.permitirAssetsFaltando=true"
+        if (permitirFaltando.get()) logger.warn("AVISO: $mensagem") else throw GradleException(mensagem)
+      }
+    }
+tasks
+    .matching { it.name.startsWith("merge") && it.name.endsWith("Assets") }
+    .configureEach { dependsOn(verificarAssets) }
+
+// ModeloContextualizacaoProvenienciaTest e TabelasDuplicadasTest leem estes arquivos direto do
+// disco. Eles não são entrada dos testes de unidade por padrão: sem declarar aqui, trocar só o
+// .tflite, o carimbo ou uma tabela deixa a tarefa UP-TO-DATE e as guardas nem rodam.
+tasks.withType<Test>().configureEach {
+  inputs
+      .files(
+          "src/main/assets/modelo_contextualizacao.tflite",
+          "src/main/assets/modelo_contextualizacao.proveniencia.json",
+          "src/main/assets/glosa_ids.json",
+          "src/main/assets/destokenizar.json",
+          "src/main/assets/lexico-glosas.json",
+          "../../contextualization-model/artefatos/glosa_ids.json",
+          "../../contextualization-model/artefatos/destokenizar.json",
+          "../../contextualization-model/lexico/lexico-glosas.json",
+      )
+      .withPropertyName("contratoContextualizacao")
+      .withPathSensitivity(PathSensitivity.RELATIVE)
+}
+
 dependencies {
   implementation(libs.androidx.activity.compose)
   implementation(platform(libs.androidx.compose.bom))

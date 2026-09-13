@@ -402,6 +402,16 @@ artefatos/*
 !artefatos/*.proveniencia.json
 ```
 
+> **Revisto em 2026-09-13.** A linha `artefatos/*.tflite` ❌ foi substituída por uma decisão
+> do time: **modelos internos são versionados no git**, externos continuam baixados. O
+> `.tflite` de entrega passa a morar em
+> `mobile-app-companion/app/src/main/assets/`, junto das tabelas, com o carimbo do §11
+> (`modelo_contextualizacao.proveniencia.json`) e um teste que o confere
+> (`ModeloContextualizacaoProvenienciaTest`). Em `artefatos/` ele segue ignorado, para não
+> haver duas cópias que divergem. Motivo: um clone limpo gerava um APK sem o modelo, que
+> caía no template sem avisar. A assimetria descrita abaixo era o risco; o carimbo
+> executável é o que a fecha.
+
 **A assimetria que exige atenção:** o `.tflite` **não** é versionado, mas
 as tabelas que ele exige **são**. Elas podem dessincronizar sem nenhum
 erro visível — o modelo roda, produz ids, a tabela traduz errado, e sai
