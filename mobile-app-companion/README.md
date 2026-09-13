@@ -82,8 +82,11 @@ já existe (~16 s numa conexão boa, medido em clone limpo em 2026-09-13):
 | Wake word (fixos) | `melspectrogram.onnx`, `embedding_model.onnx` | release v0.5.1 do `dscripka/openWakeWord` |
 | Avatar (Unity WebGL) | `vlibras/vlibras.js`, `vlibras/target/` (13,5 MB) | `spbgovbr-vlibras/vlibras-player-webjs` (LGPLv3) |
 
-Sem os arquivos `.task`, o app sobe mas a captura mostra o erro "Modelos do
-MediaPipe não encontrados".
+**O build confere.** Gerar o APK (ou rodar os testes instrumentados) sem algum
+desses arquivos falha com a lista do que falta — a tarefa `verificarAssets`, em
+`app/build.gradle.kts`. Os testes de unidade não dependem deles. Para um build
+rápido sem os modelos, `-PlibrasLivre.permitirAssetsFaltando=true` troca a falha
+por um aviso — o APK resultante sobe, mas sem reconhecimento, fala ou avatar.
 
 O player do avatar exige `npm` na máquina: o build Unity vem pronto no repositório
 oficial, mas o wrapper `vlibras.js` sai de um `webpack`. Sem npm o script avisa e
@@ -316,7 +319,8 @@ Detalhes do lado do treino:
 | Sintoma | Causa provável |
 |---|---|
 | Sync do Gradle falha em `com.meta.wearable:mwdat-*` | token ausente ou expirado em `local.properties` |
-| Banner "Modelos do MediaPipe não encontrados" | `./download-assets.sh` não foi executado |
+| Build falha com "Assets obrigatórios ausentes" | `./download-assets.sh` não foi executado, ou falhou no meio — a mensagem lista o que falta (§2.3) |
+| Banner "Modelos do MediaPipe não encontrados" | APK gerado com `-PlibrasLivre.permitirAssetsFaltando=true` sem os `.task` |
 | Log "modelo_contextualizacao.tflite indisponível" | **não esperado**: o modelo vem no clone. O app cai no template; rode `./gradlew testDebugUnitTest` — o `ModeloContextualizacaoProvenienciaTest` diz o que falta (§2.3) |
 | Avatar não aparece e o log diz "sem WebGL nesta WebView" | WebView sem aceleração; o app cai na legenda |
 | Avatar não aparece e o log diz "vlibras.js ausente" | `./download-assets.sh` não rodou, ou rodou sem npm |
