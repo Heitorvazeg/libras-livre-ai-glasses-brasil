@@ -134,7 +134,11 @@ emulador.
 
 Os testes de unidade cobrem a paridade numérica de `LandmarkNormalizer` e
 `HandGapImputer` contra o pipeline Python de `../computer-vision-model/treino`,
-além do `SignBoundaryDetector` e das guardas da contextualização.
+além do `SignBoundaryDetector`, das guardas da contextualização e dos contratos dos
+modelos versionados: o carimbo do `.tflite` (`ModeloContextualizacaoProvenienciaTest`) e
+as tabelas duplicadas entre a trilha e o app (`TabelasDuplicadasTest`). Entre os
+instrumentados, `WakeWordModelosCarregamTest` confere que os classificadores de wake word
+carregam no ONNX Runtime do Android.
 
 ---
 
@@ -239,15 +243,18 @@ Todos rodam localmente. Nenhuma chamada de rede acontece no fluxo de tradução.
 | Tradução PT → glosa | endpoint público do VLibras, com cache em disco | legenda em texto |
 | Avatar em Libras | player VLibras (Unity/WebGL) em WebView | legenda em texto |
 
-Duas lacunas importantes, ambas com trabalho conhecido pela frente:
+Lacunas importantes, todas com trabalho conhecido pela frente:
 
-- **A classificação de sinal ainda é um placeholder.** O `.tflite` real depende do
-  export do ST-GCN em `../computer-vision-model/treino/exportar.py`, que hoje só
-  cobre a ResNet-18. `TfliteSignClassifier` substituirá a implementação atual sem
-  mudar `LandmarkPipeline` nem `DialogOrchestrator`.
-- **O wake word real (`OpenWakeWordDetector`) não está ativo.** O motor está
-  implementado e a dependência de ONNX Runtime já está no build; falta treinar os
-  dois classificadores pt-BR (§2.3).
+- **A classificação de sinal ainda é um placeholder.** O export do ST-GCN já existe
+  (`../computer-vision-model/treino/exportar.py --arquitetura gcn`, com o
+  pré-processamento dentro do grafo); falta o checkpoint treinado e o
+  `TfliteSignClassifier`, que substituirá a implementação atual sem mudar
+  `LandmarkPipeline` nem `DialogOrchestrator`. O contrato de entrada precisa ser
+  alinhado antes: o modelo de entrega usa z, e o `LandmarkNormalizer` hoje só entrega x e y.
+- **O wake word offline (`OpenWakeWordDetector`) não está ativo.** Os dois
+  classificadores pt-BR estão treinados, versionados (§2.3) e carregam no ONNX Runtime
+  (`WakeWordModelosCarregamTest`); falta validar recall e falso positivo em hardware real
+  antes de trocar o motor em `CameraViewModel`.
 - **O avatar é a única peça que depende de rede.** Traduzir a frase exige o endpoint
   público do VLibras, e o Unity busca cada sinal do dicionário na hora. O cache de
   glosa cobre repetições; o espelho local do dicionário ainda não existe
@@ -304,9 +311,11 @@ Detalhes do lado do treino:
 
 ## 6. O que falta
 
-- [ ] Export do ST-GCN para `.tflite` e troca do `PlaceholderSignClassifier` pelo real
+- [x] Export do ST-GCN para `.tflite` (`treino/exportar.py --arquitetura gcn`)
+- [ ] Checkpoint treinado do ST-GCN no app e troca do `PlaceholderSignClassifier` pelo real
 - [ ] Calibração dos parâmetros do `SignBoundaryDetector` com dado real
-- [ ] Treino dos classificadores pt-BR de wake word e ativação do `OpenWakeWordDetector`
+- [x] Treino dos classificadores pt-BR de wake word, versionados e carregando no app
+- [ ] Validação do wake word offline em hardware e ativação do `OpenWakeWordDetector`
 - [ ] Medição da taxa de fallback da contextualização em campo
 - [x] Entrega da resposta para a pessoa surda (estado ⑦: avatar VLibras + legenda)
 - [ ] Espelho local do dicionário de sinais, para o avatar funcionar sem internet
@@ -329,7 +338,7 @@ Detalhes do lado do treino:
 | Avatar não aparece e o log diz "sem WebGL nesta WebView" | WebView sem aceleração; o app cai na legenda |
 | Avatar não aparece e o log diz "vlibras.js ausente" | `./download-assets.sh` não rodou, ou rodou sem npm |
 | Avatar abre e fica no spinner até "Unity não ficou pronto" | WebView sem aceleração ou aparelho sem fôlego para o Unity; use **Tentar de novo** |
-| Os botões Iniciar/Encerrar funcionam, mas a voz não dispara a sessão | permissão de microfone negada, ou wake word real ausente |
+| Os botões Iniciar/Encerrar funcionam, mas a voz não dispara a sessão | permissão de microfone negada, ou o `SpeechRecognizer` do aparelho sem rede |
 | Áudio some ao entrar no estado ⑤ | esperado: o HFP derruba o A2DP enquanto o mic dos óculos está ativo |
 
 Para questões do próprio SDK dos óculos, veja a
