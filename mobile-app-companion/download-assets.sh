@@ -118,10 +118,15 @@ else
     log "Avatar: buildando o wrapper vlibras.js"
     # Sem `set -e` aqui: um webpack que falha nao pode abortar o script inteiro e levar junto os
     # assets que ja baixaram — o avatar cai na legenda, o resto do app funciona.
-    if (cd "$SRC" && npm install --silent --no-audit --no-fund >/dev/null 2>&1 && npx webpack >/dev/null 2>&1); then
+    # A saida vai para um log (e nao para /dev/null): quieto quando da certo, mas quem ve a falha
+    # precisa do motivo para consertar.
+    BUILD_LOG="$TMP/vlibras-build.log"
+    if (cd "$SRC" && npm install --no-audit --no-fund && npx webpack) >"$BUILD_LOG" 2>&1; then
       cp "$SRC/build/vlibras.js" "$ASSETS/vlibras/vlibras.js"
     else
       printf '\033[1;33m ! \033[0m build do vlibras.js falhou — o avatar nao sobe (o resto segue).\n'
+      printf '     Ultimas linhas do npm/webpack:\n'
+      tail -n 25 "$BUILD_LOG" | sed 's/^/       /'
     fi
   else
     printf '\033[1;33m ! \033[0m npm ausente: vlibras.js NAO foi gerado — o avatar nao sobe.\n'

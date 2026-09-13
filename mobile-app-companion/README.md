@@ -42,14 +42,18 @@ contextualização glosa → português, síntese de voz, transcrição e wake w
 ### 2.2 Token do Maven privado da Meta
 
 As bibliotecas `mwdat-*` vêm de um repositório Maven no GitHub Packages, que
-exige autenticação. Gere um *personal access token (classic)* e declare-o de uma
-das duas formas:
+exige autenticação. Gere um *personal access token (classic)* com o escopo
+**`read:packages`** (basta ele) e declare-o de uma das duas formas:
 
 ```bash
 echo "github_token=SEU_TOKEN" >> local.properties
 # ou, alternativamente:
 export GITHUB_TOKEN=SEU_TOKEN
 ```
+
+Buildando pelo terminal, sem abrir o Android Studio antes, o Gradle também precisa
+achar o SDK: `export ANDROID_HOME=~/Android/Sdk` ou `sdk.dir=...` no mesmo
+`local.properties` (o Studio escreve essa linha sozinho).
 
 Sem o token, o *sync* do Gradle falha nas dependências dos óculos. Ver o
 [setup do SDK](https://wearables.developer.meta.com/docs/develop/dat/build-integration-android#step-2-add-the-sdk-to-gradle).
