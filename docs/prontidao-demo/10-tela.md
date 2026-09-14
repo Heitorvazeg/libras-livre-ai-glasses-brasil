@@ -181,6 +181,9 @@ padrão. Teste: `ConfiguracoesDemoTest` (JVM). A onda 4 acrescenta os outros sel
   "Comando de voz". Os controles do sample (preview, foto, gravação, iniciar/encerrar sessão) ficam em
   "Controles da sessão", recolhidos. O `InstrumentationTest` do sample abre essa área antes de usá-los.
   **Pendente:** a leitura a ~1,5 m (manual).
+- Com a sessão aberta, o aviso central do sample ("Session started / Start the preview…") não aparece
+  mais: ficava por baixo do painel de conversa e do botão principal (visto nas capturas do
+  `FluxoCompletoTest`). Sem sessão, os avisos de conectar os óculos e de iniciar a sessão continuam.
 - **10.4:** os controles do sample não usam mais `alpha(0)`: sem sessão, aparecem desabilitados; o botão
   principal mostra "Conecte os óculos".
 - **10.5:** o preview só é desenhado durante a captura (e no preview manual, no ①). O esqueleto (10.5b,

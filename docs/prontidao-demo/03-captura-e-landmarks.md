@@ -238,7 +238,8 @@ ativa. Se a GPU falhar ao criar, volta para CPU e avisa.
   faixa mostra a mensagem e o app espera a retomada até o teto. Teste instrumentado
   (`FluxoOnda4Test`): tap no meio da captura mostra "Stream pausado nos óculos" e mantém "Capturando";
   o segundo tap tira o aviso. **Limitação:** o recorte de um sinal que atravessa a pausa inclui o
-  intervalo de tempo parado na reamostragem; a pausa de 30 s não foi testada automaticamente.
+  intervalo de tempo parado na reamostragem, e uma pausa maior que a duração máxima do sinal (3,5 s) no
+  meio dele fecha o sinal por duração máxima na volta; a pausa de 30 s não foi testada automaticamente.
 - **3.4:** `ensureCameraActiveForLibras` devolve `FalhaCamera` (sem dispositivo, permissão pendente,
   atualização obrigatória, sessão sem resposta, stream que não subiu, pausa longa) e a causa vai para a
   faixa. Os erros de sessão e de stream do SDK também. Testes: `FalhaCameraTest` (JVM) e

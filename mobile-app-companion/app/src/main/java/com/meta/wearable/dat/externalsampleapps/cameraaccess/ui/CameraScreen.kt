@@ -333,7 +333,9 @@ private fun PreviewBackground(
           surface.onDestroyed { onSurfaceChanged(null) }
         }
       }
-    } else if (!ui.isBusy) {
+    } else if (!ui.isBusy && !ui.hasSession) {
+      // 10.3: com a sessão aberta, o centro da tela é do painel de conversa; o aviso do sample
+      // ("Session started / Start the preview…") ficava por baixo do painel e do botão principal.
       StatusPlaceholder(
           ui = ui,
           hasActiveDevice = hasActiveDevice,
@@ -415,11 +417,7 @@ private fun StatusPlaceholder(
       subtitle = stringResource(R.string.placeholder_ready_subtitle)
       showWaitingRow = false
     }
-    else -> {
-      title = stringResource(R.string.placeholder_session_started_title)
-      subtitle = stringResource(R.string.placeholder_session_started_subtitle)
-      showWaitingRow = false
-    }
+    else -> return
   }
 
   Column(

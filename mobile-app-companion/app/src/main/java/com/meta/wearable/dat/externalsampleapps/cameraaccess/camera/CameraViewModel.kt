@@ -194,6 +194,8 @@ class CameraViewModel(
           onReserva = { definirAviso(TipoAviso.VOZ_RESERVA, textos.vozReserva) },
       )
   private val speaker = Speaker(application, vozEmCadeia)
+  // "Simular queda do avatar" (9.5), registrado no menu de debug no init.
+  private val simularQuedaDoAvatar: () -> Unit = { viewModelScope.launch { avatarPlayer.simularQueda() } }
   private val classificador: SignClassifier by lazy { criarClassificador() }
   private val textos = TextosLibras(application)
   private val landmarkPipeline =
@@ -416,7 +418,7 @@ class CameraViewModel(
             onFalhaCamera = { falha -> definirAviso(TipoAviso.CAMERA_NAO_SUBIU, textos.falhaCamera(falha)) },
         )
     dialogOrchestrator.attachWakeWordDetector(wakeWordDetector)
-    AcoesDeDemo.simularQuedaDoAvatar = { viewModelScope.launch { avatarPlayer.simularQueda() } }
+    AcoesDeDemo.simularQuedaDoAvatar = simularQuedaDoAvatar
 
     // 4.5, 4.6: motor da wake word e interruptor "Comando de voz" seguem as configurações de demo.
     viewModelScope.launch {
@@ -639,7 +641,9 @@ class CameraViewModel(
     liberarAvatarAoTerminar = false
     avatarLiberadoPorMemoria = porMemoria
     avatarPlayer.release()
-    _uiState.update { it.copy(avatarVisivel = false, avatarLegenda = null) }
+    // Por memória, a tela e a legenda ficam: a resposta escrita é o piso da pessoa surda (9.3), e só
+    // a WebView precisa ir embora.
+    if (!porMemoria) _uiState.update { it.copy(avatarVisivel = false, avatarLegenda = null) }
     if (porMemoria) {
       gravador.evento(SystemClock.uptimeMillis(), metricas.turno, "avatar_liberado_memoria", "")
       definirAviso(TipoAviso.AVATAR_LIBERADO_MEMORIA, textos.avatarLiberadoMemoria)
@@ -1389,7 +1393,8 @@ class CameraViewModel(
     attendantAudioCapture.cleanup()
     audioSessionManager.releaseListening()
     wakeWordDetector.stop()
-    AcoesDeDemo.simularQuedaDoAvatar = null
+    // Um ViewModel novo pode ter registrado o seu antes deste ir embora.
+    if (AcoesDeDemo.simularQuedaDoAvatar === simularQuedaDoAvatar) AcoesDeDemo.simularQuedaDoAvatar = null
     getApplication<Application>().unregisterComponentCallbacks(memoriaCallbacks)
   }
 

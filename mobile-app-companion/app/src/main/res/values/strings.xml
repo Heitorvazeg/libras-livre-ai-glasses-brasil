@@ -31,8 +31,6 @@
     <string name="placeholder_put_on_glasses" description="Placeholder when no active device">Put on your glasses</string>
     <string name="placeholder_ready_title" description="Placeholder when ready to start a session">Ready</string>
     <string name="placeholder_ready_subtitle" description="Placeholder subtitle when ready">Start a session to connect to your glasses.</string>
-    <string name="placeholder_session_started_title" description="Placeholder when session is started">Session started</string>
-    <string name="placeholder_session_started_subtitle" description="Placeholder subtitle when session is started">Start the preview to see the live camera feed.</string>
     <string name="paused_title" description="Badge shown over the frozen preview when the glasses pause the stream">Paused</string>
     <string name="paused_subtitle" description="Instruction telling the user how to resume a paused stream">Tap your glasses to resume.</string>
 
@@ -56,7 +54,6 @@
     <string name="conversa_resposta" description="Conversation panel row label: the attendant's transcribed reply">Resposta</string>
 
     <!-- Libras Livre: orquestração da sessão de diálogo (docs/orquestracao-dialogo-audio-plano.md) -->
-    <string name="dialog_state_label" description="Current dialog-session state, shown for debugging">State: %1$s</string>
     <!-- Botão principal (docs/prontidao-demo/04 §4.7): o rótulo muda com o estado do diálogo -->
     <string name="botao_iniciar" description="Main button in the waiting state: starts capturing signs">Iniciar</string>
     <string name="botao_encerrar_agora" description="Main button while capturing signs or listening: ends that step now">Encerrar agora</string>

@@ -449,6 +449,11 @@ class DialogOrchestrator(
     scope.launch {
       // 5.2: microfone do celular, ou dos óculos com troca de perfil (e queda para o celular sem SCO).
       antesDeEscutar()
+      if (minhaGeracao == geracao && _state.value == DialogState.TRANSCREVENDO) {
+        // "Encerrar agora" antes de o microfone abrir: o STT nem começou e nenhum resultado virá.
+        onAttendantTranscriptionFailed()
+        return@launch
+      }
       if (minhaGeracao != geracao || _state.value != DialogState.ESCUTANDO_ATENDENTE) {
         depoisDeEscutar()
         return@launch

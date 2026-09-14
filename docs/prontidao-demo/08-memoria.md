@@ -94,7 +94,7 @@ na primeira execução, fica para depois da demo.
 - **8.1:** `libras/diagnostico/PressaoDeMemoria.kt` (pura) decide o que liberar; os dois gatilhos estão
   no `CameraViewModel`: `ComponentCallbacks2` registrado na `Application` (`RUNNING_LOW` ou pior) e a
   verificação por segundo (`availMem < fator × threshold` ou `lowMemory`, fator 1,5 editável). Avatar
-  animando termina antes de ser liberado; liberado por memória, avisa na faixa e não recarrega no próximo
+  animando termina antes de ser liberado; liberado por memória, avisa na faixa, mantém a tela e a legenda abertas e não recarrega no próximo
   "iniciar" enquanto a memória continuar baixa (9.5). A voz de reserva só é liberada se ociosa. Teste:
   `PressaoDeMemoriaTest`. **Pendente:** `adb shell am send-trim-memory` e o limiar forçado no aparelho.
 - **8.3:** a voz de reserva nasce só quando o Piper falha (`TtsEmCadeia`); a troca do motor de wake word
