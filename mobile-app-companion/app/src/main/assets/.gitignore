@@ -1,8 +1,48 @@
-# Modelos do MediaPipe (Libras Livre) — baixáveis e pesados, não versionados.
-# Baixe-os para cá antes de rodar (ver ../java/.../libras/README.md):
-#   pose_landmarker_lite.task
-#   hand_landmarker.task
+# Regra do projeto (2026-09-13): modelos INTERNOS (treinados por nós) são versionados no git;
+# modelos EXTERNOS (de terceiros, baixáveis) ficam fora e vêm do script abaixo.
+#
+# Externos — baixe tudo de uma vez com:  ../../../../download-assets.sh
+# (a partir de mobile-app-companion/:  ./download-assets.sh)
+# Detalhes e origens: ../java/com/.../libras/README.md
+
+# Visão — MediaPipe (raiz de assets/)
+#   pose_landmarker_lite.task, hand_landmarker.task
 *.task
+
+# TTS — Piper/sherpa-onnx (vits-piper-pt_BR-edresson-low-int8)
+tts/pt_br/pt_BR-edresson-low.onnx
+tts/pt_br/pt_BR-edresson-low.onnx.json
+tts/pt_br/tokens.txt
+tts/pt_br/MODEL_CARD
+tts/pt_br/espeak-ng-data/
+
+# STT — Vosk pt-BR (motor ATIVO, instanciado por CameraViewModel)
+vosk-model-small-pt-0.3/
+
+# Wake word — openWakeWord (raiz de assets/)
+#   melspectrogram.onnx e embedding_model.onnx: fixos, baixáveis prontos
+melspectrogram.onnx
+embedding_model.onnx
+
+# wakeword/libras_livre_{iniciar,encerrar}.onnx[.data]: classificadores custom pt-BR,
+# treinados via wake-word-model/treinar.sh (ver docs/wake-word-treino-plano.md).
+# Pequenos (~550KB total) e não regeneráveis sem re-treino — versionados direto no git.
+
+# Modelos internos .tflite — VERSIONADOS (nada a ignorar aqui):
+#   modelo_contextualizacao.tflite (45 MiB) + glosa_ids.json + destokenizar.json, amarrados
+#   por modelo_contextualizacao.proveniencia.json e checados por
+#   ModeloContextualizacaoProvenienciaTest (docs/contextualizacao-implementacao.md §10, §11).
+#   Ao reexportar: copie os três e atualize o carimbo no mesmo commit.
+#   A variante -fp16 (88 MiB) NÃO é usada pelo app e não entra — fica em
+#   contextualization-model/artefatos/.
+
+# Player VLibras (avatar 3D) — 13,5 MB de build Unity WebGL, baixado do repositório
+# oficial spbgovbr-vlibras/vlibras-player-webjs (LGPLv3). index.html É versionado: é cola
+# nossa. Ver docs/vlibras-webview-plano.md §0.2 e §0.7.
+vlibras/vlibras.js
+vlibras/target/
+# Espelho local do dicionário de sinais (Fase 3.5) — cada sinal é um AssetBundle de ~22 KB.
+vlibras/dic/
 
 # Mantém a pasta no git mesmo vazia.
 !.gitignore

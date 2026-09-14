@@ -12,12 +12,17 @@
 Todo o resto desta pasta existe para responder isso com o **mínimo de esforço** e
 com um **critério de decisão definido antes de começar** (ver §6).
 
-> ⚠️ **Relação com o resto de `computer-vision-model/`:** o pipeline principal
-> (`../src`, `../scripts`, `../config.yaml`) monta o classificador de produção com
-> MediaPipe **Hands** e export `.tflite`. Esta PoC é **anterior** a isso: ela
-> valida a hipótese com MediaPipe **Holistic** (mãos + pose do tronco) e um
-> baseline **DTW**, sem treino de rede neural. Só faz sentido investir no pipeline
-> completo depois que a PoC der sinal verde (§6.3).
+> **Status: respondida.** A PoC rodou em setembro de 2026 e deu sinal verde
+> (§6.4). O pipeline de produção que ela destravou vive em
+> [`../treino/`](../treino). Este documento fica como registro do método e do
+> critério de decisão — e a pasta segue **ativa** por um motivo prático:
+> `src/extract.py` é a extração de landmarks usada por **todo** o projeto,
+> inclusive pelo treino, e `.venv311` é o ambiente Python compartilhado das duas
+> etapas.
+>
+> **Não confunda com `../src` e `../scripts`:** aquelas pastas são andaime do
+> commit inicial, com módulos que ainda levantam `NotImplementedError`. Não fazem
+> parte do pipeline em uso (ver [`../README.md`](../README.md) §6).
 
 ---
 
@@ -42,7 +47,8 @@ depois que o baseline DTW estiver medido com dados reais.
 
 ## 2. Vocabulário
 
-**10 sinais**, definidos pela disponibilidade de vídeo público:
+**10 sinais** na época desta medição, definidos pela disponibilidade de vídeo
+público:
 
 ```
 acontecer   amarelo   banheiro   barulho   espelho
@@ -76,6 +82,12 @@ A lista fica em `config.yaml` (`vocabulario`) e é a fonte de verdade: `record.p
 recusa gravar um sinal que não esteja nela, `ingest.py` confere se ela bate com a
 seleção de vídeos públicos, e `evaluate.py` avisa se algum sinal do vocabulário
 ficou sem clipes.
+
+> **O `config.yaml` hoje tem 20 sinais, não 10.** Depois desta medição, o
+> vocabulário passou a ser o do MINDS-Libras inteiro, porque a própria PoC mostrou
+> que juntar as duas bases somava um degrau de domínio em vez de pessoas (§6.4).
+> Os números desta página são do recorte original de 10 sinais. Ver
+> [`../datasets/README.md`](../datasets/README.md) §2.
 
 ---
 
@@ -179,9 +191,15 @@ tela mostra pessoa/sinal/repetição e o tempo do clipe em andamento.
 
 ### 5.2 Extração de landmarks — `extract.py`
 Roda `mediapipe.solutions.holistic.Holistic` frame a frame. De cada frame extrai
-**21 pontos de cada mão** + um **subconjunto de pose** (nariz, ombros, cotovelos,
-pulsos, definido em `config.yaml`) — contexto de tronco sem inflar a
-dimensionalidade. São 49 pontos × 3 coordenadas = 147 valores por frame.
+**21 pontos de cada mão** + um **subconjunto de pose** definido em `config.yaml`
+— contexto de tronco e cabeça sem inflar a dimensionalidade.
+
+> O subconjunto de pose foi **ampliado de 7 para 15 pontos em 2026-09-08**, indo
+> de 49 para **57 pontos por frame**. Motivo: muitos sinais são articulados em
+> relação a âncoras faciais (olhos, boca, orelhas) e, com só o nariz como
+> referência de cabeça, essa informação desaparecia. Os quadris entraram como
+> referência estável de tronco; as pernas ficaram de fora. As medições desta
+> página são anteriores à ampliação e usam 49 pontos.
 
 > **A normalização é o passo que mais afeta o resultado e o mais fácil de
 > esquecer.** As coordenadas do MediaPipe vêm normalizadas por largura/altura, o
@@ -206,11 +224,12 @@ Detalhes que mudam o número final:
   plano pede), mas `normalizacao.usar_z: false` é o primeiro botão a testar se o
   resultado cair na zona amarela.
 
-Saída: `data/landmarks/<nome-base>.npy`, `float32 (num_frames, 49, 3)`.
+Saída: `data/landmarks/<nome-base>.npy`, `float32 (num_frames, P, 3)`, com P
+lido de `config.yaml` — 57 na configuração atual.
 
 ### 5.3 Baseline DTW — `dtw_classifier.py`
 Biblioteca pronta de DTW (a lógica do algoritmo não é o gargalo, a qualidade dos
-landmarks é). Cada frame vira um vetor de 147 valores e o clipe é classificado
+landmarks é). Cada frame vira um vetor de `P × 3` valores e o clipe é classificado
 pela **menor distância DTW** até **todos** os clipes de referência (1-NN).
 
 Backend padrão: **dtaidistance** (DTW multivariado em C, multi-thread) — é o que
@@ -252,24 +271,24 @@ forma consistente no **mesmo** protocolo.
 
 | Acurácia signer-independent | Decisão |
 |---|---|
-| **≥ 80%** | 🟢 Seguir para o MVP com essa abordagem |
-| **60–80%** | 🟡 Revisar vocabulário (pares confundidos na matriz), mais repetições, ou testar o classificador treinado antes de decidir |
-| **< 60%** | 🔴 Reconsiderar abordagem (vocabulário, distância de câmera, arquitetura) antes de investir mais |
+| **≥ 80%** | Seguir para o MVP com essa abordagem |
+| **60–80%** | Revisar vocabulário (pares confundidos na matriz), mais repetições, ou testar o classificador treinado antes de decidir |
+| **< 60%** | Reconsiderar abordagem (vocabulário, distância de câmera, arquitetura) antes de investir mais |
 
 ### 6.4 Resultado medido (430 clipes, 11 pessoas)
 
-**70,0% — 🟡 zona de atenção.** Relatório completo em
+**70,0% — zona de atenção.** Relatório completo em
 [`results/relatorio.md`](results/relatorio.md).
 
 O número é a média de dois regimes diferentes, e `src/diagnostico.py` separa:
 
 | cenário | pessoas | acurácia |
 |---|---|---|
-| dataset completo | 11 | **70,0%** 🟡 |
+| dataset completo | 11 | **70,0%** |
 | só a base MINDS-Libras | 8 | 77,8% |
 | só a base V-LIBRASIL | 3 | 46,7% |
-| só os 7 sinais de rótulo validado | 11 | **80,5%** 🟢 |
-| MINDS + só os 7 validados | 8 | **85,7%** 🟢 |
+| só os 7 sinais de rótulo validado | 11 | **80,5%** |
+| MINDS + só os 7 validados | 8 | **85,7%** |
 
 Duas leituras que mudam o que fazer a seguir:
 

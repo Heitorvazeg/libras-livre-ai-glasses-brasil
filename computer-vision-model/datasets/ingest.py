@@ -40,6 +40,7 @@ import yaml
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from remote_zip import ZipRemoto, zip_do_kaggle  # noqa: E402
+import proveniencia as pv
 
 AQUI = Path(__file__).resolve().parent
 SELECAO = AQUI / "selecao.yaml"
@@ -179,10 +180,21 @@ def tabela_cobertura(clipes: list[Clipe]) -> str:
 
 def escrever_manifesto(clipes: list[Clipe], destino: Path, caminho: Path = MANIFESTO) -> None:
     """Registra a seleção inteira e o que já está em disco — este arquivo VAI para o git."""
+    # Uma ingestão filtrada (--fonte/--sinais) não pode apagar reservas antigas.
+    # Remover uma reserva é uma mudança explícita do protocolo, não efeito colateral.
+    anteriores = []
+    if caminho.exists():
+        with caminho.open(newline="", encoding="utf-8") as f:
+            anteriores = list(csv.DictReader(f))
+    novos = {(c.fonte, c.origem) for c in clipes}
+    campos = ["arquivo", "sinal", "pessoa", "rep", "fonte", "origem", "bytes",
+              "validado", "estado"]
     with open(caminho, "w", encoding="utf-8", newline="") as fh:
         w = csv.writer(fh)
-        w.writerow(["arquivo", "sinal", "pessoa", "rep", "fonte", "origem", "bytes",
-                    "validado", "estado"])
+        w.writerow(campos)
+        for r in anteriores:
+            if (r["fonte"], r["origem"]) not in novos:
+                w.writerow([r.get(k, "") for k in campos])
         for c in sorted(clipes, key=lambda c: (c.sinal, c.pessoa, c.rep)):
             baixado = (destino / c.destino).exists()
             w.writerow([c.destino, c.sinal, c.pessoa, f"{c.rep:02d}", c.fonte, c.origem,
@@ -196,6 +208,10 @@ def escrever_manifesto(clipes: list[Clipe], destino: Path, caminho: Path = MANIF
 
 
 def baixar(clipes: list[Clipe], zips: dict[str, ZipRemoto], destino: Path) -> int:
+    bundles = {fonte: pv.descrever_bundle(z, fonte) for fonte, z in zips.items()}
+    for c in clipes:
+        if (destino / c.destino).exists():
+            pv.registrar_clipe(c, zips[c.fonte], destino, c.fonte, bundles[c.fonte])
     pendentes = [c for c in clipes if not (destino / c.destino).exists()]
     ja_tem = len(clipes) - len(pendentes)
     if ja_tem:
@@ -211,6 +227,7 @@ def baixar(clipes: list[Clipe], zips: dict[str, ZipRemoto], destino: Path) -> in
     feitos_bytes = 0
     for i, c in enumerate(pendentes, 1):
         zips[c.fonte].extrair(c.origem, destino / c.destino)
+        pv.registrar_clipe(c, zips[c.fonte], destino, c.fonte, bundles[c.fonte])
         feitos_bytes += c.bytes
         decorrido = time.time() - inicio
         taxa = feitos_bytes / decorrido if decorrido else 0

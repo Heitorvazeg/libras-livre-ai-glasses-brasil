@@ -1,0 +1,28 @@
+# Ambiente próprio (ver README.md "Como rodar")
+.venv/
+
+# Fonte vendorizada do openWakeWord — clonada por treinar.sh, não é nosso código
+_vendor/openWakeWord-src/
+
+# Vozes Piper pt-BR (baixadas por dados/baixar_vozes.sh, ~130 MB no total)
+vozes/
+
+# RIR, ruído de fundo e validação de falso-positivo (dados/baixar_ruido.py)
+ruido/
+
+# Clipes sintéticos, features e artefatos intermediários do treino — regeneráveis.
+# O relatório é o entregável (mesma regra de ../computer-vision-model/treino/.gitignore
+# e ../contextualization-model/.gitignore).
+treino/*
+!treino/.gitkeep
+
+# Classificadores exportados — regeneráveis, mesma regra do resto do projeto (ver
+# mobile-app-companion/app/src/main/assets/.gitignore: wakeword/ também é ignorado lá)
+*.onnx
+
+__pycache__/
+*.pyc
+
+# Log cru de ./treinar.sh — o relatório em resultados/ é o entregável, o log é
+# ruído regenerável (mesma regra de ../contextualization-model/.gitignore).
+treinar.log

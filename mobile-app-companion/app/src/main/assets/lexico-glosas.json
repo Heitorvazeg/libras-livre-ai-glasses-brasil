@@ -1,0 +1,512 @@
+  {
+  "_meta": {
+    "versao": "0.3.0-rascunho",
+    "gerado_em": "2026-09-11",
+    "fonte_vocabulario": "docs/vocabulario-mvp-proposta.md (Camadas 1 e 2) + 7 sinais FUNCIONAIS propostos em 2026-09-11 (marcados camada=3-proposta)",
+    "aviso": "RASCUNHO. O vocabulário está pendente de validação com a Associação de Surdos de Goiânia; as formas em PT aqui NÃO foram revisadas por consultor. Ver docs/contextualizacao-glosa-seq2seq-plano.md §5.4.",
+    "uso": [
+      "TemplateGlossContextualizer — baseline e fallback (§4)",
+      "GuardedGlossContextualizer.cobreTodoConteudo — a guarda (§3.2)",
+      "métrica de content-word recall (§10)"
+    ],
+    "campos": {
+      "formas": "formas de superfície em PT que CONTAM como cobertura desta glosa",
+      "classe": "substantivo | verbo | adjetivo | marcador | saudacao | numeral",
+      "negacao": "true apenas para glosas que invertem polaridade — regra dura do §8.1"
+    },
+    "aviso_camada_3_proposta": "Os 7 sinais com camada=3-proposta (eu, você, querer, precisar, onde, quanto, quando) NÃO passaram pelo cruzamento com as bases públicas que produziu as Camadas 1 e 2 (ver docs/investigacao-expansao-dataset.md). Antes de tratá-los como disponíveis: (a) checar o índice da V-LIBRASIL com datasets/remote_zip.py, como foi feito para a Camada 2; (b) se não existirem, entram na coleta própria. Até lá, todo corpus que os usa treina um mapeamento que o SignClassifier ainda não consegue alimentar.",
+    "nota_interrogativos": "onde/quanto/quando existem como sinais manuais, mas em Libras a força interrogativa é carregada em boa parte por marcação não-manual (expressão facial) — explicitamente FORA DE ESCOPO em docs/vocabulario-mvp-proposta.md. Consequência prática: o modelo terá de inferir pergunta vs. afirmação só pela glosa. Isso é argumento A FAVOR do seq2seq (uma tabela de regras não aprende isso sozinha) e precisa estar refletido no corpus.",
+    "nota_completude": "As formas de cada glosa precisam cobrir as flexões que o modelo realmente produz — inclusive subjuntivo e imperativo. Um léxico incompleto NÃO é um problema estético: GuardedGlossContextualizer.cobreTodoConteudo (§3.2) passa a rejeitar saídas CORRETAS, o que infla a 'taxa de fallback' do §10 e faz um modelo bom parecer inútil. As flexões acrescentadas em 0.3.0 saíram justamente de validar o corpus contra este arquivo — rodar corpus/gerar.py --so-validar é, na prática, um teste do léxico."
+  },
+  "glosas": {
+    "não": {
+      "classe": "marcador",
+      "negacao": true,
+      "formas": [
+        "não",
+        "nao",
+        "nenhum",
+        "nenhuma",
+        "sem",
+        "nunca",
+        "nada",
+        "jamais"
+      ]
+    },
+    "sim": {
+      "classe": "marcador",
+      "formas": [
+        "sim",
+        "isso",
+        "claro",
+        "positivo"
+      ]
+    },
+    "oi": {
+      "classe": "saudacao",
+      "formas": [
+        "oi",
+        "olá",
+        "ola",
+        "bom dia",
+        "boa tarde",
+        "boa noite"
+      ]
+    },
+    "obrigado": {
+      "classe": "saudacao",
+      "formas": [
+        "obrigado",
+        "obrigada",
+        "agradeço",
+        "agradecida",
+        "grato",
+        "grata"
+      ]
+    },
+    "por-favor": {
+      "classe": "marcador",
+      "formas": [
+        "por favor",
+        "por gentileza",
+        "se possível",
+        "se puder"
+      ]
+    },
+    "ajuda": {
+      "classe": "substantivo",
+      "formas": [
+        "ajuda",
+        "ajudar",
+        "ajude",
+        "auxílio",
+        "auxiliar",
+        "socorro",
+        "ajudasse",
+        "ajudando",
+        "ajudo"
+      ]
+    },
+    "esperar": {
+      "classe": "verbo",
+      "formas": [
+        "esperar",
+        "espero",
+        "espera",
+        "aguardar",
+        "aguardo",
+        "aguarde",
+        "aguardando",
+        "espere",
+        "esperasse",
+        "aguardasse",
+        "aguarda",
+        "esperarei"
+      ]
+    },
+    "voltar": {
+      "classe": "verbo",
+      "formas": [
+        "voltar",
+        "volto",
+        "volta",
+        "retornar",
+        "retorno",
+        "de volta",
+        "volte",
+        "voltasse",
+        "retorne",
+        "retornasse",
+        "voltando",
+        "retornando",
+        "voltarei"
+      ]
+    },
+    "conhecer": {
+      "classe": "verbo",
+      "formas": [
+        "conhecer",
+        "conheço",
+        "conhece",
+        "saber",
+        "sei",
+        "conheça",
+        "conhecesse",
+        "sabe",
+        "sabia",
+        "souber",
+        "soubesse"
+      ]
+    },
+    "acontecer": {
+      "classe": "verbo",
+      "formas": [
+        "acontecer",
+        "aconteceu",
+        "acontece",
+        "houve",
+        "ocorreu",
+        "aconteça",
+        "acontecesse",
+        "acontecendo",
+        "ocorrer",
+        "ocorre"
+      ]
+    },
+    "aproveitar": {
+      "classe": "verbo",
+      "formas": [
+        "aproveitar",
+        "aproveito",
+        "aproveita",
+        "aproveitando",
+        "aproveite",
+        "aproveitasse"
+      ]
+    },
+    "vontade": {
+      "classe": "substantivo",
+      "formas": [
+        "vontade",
+        "quero",
+        "queria",
+        "gostaria",
+        "desejo",
+        "preciso"
+      ]
+    },
+    "banheiro": {
+      "classe": "substantivo",
+      "formas": [
+        "banheiro",
+        "lavabo",
+        "toalete",
+        "sanitário"
+      ]
+    },
+    "documento": {
+      "classe": "substantivo",
+      "formas": [
+        "documento",
+        "documentos",
+        "identidade",
+        "rg",
+        "cpf",
+        "carteira"
+      ]
+    },
+    "nome": {
+      "classe": "substantivo",
+      "formas": [
+        "nome",
+        "chamo",
+        "chama",
+        "nomes"
+      ]
+    },
+    "número": {
+      "classe": "substantivo",
+      "formas": [
+        "número",
+        "numero",
+        "senha",
+        "ficha"
+      ]
+    },
+    "vacina": {
+      "classe": "substantivo",
+      "formas": [
+        "vacina",
+        "vacinar",
+        "vacinação",
+        "vacinado",
+        "vacinada",
+        "dose",
+        "vacinar-se",
+        "vacine",
+        "vacinou",
+        "vacinei",
+        "vacinamos"
+      ]
+    },
+    "filho": {
+      "classe": "substantivo",
+      "formas": [
+        "filho",
+        "filha",
+        "filhos",
+        "criança",
+        "menino",
+        "menina"
+      ]
+    },
+    "aluno": {
+      "classe": "substantivo",
+      "formas": [
+        "aluno",
+        "aluna",
+        "estudante",
+        "estudo",
+        "escola",
+        "estuda",
+        "estudam",
+        "estudar",
+        "estudando"
+      ]
+    },
+    "banco": {
+      "classe": "substantivo",
+      "formas": [
+        "banco",
+        "agência",
+        "caixa"
+      ]
+    },
+    "esquina": {
+      "classe": "substantivo",
+      "formas": [
+        "esquina",
+        "canto",
+        "cruzamento"
+      ]
+    },
+    "espelho": {
+      "classe": "substantivo",
+      "formas": [
+        "espelho"
+      ]
+    },
+    "bala": {
+      "classe": "substantivo",
+      "formas": [
+        "bala",
+        "doce",
+        "balas"
+      ]
+    },
+    "maçã": {
+      "classe": "substantivo",
+      "formas": [
+        "maçã",
+        "maca",
+        "maçãs"
+      ]
+    },
+    "sapo": {
+      "classe": "substantivo",
+      "formas": [
+        "sapo",
+        "sapos"
+      ]
+    },
+    "america": {
+      "classe": "substantivo",
+      "formas": [
+        "américa",
+        "america"
+      ]
+    },
+    "barulho": {
+      "classe": "substantivo",
+      "formas": [
+        "barulho",
+        "barulhento",
+        "ruído",
+        "alto"
+      ]
+    },
+    "manhã": {
+      "classe": "substantivo",
+      "formas": [
+        "manhã",
+        "manha",
+        "de manhã",
+        "cedo",
+        "bom dia"
+      ]
+    },
+    "noite": {
+      "classe": "substantivo",
+      "formas": [
+        "noite",
+        "à noite",
+        "boa noite",
+        "tarde da noite"
+      ]
+    },
+    "dor": {
+      "classe": "substantivo",
+      "formas": [
+        "dor",
+        "dói",
+        "doi",
+        "doendo",
+        "doloroso",
+        "dolorida",
+        "dolorido",
+        "doer",
+        "doeu",
+        "doa",
+        "doerá"
+      ]
+    },
+    "medo": {
+      "classe": "substantivo",
+      "formas": [
+        "medo",
+        "receio",
+        "assustado",
+        "assustada",
+        "com medo",
+        "assusta",
+        "assusto",
+        "assustam",
+        "assustar"
+      ]
+    },
+    "ruim": {
+      "classe": "adjetivo",
+      "formas": [
+        "ruim",
+        "mal",
+        "mau",
+        "péssimo",
+        "péssima",
+        "não estou bem",
+        "pior",
+        "não está bem",
+        "nao esta bem",
+        "não estava bem",
+        "passando mal"
+      ]
+    },
+    "amarelo": {
+      "classe": "adjetivo",
+      "formas": [
+        "amarelo",
+        "amarela"
+      ]
+    },
+    "cinco": {
+      "classe": "numeral",
+      "formas": [
+        "cinco",
+        "5"
+      ]
+    },
+    "eu": {
+      "classe": "pronome",
+      "formas": [
+        "eu",
+        "meu",
+        "minha",
+        "me",
+        "mim",
+        "comigo",
+        "estou",
+        "quero",
+        "preciso",
+        "conheço",
+        "sei",
+        "sinto",
+        "tenho",
+        "volto",
+        "espero",
+        "aguardo",
+        "vou",
+        "aproveito",
+        "agradeço",
+        "sou",
+        "fico",
+        "ando",
+        "passo"
+      ],
+      "camada": "3-proposta",
+      "status": "nao_verificado_em_base_publica"
+    },
+    "você": {
+      "classe": "pronome",
+      "formas": [
+        "você",
+        "voce",
+        "seu",
+        "sua",
+        "te",
+        "contigo",
+        "senhor",
+        "senhora"
+      ],
+      "camada": "3-proposta",
+      "status": "nao_verificado_em_base_publica"
+    },
+    "querer": {
+      "classe": "verbo",
+      "formas": [
+        "querer",
+        "quero",
+        "queria",
+        "gostaria",
+        "quer",
+        "desejo",
+        "deseja",
+        "queira",
+        "quisesse",
+        "quiser"
+      ],
+      "camada": "3-proposta",
+      "status": "nao_verificado_em_base_publica"
+    },
+    "precisar": {
+      "classe": "verbo",
+      "formas": [
+        "precisar",
+        "preciso",
+        "precisa",
+        "necessito",
+        "necessária",
+        "necessário",
+        "precise",
+        "precisasse",
+        "precisará"
+      ],
+      "camada": "3-proposta",
+      "status": "nao_verificado_em_base_publica"
+    },
+    "onde": {
+      "classe": "interrogativo",
+      "formas": [
+        "onde",
+        "aonde",
+        "que lugar",
+        "fica",
+        "localiza"
+      ],
+      "camada": "3-proposta",
+      "status": "nao_verificado_em_base_publica"
+    },
+    "quanto": {
+      "classe": "interrogativo",
+      "formas": [
+        "quanto",
+        "quanta",
+        "quantos",
+        "quantas",
+        "que horas",
+        "demora"
+      ],
+      "camada": "3-proposta",
+      "status": "nao_verificado_em_base_publica"
+    },
+    "quando": {
+      "classe": "interrogativo",
+      "formas": [
+        "quando",
+        "que dia",
+        "que horas",
+        "que hora"
+      ],
+      "camada": "3-proposta",
+      "status": "nao_verificado_em_base_publica"
+    }
+  }
+}

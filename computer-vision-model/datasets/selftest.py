@@ -9,6 +9,7 @@ coerência entre selecao.yaml e os dois config.yaml do repositório.
 """
 from __future__ import annotations
 
+import re
 import sys
 from pathlib import Path
 
@@ -42,7 +43,7 @@ def teste_vocabularios_batem() -> None:
     for config in (AQUI.parent / "PoC" / "config.yaml", AQUI.parent / "config.yaml"):
         vocab = set(yaml.safe_load(config.read_text(encoding="utf-8"))["vocabulario"])
         assert vocab == selecionados, f"{config}: vocabulário {sorted(vocab)} != seleção"
-    assert len(selecionados) == 10, f"esperava 10 sinais, veio {len(selecionados)}"
+    assert len(selecionados) == 20, f"esperava 20 sinais, veio {len(selecionados)}"
     _ok("vocabulário igual em selecao.yaml, PoC/config.yaml e config.yaml")
 
 
@@ -53,7 +54,7 @@ def teste_traducao_de_nomes() -> None:
         "01AcontecerSinalizador05-3.mp4": 100,
         "17RuimSinalizador12-5.mp4": 100,
         "13MacaSinalizador01-1.mp4": 100,
-        "02AlunoSinalizador05-3.mp4": 100,   # fora da seleção: tem que ser ignorado
+        "21AbacaxiSinalizador05-3.mp4": 100,  # fora da seleção: tem que ser ignorado
     }), sel)
     obtidos = {c.destino for c in minds}
     assert obtidos == {"pessoaM05_sinal-acontecer_rep03.mp4",
@@ -148,6 +149,134 @@ def teste_manifesto(tmp: Path) -> None:
     _ok("manifesto reflete origem, destino e estado em disco")
 
 
+def teste_proveniencia_ingestao(tmp: Path) -> None:
+    import csv
+    import zlib
+    from types import SimpleNamespace
+    import proveniencia as pv
+    import ingest_pretreino as ip
+
+    video = tmp / "pessoaV01_sinal-abacaxi_rep01.mp4"
+    conteudo = b"video sintetico para testar proveniencia"
+    video.write_bytes(conteudo)
+    origem = "videos UFPE (V-LIBRASIL)/data/Abacaxi_Articulador1.mp4"
+    membro = Membro(origem, len(conteudo), len(conteudo), 0, 0, zlib.crc32(conteudo))
+    z = SimpleNamespace(membros={origem: membro})
+    clipe = ip.Clipe("abacaxi", "V01", origem, len(conteudo))
+    # Caminho retomado: não baixa, mas confere os bytes e registra origem.
+    assert ip.baixar([clipe], z, tmp) == 0
+    registro = pv.ler(video)
+    assert registro["origem"] == origem and registro["video"]["sha256"] == pv.hash_arquivo(video)
+    video.write_bytes(b"corrompido")
+    try:
+        ip.baixar([clipe], z, tmp)
+    except ValueError as e:
+        assert "tamanho/CRC" in str(e)
+    else:
+        raise AssertionError("arquivo reaproveitado corrompido passou")
+
+    # Rodar ingestão de MINDS depois de V-LIBRASIL não pode apagar sua reserva.
+    manifesto = tmp / "reservas.csv"
+    reservado = ingest.Clipe("abacaxi", "vlibrasil", "V01", 1, origem, len(conteudo), True)
+    minds = ingest.Clipe("ruim", "minds", "M01", 1, "17RuimSinalizador01-1.mp4", 1, True)
+    ingest.escrever_manifesto([reservado], tmp, manifesto)
+    ingest.escrever_manifesto([minds], tmp, manifesto)
+    with manifesto.open(encoding="utf-8") as f:
+        assert {r["fonte"] for r in csv.DictReader(f)} == {"minds", "vlibrasil"}
+    _ok("proveniência de vídeos reaproveitados, corrupção e preservação das reservas")
+
+
+def teste_malta_identidade(tmp: Path) -> None:
+    """MALTA: o join que descobre QUEM sinalizou. Errar aqui invalida a LOSO.
+
+    Sem ID de pessoa não existe leave-one-signer-out — e o modo de falha não é um
+    erro, é um número de generalização que mente. Duas formas de errar:
+
+      1. colapsar pessoas distintas numa só  -> subestima a diversidade (seguro)
+      2. separar a MESMA pessoa em duas      -> inventa independência (mentira)
+
+    Por isso o fallback é a FONTE, nunca um id sintético por arquivo.
+
+    As regras de normalização vieram de inspeção dos dados reais, não de palpite:
+    cada dicionário nomeia o mesmo vídeo de um jeito, e as três diferenças abaixo
+    foram medidas nos CSVs antes de virarem código.
+    """
+    import ingest_malta as mal
+
+    # Os padrões reais de cada fonte, dos dois lados do join.
+    casos = [
+        # (nome no link, nome no CSV de atores, por quê)
+        ("Libras_glossario_aula10_a_disposicao_STREAM.mp4", "a_disposicao.mp4",
+         "USP: prefixo de aula e sufixo _STREAM só existem na URL"),
+        ("01028-europa.mp4", "europa.mp4", "UFV: prefixo numérico varia entre os dois"),
+        ("aSm_Prog001.mp4", "aSm_Prog001.mp4",
+         "Acessibilidade: idêntico — o sufixo Sm_Prog NÃO pode ser removido"),
+        ("%C3%A1gua-de-coco.mp4", "água-de-coco.mp4", "URL percent-encoded"),
+    ]
+    for link, csv_nome, porque in casos:
+        a, b = mal._chave_arquivo(link), mal._chave_arquivo(csv_nome)
+        assert a == b and a, f"{porque}: {link!r} -> {a!r} != {csv_nome!r} -> {b!r}"
+
+    # Palavras diferentes não podem colidir depois da normalização.
+    assert mal._chave_arquivo("abacateSm_Prog001.mp4") != mal._chave_arquivo("abacaxiSm_Prog001.mp4")
+
+    # O prefixo de pessoa tem de ser exclusivo: M/V/W já estão em uso, e duas
+    # bases compartilhando prefixo faria a LOSO testar em quem treinou.
+    assert mal.PREFIXO_PESSOA not in ("M", "V", "W"), "prefixo colide com outra base"
+
+    # As fontes recusadas precisam continuar recusadas, com o motivo à vista.
+    assert "spreadthesign" in mal.EXCLUIDAS and "vlibrasil" in mal.EXCLUIDAS
+    assert "spreadthesign" not in mal.FONTES
+
+    # Ponta a ponta com CSVs sintéticos, no formato real.
+    repo = tmp / "malta"
+    (repo / "video_downloads").mkdir(parents=True)
+    (repo / "dataset_intersections").mkdir(parents=True)
+    (repo / "dataset_intersections" / "MALTA_LIBRAS_original.csv").write_text(
+        "original,checked,lemma,path,dictionary,group,actor\n"
+        "0,0,europa,['./x/01551-europa.mp4'],UFV,0,48\n"
+        "0,0,abacate,['./x/aSm_Prog001.mp4'],Acessibilidades3,0,2\n"
+        "0,0,europa,['./x/europa.mp4'],SpreadTheSign,0,99\n",   # não pode vazar
+        encoding="utf-8")
+    (repo / "video_downloads" / "links_videos_ufv.csv").write_text(
+        "Palavra,Link,Instituicao\n"
+        "europa,https://x.br/01028-europa.mp4,UFV\n"
+        "cadeira,https://x.br/09999-cadeira.mp4,UFV\n", encoding="utf-8")
+    (repo / "video_downloads" / "links_videos_acessibilidade_brasil.csv").write_text(
+        "Palavra,Link,Instituicao\n"
+        "abacate,http://y.br/abacateSm_Prog001.mp4,ACESSIBILIDADE_BRASIL\n",
+        encoding="utf-8")
+
+    clipes = {c.sinal: c for c in mal.coletar(repo, ["ufv", "acessibilidade"])}
+    assert clipes["europa"].pessoa == "T048", \
+        f"join do ator falhou: {clipes['europa'].pessoa}"
+    assert clipes["cadeira"].pessoa == "TUFV", \
+        f"sem ator, deveria cair na fonte: {clipes['cadeira'].pessoa}"
+    # Acessibilidade tem UM apresentador: vale para todo vídeo da fonte, com ou
+    # sem join. Se isso virar TACE, perdemos a identidade real por nada.
+    assert clipes["abacate"].pessoa == "T002", \
+        f"ator único da fonte não aplicado: {clipes['abacate'].pessoa}"
+    assert "T099" not in {c.pessoa for c in clipes.values()}, \
+        "ator do SpreadTheSign vazou para uma fonte incluída"
+
+    for c in clipes.values():
+        assert re.match(r"pessoa\w+_sinal-[a-z0-9-]+_rep\d{2}\.mp4$", c.destino), c.destino
+    _ok("MALTA: join de ator, fallback por fonte e isolamento das fontes excluídas")
+
+
+def teste_migracao_e_copia_auditada() -> None:
+    import unittest
+    from test_registrar_legado import TestColisaoLegada
+    from test_preparar_corpus_auditado import TestPreparacao
+
+    suite = unittest.TestSuite(
+        unittest.defaultTestLoader.loadTestsFromTestCase(cls)
+        for cls in (TestColisaoLegada, TestPreparacao))
+    if not unittest.TextTestRunner(verbosity=2).run(suite).wasSuccessful():
+        raise AssertionError("regressões da regularização de legado falharam")
+    _ok("migração de colisões e cópia auditada sem alterar originais")
+
+
 def main() -> None:
     import tempfile
 
@@ -160,6 +289,9 @@ def main() -> None:
     teste_somente_validados()
     with tempfile.TemporaryDirectory() as tmp:
         teste_manifesto(Path(tmp))
+        teste_proveniencia_ingestao(Path(tmp))
+        teste_malta_identidade(Path(tmp))
+    teste_migracao_e_copia_auditada()
     print("[selftest] tudo OK — a receita de ingestão está coerente com o repositório.")
 
 

@@ -43,11 +43,15 @@ Uso:
 from __future__ import annotations
 
 import argparse
+import sys
 from pathlib import Path
 
 import numpy as np
 
 from config import load_config
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "datasets"))
+import proveniencia as pv
 
 # cv2 e mediapipe são importados SOB DEMANDA (dentro das funções que os usam), não
 # no topo: assim `from extract import frame_normalizado` — que é numpy puro — funciona
@@ -65,8 +69,14 @@ def _hand_px(hand_landmarks, w: int, h: int) -> np.ndarray | None:
                     dtype=np.float64)
 
 
-def frame_normalizado(results, w: int, h: int, cfg) -> np.ndarray | None:
-    """Pontos do frame normalizados (num_pontos, dims), ou None se não dá para normalizar."""
+def frame_normalizado(results, w: int, h: int, cfg, dims: int | None = None) -> np.ndarray | None:
+    """Pontos do frame normalizados (num_pontos, dims), ou None se não dá para normalizar.
+
+    `dims` sobrescreve cfg.dims. A extração passa 3 de propósito: o .npy é o
+    artefato caro (horas de MediaPipe), então guarda tudo que foi calculado e
+    deixa o descarte do z para a LEITURA (carregar_dataset corta conforme
+    normalizacao.usar_z). Assim, testar o z de novo não exige reextrair.
+    """
     pose = results.pose_landmarks
     if pose is None:
         return None  # sem tronco não há referência estável de normalização
@@ -97,7 +107,7 @@ def frame_normalizado(results, w: int, h: int, cfg) -> np.ndarray | None:
             blocos.append((mao - origem) / escala)
 
     pontos = np.concatenate(blocos, axis=0)
-    return pontos[:, : cfg.dims].astype(np.float32)
+    return pontos[:, : (dims if dims is not None else cfg.dims)].astype(np.float32)
 
 
 def extrair_video(caminho: Path, holistic, cfg) -> tuple[np.ndarray, int]:
@@ -119,7 +129,7 @@ def extrair_video(caminho: Path, holistic, cfg) -> tuple[np.ndarray, int]:
             h, w = frame.shape[:2]
         rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
         rgb.flags.writeable = False
-        vec = frame_normalizado(holistic.process(rgb), w, h, cfg)
+        vec = frame_normalizado(holistic.process(rgb), w, h, cfg, dims=3)
         if vec is None:
             descartados += 1
         else:
@@ -127,7 +137,7 @@ def extrair_video(caminho: Path, holistic, cfg) -> tuple[np.ndarray, int]:
     cap.release()
 
     if not frames:
-        return np.empty((0, cfg.num_pontos, cfg.dims), dtype=np.float32), descartados
+        return np.empty((0, cfg.num_pontos, 3), dtype=np.float32), descartados
     return np.stack(frames).astype(np.float32), descartados
 
 
@@ -136,6 +146,12 @@ def main() -> None:
     ap.add_argument("--overwrite", action="store_true", help="reprocessa .npy já existentes")
     ap.add_argument("--descartar-video", action="store_true",
                     help="apaga o vídeo bruto após extrair os landmarks (§4.4)")
+    ap.add_argument("--entrada", metavar="DIR",
+                    help="diretório de vídeos (padrão: paths.raw_videos do config)")
+    ap.add_argument("--saida", metavar="DIR",
+                    help="diretório dos .npy (padrão: paths.landmarks do config). "
+                         "Use um par --entrada/--saida próprio para corpora que NÃO "
+                         "entram na avaliação, como o de pré-treino.")
     ap.add_argument("--particao", metavar="i/N",
                     help="processa só a fatia i de N (1-indexado), para rodar N "
                          "processos em paralelo — ex.: --particao 1/4")
@@ -156,7 +172,9 @@ def main() -> None:
         raise SystemExit("mediapipe não instalado — rode: pip install -r requirements.txt") from e
 
     cfg = load_config()
-    raw_dir, lm_dir = cfg.path("raw_videos"), cfg.path("landmarks")
+    raiz = Path(__file__).resolve().parent.parent
+    raw_dir = raiz / args.entrada if args.entrada else cfg.path("raw_videos")
+    lm_dir = raiz / args.saida if args.saida else cfg.path("landmarks")
     lm_dir.mkdir(parents=True, exist_ok=True)
 
     videos = sorted(raw_dir.glob("*.mp4"))
@@ -172,6 +190,7 @@ def main() -> None:
 
     print(f"[extract] {len(videos)} vídeo(s) | {cfg.num_pontos} pontos × {cfg.dims} dims por frame")
     extraidos = 0
+    falhas: list[str] = []
     with mp.solutions.holistic.Holistic(**cfg.holistic) as holistic:
         for v in videos:
             destino = lm_dir / (v.stem + ".npy")
@@ -179,7 +198,21 @@ def main() -> None:
                 print(f"[extract] pulando {v.name} (já extraído)")
                 continue
 
-            seq, descartados = extrair_video(v, holistic, cfg)
+            try:
+                # Não atribuir retrospectivamente a configuração atual a um .npy
+                # antigo. Só a extração nova herda automaticamente a identidade.
+                tem_origem = pv.sidecar(v).exists()
+                if tem_origem:
+                    pv.ler(v)
+                seq, descartados = extrair_video(v, holistic, cfg)
+            except Exception as e:
+                # Um vídeo ilegível (corrompido, download interrompido, arquivo
+                # removido durante a execução) não pode derrubar o lote inteiro:
+                # numa extração de milhares de clipes, isso significaria perder
+                # horas de trabalho por causa de um arquivo.
+                falhas.append(v.name)
+                print(f"[extract] ⚠ {v.name}: falhou ({type(e).__name__}: {e}) — seguindo")
+                continue
             total = seq.shape[0] + descartados
             if seq.shape[0] == 0:
                 print(f"[extract] ⚠ {v.name}: nenhum frame com pose detectada "
@@ -187,6 +220,14 @@ def main() -> None:
                 continue
 
             np.save(destino, seq)
+            if tem_origem:
+                pv.registrar_landmarks(v, destino, cfg.raw)
+            else:
+                # Gravações próprias/legadas continuam extraíveis, mas não passam
+                # pela auditoria estrita de corpora públicos de pré-treino.
+                pv.sidecar(destino).unlink(missing_ok=True)
+                print(f"[extract] ⚠ {v.name}: sem origem registrada; "
+                      "landmarks NÃO elegíveis para pré-treino")
             extraidos += 1
             aviso = ""
             if total and descartados / total > 0.3:
@@ -198,6 +239,9 @@ def main() -> None:
                 print(f"[extract] vídeo bruto apagado: {v.name} (§4.4 — só os landmarks ficam)")
 
     print(f"[extract] concluído: {extraidos} clipe(s) extraído(s) em {lm_dir}")
+    if falhas:
+        print(f"[extract] ⚠ {len(falhas)} vídeo(s) falharam e foram pulados: "
+              f"{', '.join(falhas[:10])}{' ...' if len(falhas) > 10 else ''}")
 
 
 if __name__ == "__main__":

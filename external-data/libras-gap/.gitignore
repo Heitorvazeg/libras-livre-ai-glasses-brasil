@@ -1,0 +1,3 @@
+# Local media, source metadata and diagnostic logs are not versioned.
+*/
+*.jsonl

@@ -8,6 +8,7 @@
 
 package com.meta.wearable.dat.externalsampleapps.cameraaccess.stream
 
+import android.Manifest
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
@@ -15,12 +16,14 @@ import android.app.PendingIntent
 import android.app.Service
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.content.pm.ServiceInfo
 import android.os.Binder
 import android.os.IBinder
 import android.os.PowerManager
 import android.util.Log
 import androidx.core.app.NotificationCompat
+import androidx.core.content.ContextCompat
 import com.meta.wearable.dat.externalsampleapps.cameraaccess.MainActivity
 import com.meta.wearable.dat.externalsampleapps.cameraaccess.R
 
@@ -53,6 +56,17 @@ class StreamingService : Service() {
           Intent(context, StreamingService::class.java).apply { `package` = context.packageName }
       context.startForegroundService(intent)
     }
+
+    /**
+     * Chamar de novo, com o stream já rodando, quando RECORD_AUDIO acaba de ser concedido em
+     * tempo de execução (ver CameraViewModel.onWakeWordButton) — reinvoca onStartCommand, que
+     * reavalia a permissão e chama startForeground() de novo com o tipo "microphone" incluído
+     * (idempotente: startForeground()/acquireWakeLock() já toleram ser chamados de novo).
+     * Sem isso, uma sessão cujo RECORD_AUDIO só foi concedido DEPOIS do stream já ter começado
+     * ficaria sem a proteção de foreground service pro mic até a PRÓXIMA vez que o stream
+     * reiniciar.
+     */
+    fun refreshForegroundServiceType(context: Context) = start(context)
 
     fun stop(context: Context) {
       // Route the stop through onStartCommand (a STOP-action start) rather than stopService(). Once
@@ -88,14 +102,32 @@ class StreamingService : Service() {
 
   override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
     // Always enter the foreground first — even for a STOP request that may have raced ahead of a
-    // pending start — so the startForegroundService() contract is always satisfied. Uses
-    // FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE for wearable streaming, which doesn't require CAMERA
-    // permission since the phone's camera isn't used.
+    // pending start — so the startForegroundService() contract is always satisfied.
+    //
+    // CONNECTED_DEVICE for the wearable streaming (doesn't require CAMERA permission since the
+    // phone's camera isn't used) is always included. MICROPHONE is included only when
+    // RECORD_AUDIO is already granted — Libras Livre requests that permission lazily, in
+    // context, right before it's first needed (ver
+    // MainActivity.requestRecordAudioPermission()) — which is AFTER this service typically
+    // already started. Declaring MICROPHONE without the permission granted makes
+    // startForeground() throw SecurityException, which would break the core streaming flow for
+    // every user on first use. refreshForegroundServiceType() re-enters here once the permission
+    // is granted mid-session, upgrading the type without needing to restart the stream.
+    val hasRecordAudio =
+        ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) ==
+            PackageManager.PERMISSION_GRANTED
+    val foregroundServiceType =
+        if (hasRecordAudio) {
+          ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE or
+              ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE
+        } else {
+          ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE
+        }
     try {
       startForeground(
           ForegroundServiceNotificationIds.ACTIVE_RECORDING_NOTIFICATION_ID,
           createNotification(),
-          ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE,
+          foregroundServiceType,
       )
     } catch (e: Exception) {
       Log.e(TAG, "Failed to enter foreground; stopping service", e)

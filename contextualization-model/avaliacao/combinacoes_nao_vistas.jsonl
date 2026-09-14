@@ -1,0 +1,120 @@
+{"glosas": ["documento", "voltar", "banheiro"], "n": 3}
+{"glosas": ["filho", "conhecer"], "n": 2}
+{"glosas": ["número", "medo"], "n": 2}
+{"glosas": ["filho", "você"], "n": 2}
+{"glosas": ["filho", "ajuda", "conhecer", "você"], "n": 4}
+{"glosas": ["medo", "querer"], "n": 2}
+{"glosas": ["banheiro", "medo", "não"], "n": 3}
+{"glosas": ["medo", "voltar", "não", "ajuda"], "n": 4}
+{"glosas": ["conhecer", "documento"], "n": 2}
+{"glosas": ["você", "documento", "conhecer"], "n": 3}
+{"glosas": ["medo", "dor"], "n": 2}
+{"glosas": ["aluno", "precisar", "querer", "medo"], "n": 4}
+{"glosas": ["banheiro", "vacina", "número", "querer"], "n": 4}
+{"glosas": ["oi", "filho", "medo", "não"], "n": 4}
+{"glosas": ["vacina", "nome", "aluno", "conhecer"], "n": 4}
+{"glosas": ["noite", "manhã", "ruim", "medo"], "n": 4}
+{"glosas": ["número", "dor", "ajuda", "por-favor"], "n": 4}
+{"glosas": ["oi", "noite", "ajuda"], "n": 3}
+{"glosas": ["nome", "manhã", "obrigado", "ruim"], "n": 4}
+{"glosas": ["banco", "filho", "querer"], "n": 3}
+{"glosas": ["você", "precisar", "noite", "manhã"], "n": 4}
+{"glosas": ["nome", "você", "não"], "n": 3}
+{"glosas": ["noite", "conhecer"], "n": 2}
+{"glosas": ["por-favor", "manhã", "oi", "número"], "n": 4}
+{"glosas": ["nome", "medo", "por-favor", "ruim"], "n": 4}
+{"glosas": ["oi", "aluno", "filho", "não"], "n": 4}
+{"glosas": ["banheiro", "medo", "aluno"], "n": 3}
+{"glosas": ["dor", "oi", "voltar", "aluno"], "n": 4}
+{"glosas": ["eu", "ruim", "número"], "n": 3}
+{"glosas": ["banco", "querer", "nome"], "n": 3}
+{"glosas": ["vacina", "noite"], "n": 2}
+{"glosas": ["documento", "obrigado", "ajuda"], "n": 3}
+{"glosas": ["voltar", "nome", "filho", "precisar"], "n": 4}
+{"glosas": ["voltar", "conhecer", "esperar", "documento"], "n": 4}
+{"glosas": ["conhecer", "esperar", "oi", "você"], "n": 4}
+{"glosas": ["aluno", "voltar", "ajuda"], "n": 3}
+{"glosas": ["filho", "precisar", "documento"], "n": 3}
+{"glosas": ["aluno", "ajuda", "eu"], "n": 3}
+{"glosas": ["medo", "precisar", "esperar", "dor"], "n": 4}
+{"glosas": ["documento", "você"], "n": 2}
+{"glosas": ["número", "banco", "medo", "manhã"], "n": 4}
+{"glosas": ["oi", "onde", "banco"], "n": 3}
+{"glosas": ["ruim", "noite"], "n": 2}
+{"glosas": ["voltar", "querer", "nome", "banheiro"], "n": 4}
+{"glosas": ["não", "vacina", "filho", "ruim"], "n": 4}
+{"glosas": ["querer", "manhã", "banco"], "n": 3}
+{"glosas": ["querer", "eu"], "n": 2}
+{"glosas": ["documento", "conhecer", "querer", "número"], "n": 4}
+{"glosas": ["eu", "filho", "vacina", "banco"], "n": 4}
+{"glosas": ["documento", "banheiro", "esperar", "número"], "n": 4}
+{"glosas": ["número", "nome", "querer", "ruim"], "n": 4}
+{"glosas": ["nome", "dor", "filho", "documento"], "n": 4}
+{"glosas": ["obrigado", "manhã"], "n": 2}
+{"glosas": ["nome", "oi", "precisar"], "n": 3}
+{"glosas": ["eu", "vacina", "onde", "número"], "n": 4}
+{"glosas": ["oi", "conhecer", "eu"], "n": 3}
+{"glosas": ["dor", "banheiro", "filho", "oi"], "n": 4}
+{"glosas": ["onde", "número", "precisar"], "n": 3}
+{"glosas": ["noite", "ajuda", "conhecer"], "n": 3}
+{"glosas": ["noite", "onde", "manhã", "banheiro"], "n": 4}
+{"glosas": ["banco", "por-favor", "noite"], "n": 3}
+{"glosas": ["por-favor", "ajuda", "voltar"], "n": 3}
+{"glosas": ["vacina", "onde", "nome"], "n": 3}
+{"glosas": ["obrigado", "eu", "por-favor"], "n": 3}
+{"glosas": ["nome", "esperar", "vacina"], "n": 3}
+{"glosas": ["número", "ruim", "por-favor", "obrigado"], "n": 4}
+{"glosas": ["número", "filho", "ajuda"], "n": 3}
+{"glosas": ["ajuda", "nome"], "n": 2}
+{"glosas": ["manhã", "vacina", "nome"], "n": 3}
+{"glosas": ["banco", "eu", "nome", "banheiro"], "n": 4}
+{"glosas": ["por-favor", "banheiro", "filho"], "n": 3}
+{"glosas": ["voltar", "por-favor"], "n": 2}
+{"glosas": ["nome", "precisar", "você"], "n": 3}
+{"glosas": ["filho", "por-favor", "obrigado"], "n": 3}
+{"glosas": ["ruim", "voltar", "obrigado", "filho"], "n": 4}
+{"glosas": ["precisar", "documento", "eu"], "n": 3}
+{"glosas": ["medo", "ruim", "por-favor"], "n": 3}
+{"glosas": ["banco", "nome", "aluno"], "n": 3}
+{"glosas": ["documento", "conhecer", "eu"], "n": 3}
+{"glosas": ["por-favor", "obrigado"], "n": 2}
+{"glosas": ["onde", "obrigado"], "n": 2}
+{"glosas": ["você", "vacina", "eu"], "n": 3}
+{"glosas": ["vacina", "dor", "onde"], "n": 3}
+{"glosas": ["noite", "medo", "manhã"], "n": 3}
+{"glosas": ["conhecer", "você", "documento"], "n": 3}
+{"glosas": ["aluno", "medo", "onde", "você"], "n": 4}
+{"glosas": ["documento", "conhecer", "onde", "eu"], "n": 4}
+{"glosas": ["noite", "precisar", "banco", "eu"], "n": 4}
+{"glosas": ["precisar", "documento", "nome"], "n": 3}
+{"glosas": ["obrigado", "querer", "conhecer", "não"], "n": 4}
+{"glosas": ["aluno", "onde", "conhecer"], "n": 3}
+{"glosas": ["por-favor", "noite", "querer", "conhecer"], "n": 4}
+{"glosas": ["ajuda", "vacina"], "n": 2}
+{"glosas": ["não", "noite", "querer"], "n": 3}
+{"glosas": ["ruim", "conhecer", "eu", "noite"], "n": 4}
+{"glosas": ["ruim", "manhã"], "n": 2}
+{"glosas": ["onde", "banco", "vacina", "oi"], "n": 4}
+{"glosas": ["ruim", "onde", "conhecer"], "n": 3}
+{"glosas": ["onde", "ajuda", "oi", "esperar"], "n": 4}
+{"glosas": ["vacina", "ruim", "documento", "você"], "n": 4}
+{"glosas": ["voltar", "ruim"], "n": 2}
+{"glosas": ["filho", "aluno", "ajuda"], "n": 3}
+{"glosas": ["filho", "vacina", "aluno", "dor"], "n": 4}
+{"glosas": ["noite", "documento"], "n": 2}
+{"glosas": ["documento", "esperar", "ruim"], "n": 3}
+{"glosas": ["obrigado", "querer", "voltar"], "n": 3}
+{"glosas": ["precisar", "aluno", "ajuda", "oi"], "n": 4}
+{"glosas": ["onde", "voltar", "manhã", "você"], "n": 4}
+{"glosas": ["número", "manhã", "filho"], "n": 3}
+{"glosas": ["eu", "manhã", "conhecer"], "n": 3}
+{"glosas": ["ruim", "oi", "eu", "voltar"], "n": 4}
+{"glosas": ["onde", "banco", "dor"], "n": 3}
+{"glosas": ["filho", "querer", "por-favor", "ajuda"], "n": 4}
+{"glosas": ["não", "noite", "precisar"], "n": 3}
+{"glosas": ["noite", "documento", "você"], "n": 3}
+{"glosas": ["voltar", "documento", "conhecer"], "n": 3}
+{"glosas": ["medo", "nome", "oi", "manhã"], "n": 4}
+{"glosas": ["esperar", "não"], "n": 2}
+{"glosas": ["você", "filho", "esperar"], "n": 3}
+{"glosas": ["banheiro", "filho"], "n": 2}
