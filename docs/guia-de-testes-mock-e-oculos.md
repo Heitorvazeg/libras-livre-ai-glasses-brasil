@@ -62,8 +62,33 @@ adb wait-for-device && adb shell getprop sys.boot_completed   # "1" = pronto
   -Pandroid.testInstrumentationRunnerArguments.class=com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.audio.WakeWordModelosCarregamTest
 ```
 
-**[hoje]** São 48 testes de unidade; o `WakeWordModelosCarregamTest` passa no Pixel 7 (API 33).
-Cada onda acrescenta os testes listados no seu arquivo do plano.
+**[depois da onda 4]** 161 testes de unidade (1 pulado) e 34 instrumentados no Pixel 7 API 33 x86_64
+(2 pulados: o `FluxoCompletoTest`, que exige o argumento abaixo, e a queda do avatar, que exige WebGL).
+Os testes dos scripts: `python3 -m unittest scripts/test_calibracao_fronteiras.py`.
+
+#### Fluxo completo no emulador [onda 4]
+
+O `FluxoCompletoTest` conduz a tela do app por um atendimento inteiro, sem o modelo de visão:
+`sinais.mp4` (movimento sintético, 3 segmentos) → placeholder no modo roteiro → "O meu filho quer a
+vacina." → escuta → transcrição → tradução do VLibras → avatar ou legenda → ①. A resposta do
+atendente entra pelo microfone do emulador, injetada por gRPC. Precisa de rede (VLibras) e fica fora
+da suíte normal:
+
+```bash
+# terminal 1: sintetiza a resposta com a voz do app e espera a escuta abrir
+uv run --no-project --with grpcio-tools --with sherpa-onnx --with numpy \
+  scripts/fluxo_completo_emulador.py --texto "Qual é a idade dele?"
+# terminal 2
+./gradlew connectedDebugAndroidTest \
+  -Pandroid.testInstrumentationRunnerArguments.class=com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.FluxoCompletoTest \
+  -Pandroid.testInstrumentationRunnerArguments.fluxoCompleto=true
+```
+
+Com `adb shell am instrument` (em vez do Gradle, que desinstala o app no fim), as capturas de tela de
+cada estado ficam em `/sdcard/Android/data/<pacote>/files/fluxo-completo/`. **Resultado em 13/09, Pixel 7
+API 33 x86_64:** a sequência Capturando → Falando → Ouvindo → Transcrevendo → Mostrando a resposta →
+Aguardando sinais sai inteira em ~20 s; o Vosk transcreve a voz sintética como "qual é a idade dele" ou
+"qual era a idade de"; o avatar não carrega (sem WebGL) e a legenda cobre.
 
 ### A.2 Preparar o mock
 
