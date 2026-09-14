@@ -19,23 +19,20 @@
 //
 // Asset esperado: app/src/main/assets/vosk-model-small-pt-0.3/ (baixar de
 // https://alphacephei.com/vosk/models/vosk-model-small-pt-0.3.zip, ~31MB, extrair o CONTEÚDO do
-// zip — não a pasta — pra dentro dessa pasta de assets). Copiado pro filesystem real na primeira
-// vez que o motor é usado (org.vosk.Model não lê de dentro do APK) — cópia simples, idempotente só
-// por existência de diretório (não usa o mecanismo de versionamento por arquivo "uuid" da
-// StorageService oficial do Vosk, que os zips do site não incluem por padrão); uma atualização do
-// app que troque o conteúdo do asset sem trocar o nome da pasta não vai re-copiar sozinha — ok pro
-// MVP, revisitar se isso incomodar.
+// zip — não a pasta — pra dentro dessa pasta de assets). Copiado pro filesystem real no
+// aquecimento (org.vosk.Model não lê de dentro do APK), pela CopiaDeAssets: um marcador de cópia
+// completa faz uma cópia interrompida ser refeita (docs/prontidao-demo/05 §5.4, §5.6). Uma
+// atualização do app que troque o conteúdo do asset sem trocar o nome da pasta não re-copia sozinha.
 
 package com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.audio
 
 import android.content.Context
 import android.util.Log
-import java.io.File
-import java.io.FileOutputStream
 import java.io.IOException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -61,14 +58,22 @@ class VoskSttEngine(
   @Volatile private var model: Model? = null
   @Volatile private var recognizer: Recognizer? = null
   @Volatile private var stopRequested = false
+  @Volatile private var encerrado = false
 
   private var pendingOnResult: ((String) -> Unit)? = null
   private var pendingOnError: ((Throwable) -> Unit)? = null
+  @Volatile private var pendingOnFimDeFala: (() -> Unit)? = null
 
-  override fun start(onResult: (String) -> Unit, onError: (Throwable) -> Unit) {
+  // Enunciados que o Vosk já fechou nesta escuta (acceptWaveForm devolveu true). O resultado final
+  // é isto + o getFinalResult: sem acumular, o texto de antes do fim de fala se perderia.
+  private val textoAcumulado = StringBuilder()
+
+  override fun start(onResult: (String) -> Unit, onError: (Throwable) -> Unit, onFimDeFala: () -> Unit) {
     stopRequested = false
     pendingOnResult = onResult
     pendingOnError = onError
+    pendingOnFimDeFala = onFimDeFala
+    synchronized(textoAcumulado) { textoAcumulado.setLength(0) }
 
     scope.launch {
       val loadedModel = ensureModelLoaded()
@@ -95,7 +100,17 @@ class VoskSttEngine(
         // uma chamada JNA sobre o ponteiro nativo do recognizer, sem estado compartilhado com a
         // main thread além do próprio `rec`.
         val chunk = if (offset == 0 && size == buffer.size) buffer else buffer.copyOfRange(offset, offset + size)
-        rec.acceptWaveForm(chunk, chunk.size)
+        // true = o Vosk fechou um enunciado (silêncio depois de fala): é o fim de fala do 4.1.
+        if (rec.acceptWaveForm(chunk, chunk.size)) {
+          val trecho = runCatching { JSONObject(rec.result).optString("text", "") }.getOrDefault("").trim()
+          if (trecho.isNotEmpty()) {
+            synchronized(textoAcumulado) {
+              if (textoAcumulado.isNotEmpty()) textoAcumulado.append(' ')
+              textoAcumulado.append(trecho)
+            }
+            pendingOnFimDeFala?.let { aviso -> scope.launch { aviso() } }
+          }
+        }
       }
 
       if (stopRequested) {
@@ -122,11 +137,34 @@ class VoskSttEngine(
     // stopRequested assim que terminar (ver acima).
   }
 
+  /**
+   * Teardown final (onCleared do ViewModel): para a escuta e libera o modelo nativo. Um carregamento
+   * ainda em curso (aquecimento) fecha o modelo assim que termina.
+   */
+  fun encerrar() {
+    stopRequested = true
+    audioCapture.stopRecording()
+    audioCapture.pcmDataCallback = null
+    scope.cancel()
+    pendingOnResult = null
+    pendingOnError = null
+    pendingOnFimDeFala = null
+    recognizer?.let { runCatching { it.close() } }
+    recognizer = null
+    synchronized(this) {
+      encerrado = true
+      runCatching { model?.close() }
+      model = null
+    }
+  }
+
   private suspend fun finalizeAndDispatch(rec: Recognizer) {
     val json = withContext(Dispatchers.IO) { rec.getFinalResult() }
     runCatching { rec.close() }
     if (recognizer === rec) recognizer = null
-    val text = runCatching { JSONObject(json).optString("text", "") }.getOrDefault("")
+    val final = runCatching { JSONObject(json).optString("text", "") }.getOrDefault("").trim()
+    val text = synchronized(textoAcumulado) { listOf(textoAcumulado.toString(), final).filter { it.isNotBlank() }.joinToString(" ") }
+    pendingOnFimDeFala = null
     dispatchResult(text)
   }
 
@@ -150,43 +188,41 @@ class VoskSttEngine(
     error?.invoke(t)
   }
 
+  /**
+   * Carrega o modelo agora (aquecimento, docs/prontidao-demo/05 §5.4): sem isto, as primeiras palavras
+   * da primeira resposta se perdiam enquanto o modelo carregava. Devolve false se não carregou.
+   */
+  suspend fun carregarModelo(): Boolean = ensureModelLoaded() != null
+
   private suspend fun ensureModelLoaded(): Model? {
     model?.let { return it }
     return loadMutex.withLock {
       model?.let { return it }
       withContext(Dispatchers.IO) {
+        val carregado =
             runCatching { loadModel() }.onFailure { e -> Log.e(TAG, "Falha ao carregar modelo Vosk", e) }.getOrNull()
+        synchronized(this@VoskSttEngine) {
+          if (encerrado) {
+            carregado?.close()
+            null
+          } else {
+            carregado.also { model = it }
           }
-          .also { model = it }
-    }
-  }
-
-  private fun loadModel(): Model {
-    val destRoot = context.getExternalFilesDir(null)!!
-    val destDir = File(destRoot, MODEL_DIR)
-    if (!destDir.exists()) {
-      copyAssetTree(MODEL_DIR, destRoot)
-    }
-    return Model(destDir.absolutePath)
-  }
-
-  private fun copyAssetTree(assetPath: String, destRoot: File) {
-    val children = context.assets.list(assetPath)
-    if (children.isNullOrEmpty()) {
-      copyAssetFile(assetPath, destRoot)
-      return
-    }
-    File(destRoot, assetPath).mkdirs()
-    for (child in children) copyAssetTree("$assetPath/$child", destRoot)
-  }
-
-  private fun copyAssetFile(assetPath: String, destRoot: File) {
-    try {
-      context.assets.open(assetPath).use { input ->
-        FileOutputStream(File(destRoot, assetPath)).use { output -> input.copyTo(output) }
+        }
       }
-    } catch (e: IOException) {
-      Log.e(TAG, "Falha ao copiar asset $assetPath", e)
     }
+  }
+
+  // Cópia para o disco com marcador de cópia completa (5.6): uma cópia interrompida é refeita no
+  // próximo carregamento, em vez de deixar a pasta incompleta para sempre.
+  private fun loadModel(): Model {
+    val destDir =
+        CopiaDeAssets.garantir(
+            origem = MODEL_DIR,
+            destinoRaiz = context.getExternalFilesDir(null) ?: context.filesDir,
+            listar = { context.assets.list(it) },
+            abrir = { context.assets.open(it) },
+        )
+    return Model(destDir.absolutePath)
   }
 }

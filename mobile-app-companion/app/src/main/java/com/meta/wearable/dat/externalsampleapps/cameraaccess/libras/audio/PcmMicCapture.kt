@@ -52,11 +52,22 @@ import kotlinx.coroutines.flow.asStateFlow
  */
 class PcmMicCapture(
     context: Context,
-    private val audioSource: Int,
-    private val preferredDeviceType: Int,
+    audioSource: Int,
+    preferredDeviceType: Int,
 ) {
   // Guardado como applicationContext — esta classe não tem ciclo de vida, nunca deve reter Activity.
   private val context: Context = context.applicationContext
+
+  // Trocáveis entre escutas (docs/prontidao-demo/05 §5.2: microfone do celular ou dos óculos). Valem
+  // a partir do próximo startRecording().
+  @Volatile private var audioSource: Int = audioSource
+  @Volatile private var preferredDeviceType: Int = preferredDeviceType
+
+  /** Troca a fonte e o dispositivo preferido; vale na próxima gravação. */
+  fun configurar(audioSource: Int, preferredDeviceType: Int) {
+    this.audioSource = audioSource
+    this.preferredDeviceType = preferredDeviceType
+  }
 
   companion object {
     private const val TAG = "Libras:PcmMicCapture"

@@ -53,6 +53,15 @@ Escritos antes do código. Cada um tem um estado de implementação.
 | [`vlibras-webview-plano.md`](vlibras-webview-plano.md) | **implementado até a tela** — avatar VLibras em WebView, fechando o estado ⑦ (Fases 1, 4 e 5). Faltam o espelho offline do dicionário (3.5) e a medição em aparelho ARM |
 | [`PLANO-CORRECOES.md`](PLANO-CORRECOES.md) | plano de correções de 2026-09-09, em duas frentes |
 
+## Demo do hackathon (16/09/2026)
+
+| Documento | Assunto |
+|---|---|
+| [`prontidao-demo/`](prontidao-demo/README.md) | **plano de implementação**: decisões do time ponto a ponto, prioridades (P0/P1/P2) e ondas |
+| [`guia-de-testes-mock-e-oculos.md`](guia-de-testes-mock-e-oculos.md) | como testar o app com o `MockDeviceKit` e com os óculos em mãos; ensaio geral |
+| [`modelo-visao-pontos-de-teste.md`](modelo-visao-pontos-de-teste.md) | o que testar no ST-GCN antes de entregá-lo ao app |
+| [`riscos-demo-2026-09-13.md`](riscos-demo-2026-09-13.md) | o diagnóstico que originou o plano (fotografia datada) |
+
 ## Investigações e relatórios datados
 
 Fotografias de um momento. Não são atualizados — são consultados pelo que mediram.

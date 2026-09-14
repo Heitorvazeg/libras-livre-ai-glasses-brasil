@@ -32,6 +32,8 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Refresh
+import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.dialogo.AcaoBotao
+import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.dialogo.BotaoPrincipal
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
@@ -71,6 +73,10 @@ fun AvatarScreen(
     onTentarDeNovo: () -> Unit,
     onPausar: () -> Unit,
     onRetomar: () -> Unit,
+    // Botão principal dentro da tela do avatar (docs/prontidao-demo/09 §9.2): "Pular" no ⑦, "Iniciar"
+    // depois. Null esconde o botão.
+    botaoPrincipal: BotaoPrincipal? = null,
+    onBotaoPrincipal: (AcaoBotao) -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
   // Congela o Unity com o app em background — ele desenha a 30 fps mesmo sem ninguém olhando.
@@ -102,6 +108,15 @@ fun AvatarScreen(
         }
 
         Legenda(texto = legenda)
+
+        botaoPrincipal?.let {
+          BotaoPrincipalGrande(
+              botao = it,
+              onAcao = onBotaoPrincipal,
+              modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
+              tag = "botao_principal_avatar",
+          )
+        }
       }
 
       CircleButton(

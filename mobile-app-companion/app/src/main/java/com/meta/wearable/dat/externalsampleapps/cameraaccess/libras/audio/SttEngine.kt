@@ -22,8 +22,12 @@ interface SttEngine {
    * Começa a escutar. [onResult] é chamado no máximo uma vez com a transcrição; [onError] no
    * máximo uma vez se a captura falhar ou não render nada. Deve ser chamado a partir da main
    * thread (SpeechRecognizer exige um Looper).
+   *
+   * [onFimDeFala] é chamado na main quando o motor detecta o fim de um enunciado com texto — é o
+   * avanço automático ⑤ -> ⑥ (docs/prontidao-demo/04 §4.1). Quem recebe decide encerrar com [stop].
+   * Motores sem essa detecção simplesmente não o chamam.
    */
-  fun start(onResult: (String) -> Unit, onError: (Throwable) -> Unit)
+  fun start(onResult: (String) -> Unit, onError: (Throwable) -> Unit, onFimDeFala: () -> Unit = {})
 
   /**
    * Encerra a escuta agora — o áudio capturado até aqui é finalizado como se o atendente tivesse

@@ -34,7 +34,7 @@ class AndroidSpeechRecognizerSttEngine(context: Context) : SttEngine {
     private const val TAG = "Libras:SttEngine"
   }
 
-  override fun start(onResult: (String) -> Unit, onError: (Throwable) -> Unit) {
+  override fun start(onResult: (String) -> Unit, onError: (Throwable) -> Unit, onFimDeFala: () -> Unit) {
     if (!SpeechRecognizer.isRecognitionAvailable(context)) {
       onError(IllegalStateException("SpeechRecognizer indisponível neste aparelho"))
       return
