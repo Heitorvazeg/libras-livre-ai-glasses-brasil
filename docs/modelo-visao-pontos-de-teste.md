@@ -1,5 +1,9 @@
 # Modelo de visão: o que testar antes de entregar ao app
 
+> **Atualização de 14/09:** consulte a [revalidação e ordem de execução vigente](validacao-visao-app-2026-09-14.md).
+> O original abaixo é preservado como especificação histórica: receita M1,
+> interpretação temporal, limiar/calibração e alcance dos testes têm ressalvas.
+
 **Data:** 2026-09-13 · **Para:** quem vai mexer no ST-GCN (`computer-vision-model/treino/`)
 **Contexto:** [plano de prontidão da demo](prontidao-demo/README.md), em especial o
 [ponto 2](prontidao-demo/02-classificador.md)

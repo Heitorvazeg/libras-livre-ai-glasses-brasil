@@ -31,8 +31,9 @@ modelo que precisa virar `.tflite` no celular, empatar com 1/24 do tamanho decid
 
 Duas ressalvas que precisam acompanhar qualquer citação desses números:
 
-1. **A variância entre execuções é de ~1,7 ponto.** Diferença menor que ~2 pontos é
-   ruído, não resultado.
+1. **Foi observada variação de ~1,7 ponto entre execuções.** Isso não estabelece
+   um corte estatístico de 2 pp; comparar execuções pareadas e respeitar o
+   agrupamento por pessoa. Ver a [revalidação](../../docs/validacao-visao-app-2026-09-14.md).
 2. **É tudo vídeo de estúdio**, frontal e controlado. Teto otimista. Robustez a
    mudança de ponto de vista segue não medida — nenhuma base pública nossa tem
    vídeo fora do frontal de estúdio.
@@ -70,7 +71,7 @@ streaming com atenção descrita na arquitetura de produto.
 
 ### Skeleton-DML + ResNet-18 — landmarks como imagem
 
-A alternativa medida, e ainda a única exportável.
+A alternativa medida; ambas as arquiteturas possuem exportação implementada.
 
 ```
   .npy de landmarks            imagem Skeleton-DML            ResNet-18
@@ -110,6 +111,7 @@ Achado D):
 | `modelo.py` | ResNet-18 ImageNet com a cabeça trocada; salvar/carregar checkpoint |
 | `gcn.py` | ST-GCN sobre o grafo de 57 pontos — **o modelo de entrega** |
 | `treinar.py` | laço LOSO, relatório e checkpoint final |
+| [evidencias_loso.py](evidencias_loso.py) | checkpoints e logits por fold, hashes e retomada estrita |
 | `pretreinar.py` | pré-treino num corpus grande (V-LIBRASIL), sem medir acurácia |
 | `contrastivo.py` | perda SupCon e amostrador P×K, usados pelo pré-treino contrastivo |
 | `entrada_poc.py` | leitura dos landmarks MINDS empacotados, para rodar em Kaggle/Colab |
@@ -130,11 +132,14 @@ source ../PoC/.venv311/bin/activate
 python selftest.py                        # 1º: valida o encanamento (segundos)
 python treinar.py --epocas 5 --folds 1    # 2º: uma rodada curta, para ver de pé
 
-# 3º: LOSO completo da configuração de entrega (8 rodadas)
-python treinar.py --arquitetura gcn --ossos --com-z --z-recentrado
+# 3º: exemplo de controle sem pré-treino (8 rodadas; execução longa)
+python treinar.py --arquitetura gcn --ossos --com-z --z-recentrado \
+   --epocas 120 --lr 1e-3 --batch 64 --agendador cosseno --wd 1e-4 \
+   --semente 20260917 --salvar-evidencias \
+   --saida ../../experimentos-privados/controle-s20260917
 
-# 4º: treina com todas as pessoas e salva o checkpoint
-python treinar.py --arquitetura gcn --ossos --com-z --z-recentrado --final
+# 4º: definir política de época/seed e calibrar antes do treino final.
+# --final não é avaliação independente e não aceita --salvar-evidencias.
 ```
 
 Para a ResNet-18, basta omitir `--arquitetura` (é o padrão). Saídas em
@@ -150,6 +155,67 @@ os antigos continuam aceitos.
 > execuções **anteriores** à configuração de entrega — `resultados-gcn/relatorio.md`
 > registra os 44,6% da sessão de 09/09. Os números atuais estão em
 > [`../../docs/decisao-arquitetura-modelo.md`](../../docs/decisao-arquitetura-modelo.md).
+
+### Evidências LOSO e retomada estrita
+
+`--salvar-evidencias` preserva, para cada fold concluído, o **melhor modelo
+selecionado na validação**, não o último estado da otimização. O JSON de rodada
+continua no formato consumido pelos notebooks; os arquivos maiores ficam numa
+subpasta para não interferir nos leitores de `rodadas/*.json`:
+
+```text
+rodadas/01-M01.json
+rodadas/artefatos/01-M01.pt
+rodadas/artefatos/01-M01.evidencias.json
+```
+
+São registrados logits não calibrados de validação e teste, rótulos na ordem
+do modelo, índices verdadeiros/preditos, IDs dos clipes, pessoas e partições,
+melhor época (base 1), configuração, representação e hashes de dados, código,
+backbone e ambiente. O checkpoint carrega com `modelo.carregar()` e fornece os
+metadados exigidos pelo exportador. Não publicar esses artefatos privados.
+
+O marcador de rodada é publicado **por último**, após os dois artefatos,
+por substituição de arquivos temporários no mesmo filesystem. Isso protege contra
+marcadores incompletos em interrupções usuais; não é transação com garantia contra
+queda de energia. Não executar dois escritores na mesma saída. Uma interrupção
+antes do marcador exige refazer o fold inteiro: não há retomada de otimizador ou
+de época intermediária.
+
+Ao repetir o comando com a flag, todos os folds selecionados já presentes passam
+por conferência de identidade, partição, hashes, logits e predições antes de novo
+treino. Legados sem evidências e arquivos ausentes/adulterados são recusados, sem
+apagá-los. Escolher uma saída nova em vez de misturar protocolos. Uma execução
+que já tem evidências não pode ser reaproveitada omitindo a flag. Sem ela, saídas
+legadas continuam com suas verificações antigas, não com garantia equivalente.
+
+Mudanças em código-fonte, versões, dados, backbone ou parâmetros (inclusive
+dispositivo, threads e workers) invalidam a identidade estrita. `--folds` e
+`--saida` não alteram essa identidade; caminhos de dados/backbone podem mudar se
+o conteúdo inventariado continuar igual. Para retomar, conservar o snapshot de
+código/ambiente original. Hash não é assinatura contra adulteração maliciosa.
+
+Receita candidata com pré-treino (a partir desta pasta; **não executada nesta
+implementação**; substituir os caminhos por insumos aprovados):
+
+```bash
+python treinar.py --arquitetura gcn --ossos --com-z --z-recentrado \
+   --fontes minds --landmarks /caminho/privado/landmarks-minds \
+   --inicializar /caminho/privado/backbone_gcn.pt \
+   --epocas 120 --lr 1e-3 --wd 1e-4 --batch 64 --agendador cosseno \
+   --semente 20260917 --kernel-temporal 9 --folds 0 \
+   --dispositivo cuda --threads 2 --workers 2 --salvar-evidencias \
+   --saida ../../experimentos-privados/candidato-s20260917
+```
+
+O backbone deve corresponder à receita V-LIBRASIL+MALTA, extras=0, sem WLASL do
+[plano vigente](../../docs/validacao-visao-app-2026-09-14.md), não apenas ter um
+nome semelhante. Um controle pareado mantém tudo igual exceto inicialização e
+saída. O notebook da PoC não foi convertido automaticamente para essa receita.
+
+Regressões em [test_evidencias_loso.py](test_evidencias_loso.py), também chamadas
+pelo [selftest.py](selftest.py): recarga e logits, igualdade exata de pesos/RNG,
+retomada sem retreino, compatibilidade do glob legado e rejeição de inconsistências.
 
 ### Pré-treino
 
@@ -239,12 +305,10 @@ usável (padrão 10 de 12).
 
 ## Exportação para TFLite (`exportar.py`)
 
-O caminho PyTorch → `.tflite` existe e está validado para a **ResNet-18**.
-
-> **O ST-GCN ainda não tem export, e isso é o principal bloqueio do projeto.**
-> `exportar.py` só constrói o grafo da cabeça Skeleton-DML. Portar o ST-GCN exige
-> calcular os **ossos dentro do grafo** — hoje isso acontece em Python, no
-> `DatasetSinais`. É trabalho novo, não uma flag.
+O caminho PyTorch → `.tflite` está implementado para **ResNet-18 e ST-GCN**.
+A cabeça GCN inclui ossos, z recentrado, imputação e reamostragem. O smoke
+valida conversão e contrato, não acurácia do modelo treinado no app. Ver
+[plano integrado de validação](../../docs/validacao-visao-app-2026-09-14.md).
 
 ```bash
 python exportar.py --smoke                      # valida o toolchain, sem checkpoint
@@ -253,13 +317,15 @@ python exportar.py --checkpoint resultados-resnet/modelo_final.pt \
 python exportar.py --checkpoint ... --quantizacao float16
 ```
 
-Requer `pip install "torch<2.10" ai-edge-torch` — com torch mais novo o pip resolve
-`ai-edge-torch` para a 0.2.0, que depende de `torch_xla` e quebra com
-`undefined symbol`.
+O backend `ai-edge` tenta `litert_torch` e mantém compatibilidade com
+`ai_edge_torch`. A trilha do app registrou torch 2.13 + litert-torch 0.9.4 +
+torchvision 0.28 em 13/09; isso não significa que qualquer combinação instalada
+funcione. Registrar versões e executar paridade antes de entregar cada artefato.
 
 ### O contrato de entrada é `landmarks`, não imagem
 
-O `.tflite` recebe `(1, T, P, 2)`, com **P derivado do checkpoint** (mapa ordenado de
+O `.tflite` recebe `(1, T, P, D)`, com D=2 para a ResNet e D=2 ou 3 para o GCN,
+conforme a representação salva, e **P derivado do checkpoint** (mapa ordenado de
 pose mais 42 pontos de mãos; atualmente 15 + 21 + 21 = **57**), e devolve os logits:
 a montagem do Skeleton-DML vai **dentro do grafo**. O modo `--modo imagem` existe,
 mas joga para o app a tarefa de reproduzir transposição, empilhamento de 3 frames por
@@ -277,18 +343,15 @@ precisam concordar com esse contrato, e a saída precisa ter um logit por rótul
 Arquivos só devem ser entregues se o comando terminar com sucesso. O lado do app está
 em [contrato de integração no companion](../../mobile-app-companion/README.md#5-contrato-do-classificador-tflite).
 
-**T é fixo no grafo exportado** (padrão 96 frames). No treino T varia por clipe (70 a
-232) e o resize para 224 absorve; na exportação o app precisa entregar exatamente T
-frames. O contrato contém `temporal.dinamico=false`, `reamostragem_embutida=false` e
-`frames_fixos`. Não há padding, recorte de sinais nem reamostragem embutidos no grafo;
-normalização e imputação também ficam de fora. Escolher uma janela de 96 frames não
-equivale a validar segmentação — a política de adaptação temporal precisa ser medida
-com dado real antes do deploy.
+**T é fixo no grafo exportado** (padrão 96 frames). O GCN reamostra internamente
+para 64 e pode imputar mãos; a ResNet usa a representação Skeleton-DML e resize.
+Normalização por ombros e segmentação ficam no app. O sidecar descreve o caminho
+efetivamente exportado, não um contrato único de ResNet aplicado ao GCN.
+O app imputa antes de reamostrar pelo tempo; o efeito da composição com a cabeça
+precisa ser medido com dados reais, inclusive lacunas e frames irregulares.
 
-**Exportação 3D não suportada:** checkpoints com `com_z`, `z_recentrado` ou limite de
-z são recusados nos dois modos, e a cabeça rejeita diretamente entrada com três
-coordenadas em vez de cortar z em silêncio. Isto vale inclusive para a configuração de
-entrega do ST-GCN, que usa z — mais um item do trabalho de export pendente.
+**Exportação 3D:** suportada no GCN com as flags explícitas do checkpoint.
+A restrição de coordenadas 3D permanece no caminho ResNet, não no GCN.
 
 ### Paridade medida com `--smoke`
 
@@ -346,7 +409,9 @@ então serve melhor como teste de domínio diferente do que como treino. Ver
 
 ## Próximo passo previsto
 
-1. **Export do ST-GCN** — o bloqueio entre a decisão de arquitetura e o aparelho.
+1. **Validação do ST-GCN treinado no app** — preservar folds/logits, verificar
+   paridade com pesos reais e comparar Holistic × Tasks conforme o
+   [plano integrado](../../docs/validacao-visao-app-2026-09-14.md).
 2. **Fine-tuning no vocabulário de atendimento**, com vídeos próprios (coleta com a
    Associação de Surdos de Goiânia). O `--final` salva o checkpoint pré-treinado
    justamente para isso: se o fine-tuning não render, o modelo geral continua de pé.

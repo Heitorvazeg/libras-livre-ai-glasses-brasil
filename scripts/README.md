@@ -1,5 +1,163 @@
 # Coleta de LIBRAS por fontes documentadas
 
+## Validação integrada: paridade e piloto offline
+
+O [plano vigente](../docs/validacao-visao-app-2026-09-14.md) separa paridade
+numérica, avaliação held-out e comparação dos detectores.
+
+[fixture_paridade_classificador.py](fixture_paridade_classificador.py) aceita
+`--checkpoint` GCN confiável. Sem ele, continua smoke com pesos aleatórios.
+Exemplo a partir da raiz, num ambiente Python com as dependências de treino:
+
+```bash
+python scripts/fixture_paridade_classificador.py \
+	--checkpoint /caminho/privado/rodadas/artefatos/01-M01.pt \
+	--saida experimentos-privados/paridade-M01 --somente-pytorch
+```
+
+A saída real deve estar vazia e dentro de `experimentos-privados/` ou fora do
+repositório. A fixture registra hash do checkpoint, representação, rótulos e
+`entrada_sintetica=true`. O modo `--somente-pytorch` grava referências, mas declara
+`tflite_validado=false` e não gera modelo/sidecar TFLite: não serve para execução
+Android. Remover a flag exige ambiente compatível com o conversor e runtime do
+exportador; a conversão é conferida antes de declarar sucesso.
+
+O teste instrumentado lê o nome do modelo da fixture, em vez de fixar smoke.
+Para uma execução Android privada, usar a propriedade Gradle
+`-PlibrasLivre.classificadorFixtures=/caminho/absoluto/privado` com o conjunto
+completo de fixture, modelo e sidecar. Exige diretório existente dentro da área
+privada do workspace ou fora do repositório; caminhos relativos/versionados são
+recusados. Substitui os assets de `androidTest` (não mescla com o smoke) e passa
+o mesmo JSON ao teste JVM. O gerador não copia nada para assets versionados.
+Não publicar pesos, APKs de teste, caches ou relatórios privados.
+Esse opt-in exclui outras fixtures de mídia: filtrar para `ParidadeCaminhoAppTest`
+no JVM e `ClassificadorSmokeTest` no instrumentado. Sem a propriedade, mantém smoke.
+Mesmo com pesos reais, entradas sintéticas não medem LOSO, detector, segmentação,
+robustez ao uso dos óculos ou calibração. Margem baixa pode pular a checagem top-1;
+a comparação de logits continua obrigatória.
+
+[preparar_piloto_tasks.py](preparar_piloto_tasks.py) é **inventário offline**, não
+extrator. Relaciona os vídeos e landmarks de uma pessoa MINDS pelo ID, calcula
+SHA-256 e lista ausências/ambiguidades e modelos Tasks. Não baixa, não sobrescreve
+dados originais, não carrega checkpoints, não treina e não faz inferência:
+
+```bash
+python scripts/preparar_piloto_tasks.py --pessoa M01 \
+	--saida experimentos-privados/piloto-M01/inventario.json
+```
+
+Pode receber `--videos`, `--landmarks`, `--pose-model` e `--hand-model` explícitos.
+Exige saída privada nova e Python 3.11+. Exit 0 significa inventário escrito,
+**não piloto liberado**: conferir `bloqueios`, `extracao_executada=false` e
+`avaliacao_executada=false`. Presença/hash do modelo não comprovam validade nem
+identidade com o asset aprovado no app. O manifesto contém caminhos privados.
+
+Testes: [test_fixture_paridade_classificador.py](test_fixture_paridade_classificador.py)
+e [test_preparar_piloto_tasks.py](test_preparar_piloto_tasks.py).
+
+### Extração real 	pareada de um subconjunto
+
+[extrair_piloto_tasks.py](extrair_piloto_tasks.py) executa Tasks e Holistic nos
+mesmos frames, a partir de um inventário com modelos presentes e hashes válidos.
+Requer NumPy, OpenCV, MediaPipe com `solutions.holistic` **e** Tasks, e ffprobe.
+Validado em MediaPipe 0.10.14/Python 3.12.3, sem instalação de novos pacotes.
+
+```bash
+python scripts/extrair_piloto_tasks.py --inventario /privado/inventario-com-modelos.json \
+	--saida experimentos-privados/piloto-prova --max-clipes 1
+```
+
+Sem `--max-clipes`, processa todos os pares do inventário. A saída deve ser
+privada e inexistente; não há retomada implícita. Salva NPZ com os dois pipelines,
+PTS/índices de todos os frames e máscaras para ausências, mais JSON com hashes,
+contrato, cobertura e falhas. Não remove fontes, não imputa arrays, não treina e
+não mede acurácia. Exit 0 e `extracao_completa=true` significam somente que todos
+os clipes **solicitados** foram extraídos sem falhas (um limite de 1 não prova 100).
+
+Testes: [test_extrair_piloto_tasks.py](test_extrair_piloto_tasks.py).
+Insumos fixados, diferenças para Android/legado e execução M01 no
+[registro do piloto](../docs/piloto-tasks-holistic-M01-2026-09-14.md).
+
+### Comparação no mesmo checkpoint held-out
+
+[avaliar_piloto_tasks.py](avaliar_piloto_tasks.py) recebe o **marcador de rodada**,
+não um backbone ou `--final`. Confere hashes do checkpoint/evidências, pessoas
+disjuntas, IDs completos do teste, configuração e identidade de código/ambiente.
+Reproduz os logits históricos de validação e teste com tolerância absoluta `1e-5`
+e top-1 idêntico antes de avaliar novas extrações. Exige landmarks históricos das
+duas pessoas; não recalcula/seleciona a melhor época.
+
+```bash
+python scripts/avaliar_piloto_tasks.py \
+	--rodada /privado/loso/rodadas/01-M01.json \
+	--extracao /privado/extracao-M01 \
+	--landmarks /privado/landmarks-historicos \
+	--saida experimentos-privados/comparacao-nova
+```
+
+São sete braços: histórico/Holistic novo/Tasks no `DatasetSinais` do treino,
+mais Holistic novo/Tasks com imputação externa e reamostragem índice ou PTS para
+96 frames antes da cabeça do exportador. Índice96 × PTS96 mantém o restante igual;
+treino × índice96 combina operações, não isola somente tempo. É simulação Python
+em clipes já recortados, **não execução Android/TFLite/segmentação**.
+
+O relatório privado contém logits, matrizes, erros por sinal, concordâncias,
+reprodução histórica, segunda imputação ativa e diagnóstico **fixo** do limiar
+0,60 com T=1, não calibrado. Nenhum parâmetro é ajustado ao teste. PTS não são
+uptime/captura dos óculos; imputação por clipe não testa estado entre segmentos.
+
+Saída nova e privada obrigatória; só publica resultado quando a avaliação toda
+termina. Extração incompleta, pessoa incorreta, IDs faltantes, hash divergente,
+NPZ com máscaras/timestamps inválidos ou clipe com menos de três frames válidos
+interrompem a avaliação em vez de diminuir silenciosamente o denominador. Uma
+política futura de abstenção para esses clipes deve ser explícita.
+
+Testes em [test_avaliar_piloto_tasks.py](test_avaliar_piloto_tasks.py). O piloto M01
+foi executado nos cem clipes reais, com reprodução exata das referências; os
+[resultados](../docs/piloto-tasks-holistic-M01-2026-09-14.md) não substituem LOSO
+completo nem validação nos óculos. O comparador não altera o relatório do extrator:
+o hash desse relatório é registrado na avaliação separada.
+
+### Conversão e paridade TFLite com os clipes reais
+
+Usar ambiente **isolado**, compatível com
+[requirements-export.txt](../computer-vision-model/treino/requirements-export.txt),
+sem alterar o ambiente que produziu as evidências do treino. Gerar fixture com
+`--checkpoint` e **sem** `--somente-pytorch` em uma nova pasta privada.
+Depois [avaliar_tflite_piloto.py](avaliar_tflite_piloto.py) compara quatro braços
+do app (Holistic/Tasks × índice/PTS) em TFLite CPU, PyTorch de exportação e logits
+da avaliação anterior:
+
+```bash
+python scripts/avaliar_tflite_piloto.py \
+	--referencia /privado/avaliacao-pareada-v2/avaliacao.json \
+	--checkpoint /privado/loso-M01/rodadas/artefatos/01-M01.pt \
+	--extracao /privado/extracao-M01 \
+	--fixtures /privado/paridade-float32-v1 \
+	--saida experimentos-privados/avaliacao-tflite-nova
+```
+
+Exige referência anterior completa/confiável, hashes do código e artefatos,
+mesmos IDs do fold, contrato 1×96×57×3 float32 e saída nova privada.
+O ambiente de exportação pode diferir: registra versões e mede a diferença
+PyTorch–referência separadamente; não burla a identidade do comparador anterior.
+Verifica também as três sequências sintéticas da fixture. Tolerância `2e-3`,
+já usada pelo exportador float32; top-1 deve ser idêntico. Se houver divergência
+numérica, preserva o relatório com `paridade_aprovada=false` e termina com erro.
+Falhas de integridade interrompem antes de publicar um relatório de sucesso.
+
+Não executa Android, segmentação ou calibração e não mede latência de produção.
+O diagnóstico T=1/limiar 0,60 é mantido, não otimizado. As quatro avaliações
+reutilizam os mesmos cem clipes, não representam quatrocentos testes independentes.
+Guardas em [test_avaliar_tflite_piloto.py](test_avaliar_tflite_piloto.py).
+
+**M01 executado:** float32 desktop aprovado, 99/100 nos quatro braços, zero
+trocas top-1, maior diferença TFLite–referência 5,72205e-6. Gradle aceitou a
+configuração privada e recusou caminhos inválidos; o teste JVM do app foi tentado,
+mas bloqueado antes da compilação por SDK ausente. Nenhum teste instrumentado
+foi executado. Versões, hashes e pendências na seção 9 do
+[registro do piloto](../docs/piloto-tasks-holistic-M01-2026-09-14.md).
+
 ## Fila do consultor: aproveitar a auditoria existente
 
 [preparar_revisao_libras.py](preparar_revisao_libras.py) lê a
