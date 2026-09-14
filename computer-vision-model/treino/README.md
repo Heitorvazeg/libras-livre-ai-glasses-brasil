@@ -170,6 +170,51 @@ Nenhum número do pré-treino vai para lugar nenhum: o produto dele são os peso
 acurácia que vale sai do `treinar.py`, sobre o MINDS, com uma pessoa inteira fora.
 Ver [`../../docs/protocolo-pretreino.md`](../../docs/protocolo-pretreino.md).
 
+### PoC: negativos extras no contrastivo
+
+A branch `poc/contrastivo-negativos-extras` acrescenta `--negativos-extras N`
+a [pretreinar.py](pretreinar.py), somente com `--objetivo contrastivo`.
+O padrão **0 mantém o comportamento anterior**. Com N > 0:
+
+- Clipes de classes raras não são descartados pelo mínimo global antes da
+   partição. Apenas os da parte de **treino**, em classes com menos de K clipes
+   de treino, podem entrar como extras. MINDS, reservas, proveniência, frames e
+   exclusão de rótulos WLASL conflitantes continuam sujeitos às mesmas verificações.
+- Cada lote tem **P×K + N** clipes: o núcleo P×K habitual e **um clipe de cada
+   uma de N classes extras distintas**. Nenhum rótulo extra se repete no lote.
+   Com K > 2, isso continua obrigatório mesmo que a classe rara tenha dois clipes.
+- Extras não são âncoras da SupCon, pois não têm pares no lote; entram no
+   denominador das âncoras e recebem gradiente como negativos. A perda não mudou.
+   Não há garantia de visitar todo o pool por época. Classes podem ser reutilizadas
+   entre lotes; um pedido N maior que o número de classes disponíveis é erro.
+- O RNG dos extras é separado do núcleo: ativar a opção não muda o sorteio de
+   classes/exemplos do núcleo com a mesma semente e o mesmo conjunto de âncoras.
+- **Validação e galeria são as mesmas do controle** no mesmo corpus, mínimo e
+   pessoa reservada. Raros recuperados não expandem a métrica de recuperação usada
+   para selecionar o checkpoint, nem entram em validação.
+- A proveniência distingue `ancoras_elegiveis` e `negativos_extras_elegiveis`.
+   `otimizacao_elegiveis` inclui ambas: receber gradiente como negativo também é
+   participar da otimização. Essas listas são pools elegíveis, não um registro de
+   cada amostra sorteada. Os logs mostram o lote e as atualizações por época.
+
+**Comparação:** mantenha corpus, representação, pessoa V03, sementes, P, K,
+épocas e hiperparâmetros iguais entre controle N=0 e candidato N>0; use saídas
+distintas. O lote maior altera memória, estatísticas de BatchNorm e custo por
+passo — mesmo número de atualizações não significa mesmo custo computacional.
+O LOSO MINDS é a avaliação final; a recuperação interna não prova ganho no alvo.
+
+**Kaggle:** o notebook herdado não ativa a PoC automaticamente: aponta para a
+branch de pré-treino e não inclui `--negativos-extras`. Antes de usá-lo, publique
+a revisão da branch PoC, selecione essa branch na célula de código, acrescente
+a opção aos `PRE_ARGS` e use outro `NOME_EXPERIMENTO`. Não reutilize checkpoints
+ou folds produzidos pela implementação anterior de negativos extras. O manifesto
+do notebook detecta mudanças de código e argumentos. Não há validação GPU desta
+PoC nem lançamento automático de runs.
+
+Os testes em [test_negativos_extras.py](test_negativos_extras.py), também chamados
+pelo selftest, exercitam K=2/K=3, reciclagem, gradientes, sementes, parâmetros
+inválidos e CLI contrastiva completa com V-LIBRASIL/MALTA/WLASL sintéticos.
+
 ### Em GPU
 
 A extração de landmarks é CPU e não acelera em GPU — fica na máquina local. O

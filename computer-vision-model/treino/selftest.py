@@ -579,10 +579,14 @@ def teste_contrastivo() -> None:
         z = torch.nn.functional.normalize(torch.randn(tam_lote, 16), dim=1)
         assert torch.isfinite(ct.perda_supcon(z, y)), "extras quebraram a perda"
 
-    # Pool de extras menor que o necessário na época: precisa reciclar, não
-    # emitir menos que negativos_extras por lote (senão desalinha __len__).
+    # Reutilizar entre lotes é permitido; nunca repetir rótulo no mesmo lote,
+    # mesmo quando a época pede mais negativos do que o pool tem.
     am3 = ct.AmostradorPK(rotulos_ext, p=8, k=2, semente=0, negativos_extras=15)
-    assert len(list(am3)) == len(am3)
+    indices3 = list(am3)
+    assert len(indices3) == len(am3)
+    for i in range(0, len(indices3), 31):
+        extras = [rotulos_ext[j] for j in indices3[i + 16:i + 31]]
+        assert len(set(extras)) == 15, "extra repetido passou a formar par positivo"
 
     try:
         ct.AmostradorPK(rotulos, p=8, k=2, semente=0, negativos_extras=1)
@@ -717,6 +721,12 @@ def teste_export_contrato() -> None:
     _ok("export: contrato derivado do checkpoint, CLI e sidecar coerentes")
 
 
+def teste_negativos_extras() -> None:
+    from test_negativos_extras import executar
+    executar()
+    _ok("negativos extras: rótulos distintos, raros de treino, SupCon e proveniência")
+
+
 TESTES = [
     ("Skeleton-DML (representação)", teste_representacao),
     ("espelhamento esquerda/direita", teste_espelho),
@@ -733,6 +743,7 @@ TESTES = [
     ("controle negativo (rótulo aleatório)", teste_controle_negativo),
     ("contrastivo: perda e amostrador", teste_contrastivo),
     ("contrastivo: pré-treino ponta a ponta", teste_pretreino_contrastivo_ponta_a_ponta),
+    ("contrastivo: negativos extras ponta a ponta", teste_negativos_extras),
     ("controle negativo ST-GCN", teste_gcn_controle_negativo),
     ("checkpoints GCN e ResNet", teste_checkpoints),
     ("export: cabeça Skeleton-DML", teste_export_cabeca),

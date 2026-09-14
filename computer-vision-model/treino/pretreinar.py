@@ -34,6 +34,7 @@ Depois:
 from __future__ import annotations
 
 import argparse
+from collections import Counter
 import json
 import sys
 import time
@@ -296,7 +297,9 @@ def main() -> None:
                     help="PoC (branch poc/contrastivo-negativos-extras): quantos clipes de "
                          "classes com < k-exemplos entram por lote só como negativo — nunca "
                          "âncora de par positivo, mas contam no denominador do SupCon das "
-                         "outras âncoras. Reaproveita o que hoje é descartado (padrão: 0, "
+                         "outras âncoras. Um rótulo distinto por extra; pedido acima do pool "
+                         "é erro. Retém classes raras só do treino, mantendo validação e galeria "
+                         "do controle (padrão: 0, "
                          "desligado, comportamento idêntico ao anterior).")
     ap.add_argument("--temperatura", type=float, default=0.07)
     ap.add_argument("--pessoa-val",
@@ -345,6 +348,12 @@ def main() -> None:
         ap.error("--avaliacao deve apontar para landmarks existentes; isolamento não pode usar pasta vazia")
     if args.negativos_extras and args.objetivo != "contrastivo":
         ap.error("--negativos-extras exige --objetivo contrastivo")
+    if args.negativos_extras < 0:
+        ap.error("--negativos-extras deve ser >= 0")
+    if args.objetivo == "contrastivo" and (args.p_classes < 1 or args.k_exemplos < 2):
+        ap.error("contrastivo exige --p-classes >= 1 e --k-exemplos >= 2")
+    if args.min_clipes_por_classe < 1 or args.semente < 0:
+        ap.error("--min-clipes-por-classe >= 1 e --semente >= 0 são obrigatórios")
 
     torch.set_num_threads(args.threads)
     if args.dispositivo == "auto":
@@ -354,7 +363,9 @@ def main() -> None:
 
     auditoria: dict = {}
     try:
-        clipes = carregar_corpora(args.corpus, args.min_clipes_por_classe,
+        # Com extras, preservar raros até separar a pessoa de validação. Auditoria,
+        # exclusão ASL e filtro de frames permanecem obrigatórios na carga.
+        clipes = carregar_corpora(args.corpus, 1 if args.negativos_extras else args.min_clipes_por_classe,
                                   fontes=args.fontes,
                                   com_z=args.com_z, z_recentrado=args.z_recentrado,
                                   imputar=not args.sem_imputacao,
@@ -366,14 +377,30 @@ def main() -> None:
         raise SystemExit("corpus vazio — confira os diretórios passados em --corpus")
     print(f"[auditoria] OK: {len(auditoria['amostras'])} amostras sem sobreposição; "
           f"manifesto {auditoria['manifesto_corpus_sha256']}")
-    if args.auditar:
+    if args.auditar and not args.negativos_extras:
         return
     if args.epocas < 1 or args.batch < 2 or not 0 < args.fracao_val < 1:
         raise SystemExit("epocas >= 1, batch >= 2 e 0 < fracao-val < 1 são obrigatórios")
-    rotulos = dd.rotulos(clipes)
+    galeria = []
     if args.objetivo == "contrastivo":
-        pessoa_val = args.pessoa_val or sorted(dd.pessoas(clipes))[-1]
-        treino, val = separar_por_pessoa(clipes, pessoa_val)
+        contagem = Counter(c.sinal for c in clipes)
+        base = [c for c in clipes if contagem[c.sinal] >= args.min_clipes_por_classe]
+        if not base:
+            raise SystemExit("corpus sem classes suficientes para o controle contrastivo")
+        pessoa_val = args.pessoa_val or sorted(dd.pessoas(base))[-1]
+        treino, val = separar_por_pessoa(base, pessoa_val)
+        galeria = list(treino)
+        if args.negativos_extras:
+            contagem_treino = Counter(c.sinal for c in clipes if c.pessoa != pessoa_val)
+            recuperados = [c for c in clipes if c.pessoa != pessoa_val
+                          and contagem[c.sinal] < args.min_clipes_por_classe
+                          and contagem_treino[c.sinal] < args.k_exemplos]
+            # Acrescenta sem reordenar os clipes do controle. Não expande consultas
+            # ou galeria: isso mudaria também a métrica de seleção do checkpoint.
+            treino += recuperados
+            clipes = treino + val
+            print(f"[pretreino] {len(recuperados)} clipes raros recuperados só para negativos; "
+                  "validação e galeria mantidas como no controle")
         if not val:
             raise SystemExit(f"pessoa de validação {pessoa_val!r} não existe no corpus")
         print(f"[pretreino] validação = articulador {pessoa_val} inteiro "
@@ -382,9 +409,29 @@ def main() -> None:
         treino, val = separar(clipes, args.fracao_val, args.semente)
     if not treino or not val:
         raise SystemExit("partição de treino/validação vazia")
+    rotulos = dd.rotulos(clipes)
     print(f"[pretreino] {len(clipes)} clipes | {len(rotulos)} classes | "
           f"{len(dd.pessoas(clipes))} pessoas | treino {len(treino)} / val {len(val)} | "
           f"arquitetura={args.arquitetura} dispositivo={disp}")
+
+    # Conferir o pool ANTES de construir modelo/alocar GPU ou baixar pesos.
+    # --auditar com extras também verifica que a PoC pode montar seus lotes.
+    amostrador_treino = None
+    if args.objetivo == "contrastivo":
+        try:
+            amostrador_treino = ct.AmostradorPK([c.sinal for c in treino], args.p_classes,
+                                               args.k_exemplos, args.semente,
+                                               negativos_extras=args.negativos_extras)
+        except ValueError as erro:
+            raise SystemExit(f"[contrastivo] {erro}") from erro
+        if args.negativos_extras:
+            print(f"[contrastivo] lote: {amostrador_treino.p}×{args.k_exemplos} + "
+                  f"{args.negativos_extras} extras; {amostrador_treino.lotes_por_epoca} "
+                  "atualizações por época; "
+                  f"pool: {len(amostrador_treino.classes_extras)} classes / "
+                  f"{sum(map(len, amostrador_treino.extras_por_classe.values()))} clipes")
+    if args.auditar:
+        return
 
     import yaml
     cfg = yaml.safe_load((AQUI.parent / "PoC" / "config.yaml").read_text(encoding="utf-8"))
@@ -419,9 +466,7 @@ def main() -> None:
         if args.objetivo == "contrastivo" and shuffle:
             # Lotes P×K: sem eles, um corpus de 1.353 classes quase nunca colocaria
             # dois clipes da mesma palavra no mesmo lote, e não haveria par positivo.
-            amostrador = ct.AmostradorPK([c.sinal for c in cl], args.p_classes,
-                                         args.k_exemplos, args.semente,
-                                         negativos_extras=args.negativos_extras)
+            amostrador = amostrador_treino
             # batch_size precisa cobrir os índices extras também: DataLoader agrupa
             # N índices CONSECUTIVOS do sampler em cada lote (ver __iter__/__len__).
             return DataLoader(ds, batch_size=amostrador.p * amostrador.k + amostrador.negativos_extras,
@@ -432,20 +477,24 @@ def main() -> None:
     l_treino, l_val = loader(treino, True, True), loader(val, False, False)
     if len(l_treino) == 0:
         raise SystemExit("nenhum lote de treino válido após amostragem")
-    # Galeria: os clipes de treino SEM augmentação, para a métrica de recuperação.
-    l_galeria = loader(treino, False, False) if args.objetivo == "contrastivo" else None
+    # Galeria de controle SEM augmentação e sem expandir com os raros recuperados.
+    l_galeria = loader(galeria, False, False) if args.objetivo == "contrastivo" else None
 
     def ids(grupo):
         return [c.proveniencia["id"] for c in grupo]
 
     elegiveis = (set(l_treino.sampler.classes) if args.objetivo == "contrastivo"
                  else set(rotulos))
+    classes_extras = (set(l_treino.sampler.classes_extras) if args.negativos_extras else set())
     particao = {"metodo": "por_pessoa" if args.objetivo == "contrastivo" else "aleatoria",
                 "treino": ids(treino), "validacao": ids(val), "teste": [],
-                "galeria": ids(treino) if l_galeria is not None else [],
-                "otimizacao_elegiveis": ids([c for c in treino if c.sinal in elegiveis]),
+                "galeria": ids(galeria),
+                "otimizacao_elegiveis": ids([c for c in treino if c.sinal in elegiveis | classes_extras]),
                 "descartadas": [r["id"] for r in auditoria["amostras"]
                                 if r["id"] not in set(ids(clipes))]}
+    if args.negativos_extras:
+        particao["ancoras_elegiveis"] = ids([c for c in treino if c.sinal in elegiveis])
+        particao["negativos_extras_elegiveis"] = ids([c for c in treino if c.sinal in classes_extras])
     procedencia = mm.proveniencia_execucao(cfg, auditoria, particao, vars(args))
 
     melhor = -1.0 if args.objetivo == "contrastivo" else float("inf")
