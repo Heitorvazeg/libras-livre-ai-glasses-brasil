@@ -1,16 +1,15 @@
 /*
- * O fluxo do atendimento pela tela, com os óculos simulados (docs/prontidao-demo, onda 1).
+ * O fluxo do atendimento pela tela, com os óculos simulados (docs/prontidao-demo, ondas 1 e 3).
  *
- * Cobre o que dá para provar sem voz e sem uma pessoa no vídeo:
- *   - 3.1: "Iniciar" sem preview abre a captura com "Aguarde…", sem o erro falso do MediaPipe.
- *     Onde a biblioteca nativa do MediaPipe não existe (emulador só x86_64), o erro é verdadeiro e
- *     o teste confere que ele aparece e não prende a captura;
+ * Cobre o que dá para provar sem voz e sem sinais reconhecidos (o plant.mp4 não tem pessoa):
+ *   - 3.1: o botão principal ("Iniciar"), sem preview, abre a captura com "Aguarde…", sem o erro falso
+ *     do MediaPipe (onde a biblioteca nativa não existe, confere que o erro aparece e não prende nada);
  *   - 7.1: a janela pede tela ligada enquanto há sessão com os óculos, e deixa de pedir sem ela;
- *   - 5.2: a escuta do ⑤ funciona sem nenhum dispositivo Bluetooth. Antes, sem SCO, ela voltava
- *     ao ④ na hora, sem escutar.
+ *   - 2.8 e 4.7: "Encerrar agora" sem nenhum sinal pede repetição — o aviso é falado, a captura reabre
+ *     com a câmera ligada — e a terceira rejeição seguida desiste e volta ao ①.
  *
- * O resto da volta (frase falada, transcrição com texto, avatar) depende de sinais reconhecidos e
- * de fala, e fica nos cenários manuais do guia de testes.
+ * O caminho até a escuta (⑤) só existe quando uma frase é aceita, o que exige sinais: fica nos
+ * cenários manuais do guia de testes (A5), junto com a transcrição e o avatar.
  */
 package com.meta.wearable.dat.externalsampleapps.cameraaccess.libras
 
@@ -54,6 +53,8 @@ class FluxoOnda1Test {
 
   companion object {
     private const val TIMEOUT = 20_000L
+    // Os avisos do "repita" são falados pelo Piper; a primeira fala carrega o modelo.
+    private const val TIMEOUT_FALA = 90_000L
   }
 
   @get:Rule val composeTestRule = createAndroidComposeRule<MainActivity>()
@@ -83,21 +84,78 @@ class FluxoOnda1Test {
   }
 
   @Test
-  fun iniciarSemPreviewCapturaTelaFicaLigadaEEscutaSemBluetooth() {
+  fun capturaSemSinaisPedeRepeticaoAteDesistirComATelaLigada() {
     parearOculos()
     composeTestRule.waitUntilExactlyOneExists(hasTestTag("start_session_button").and(isEnabled()), TIMEOUT)
     assertEquals("sem sessão a tela pode apagar", false, telaLigadaPedida())
 
     composeTestRule.onNodeWithTag("start_session_button").performClick()
-    composeTestRule.waitUntilExactlyOneExists(hasTestTag("wake_word_iniciar_button").and(isEnabled()), TIMEOUT)
+    composeTestRule.waitUntilExactlyOneExists(hasTestTag("botao_principal").and(isEnabled()), TIMEOUT)
     composeTestRule.waitUntil(TIMEOUT) { telaLigadaPedida() }
     // O pedido chegou ao sistema: o WindowManager está segurando a tela por uma janela do app.
     composeTestRule.waitUntil(TIMEOUT) { janelaQueSeguraATela()?.contains("MainActivity") == true }
 
-    // ① -> ② pelo botão, sem ter tocado em preview.
-    composeTestRule.onNodeWithTag("wake_word_iniciar_button").performClick()
+    // ① -> ② pelo botão principal, sem ter tocado em preview.
+    composeTestRule.onNodeWithTag("botao_principal").performClick()
     confirmarPermissaoDeCameraSePedida()
     esperarEstado("capturando_sinais")
+    conferirIndicadorDaCaptura()
+
+    // 2.8: sem nenhum sinal, "Encerrar agora" pede repetição e a captura reabre (duas vezes)...
+    val repita = targetContext.getString(R.string.conversa_decisao_repita)
+    for (vez in 1..2) {
+      composeTestRule.onNodeWithTag("botao_principal").performClick()
+      composeTestRule.waitUntil(TIMEOUT_FALA) {
+        composeTestRule.onAllNodesWithText(repita).fetchSemanticsNodes().size == vez
+      }
+      esperarEstado("capturando_sinais", TIMEOUT_FALA)
+    }
+    // ...e a terceira rejeição seguida desiste e volta ao ①.
+    composeTestRule.onNodeWithTag("botao_principal").performClick()
+    composeTestRule.waitUntilExactlyOneExists(
+        hasText(targetContext.getString(R.string.conversa_decisao_desistiu)), TIMEOUT_FALA)
+    esperarEstado("aguardando_sinal", TIMEOUT_FALA)
+
+    composeTestRule.onNodeWithTag("end_session_button").performClick()
+    composeTestRule.waitUntilExactlyOneExists(hasTestTag("start_session_button"), TIMEOUT)
+    composeTestRule.waitUntil(TIMEOUT) { !telaLigadaPedida() }
+  }
+
+  /**
+   * 4.7: com sessão ativa, a tecla de volume faz o mesmo que o botão principal; sem sessão, não é
+   * consumida pelo app. A tecla vai pelo sistema (`input keyevent`), como a de um controle Bluetooth.
+   */
+  @Test
+  fun teclaDeVolumeFazOMesmoQueOBotaoPrincipal() {
+    parearOculos()
+    composeTestRule.waitUntilExactlyOneExists(hasTestTag("start_session_button").and(isEnabled()), TIMEOUT)
+    // Sem sessão: a tecla não mexe no diálogo.
+    teclaVolume()
+    Thread.sleep(1_000)
+    esperarEstado("aguardando_sinal")
+
+    composeTestRule.onNodeWithTag("start_session_button").performClick()
+    composeTestRule.waitUntilExactlyOneExists(hasTestTag("botao_principal").and(isEnabled()), TIMEOUT)
+    // ① -> ② pela tecla.
+    teclaVolume()
+    confirmarPermissaoDeCameraSePedida()
+    esperarEstado("capturando_sinais")
+
+    composeTestRule.onNodeWithTag("cancelar_atendimento_button").performClick()
+    esperarEstado("aguardando_sinal")
+    composeTestRule.onNodeWithTag("end_session_button").performClick()
+    composeTestRule.waitUntilExactlyOneExists(hasTestTag("start_session_button"), TIMEOUT)
+  }
+
+  private fun teclaVolume() {
+    InstrumentationRegistry.getInstrumentation()
+        .uiAutomation
+        .executeShellCommand("input keyevent KEYCODE_VOLUME_UP")
+        .close()
+    InstrumentationRegistry.getInstrumentation().waitForIdleSync()
+  }
+
+  private fun conferirIndicadorDaCaptura() {
     if (mediapipeDisponivel()) {
       composeTestRule.waitUntilExactlyOneExists(hasText(targetContext.getString(R.string.libras_aguarde)), TIMEOUT)
       assertTrue(
@@ -105,28 +163,8 @@ class FluxoOnda1Test {
           composeTestRule.onAllNodesWithText(LandmarkPipeline.ERRO_MODELOS).fetchSemanticsNodes().isEmpty(),
       )
     } else {
-      // Sem a biblioteca nativa (emulador só x86_64), o erro é verdadeiro: tem de estar na tela,
-      // e a captura abre mesmo assim, sem prender o fluxo.
       composeTestRule.waitUntilExactlyOneExists(hasText(LandmarkPipeline.ERRO_MODELOS), TIMEOUT)
     }
-
-    // ② -> ③ -> ④: sem sinais, nada a falar.
-    composeTestRule.onNodeWithTag("wake_word_encerrar_button").performClick()
-    esperarEstado("aguardando_resposta")
-
-    // ④ -> ⑤ sem Bluetooth: fica escutando pelo microfone do celular.
-    composeTestRule.onNodeWithTag("wake_word_iniciar_button").performClick()
-    esperarEstado("escutando_atendente")
-    Thread.sleep(2_000)
-    composeTestRule.onNodeWithText(estadoTexto("escutando_atendente")).assertExists()
-
-    // ⑤ -> ⑥ -> ④: o emulador não tem fala, a transcrição volta vazia.
-    composeTestRule.onNodeWithTag("wake_word_encerrar_button").performClick()
-    esperarEstado("aguardando_resposta")
-
-    composeTestRule.onNodeWithTag("end_session_button").performClick()
-    composeTestRule.waitUntilExactlyOneExists(hasTestTag("start_session_button"), TIMEOUT)
-    composeTestRule.waitUntil(TIMEOUT) { !telaLigadaPedida() }
   }
 
   private fun parearOculos() {
@@ -152,7 +190,7 @@ class FluxoOnda1Test {
     }
   }
 
-  // O AAR do MediaPipe traz arm64-v8a, armeabi-v7a e x86, mas não x86_64.
+  // O AAR do MediaPipe até a 0.10.14 não trazia x86_64; a partir da 0.10.35 a biblioteca mudou de nome.
   private fun mediapipeDisponivel(): Boolean =
       listOf("mediapipe_tasks_vision_jni", "mediapipe_tasks_jni").any {
         runCatching { System.loadLibrary(it) }.isSuccess
@@ -160,8 +198,8 @@ class FluxoOnda1Test {
 
   private fun estadoTexto(estado: String) = targetContext.getString(R.string.dialog_state_label, estado)
 
-  private fun esperarEstado(estado: String) =
-      composeTestRule.waitUntilExactlyOneExists(hasText(estadoTexto(estado)), TIMEOUT)
+  private fun esperarEstado(estado: String, timeout: Long = TIMEOUT) =
+      composeTestRule.waitUntilExactlyOneExists(hasText(estadoTexto(estado)), timeout)
 
   // View.keepScreenOn é o que o sistema junta, a cada passada de layout, na flag de tela ligada da
   // janela. A cópia de window.attributes que a Activity expõe não recebe essa flag, então o teste

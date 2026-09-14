@@ -41,6 +41,7 @@ import android.media.AudioAttributes
 import android.media.AudioFormat
 import android.media.AudioManager
 import android.media.AudioTrack
+import android.os.SystemClock
 import android.util.Log
 import com.k2fsa.sherpa.onnx.OfflineTts
 import com.k2fsa.sherpa.onnx.OfflineTtsConfig
@@ -90,6 +91,7 @@ class PiperSherpaOnnxTtsEngine(context: Context) : TtsEngine {
       cont.invokeOnCancellation { stopped = true }
       Thread {
             var primeiroTrecho = true
+            var amostrasEscritas = 0L
             runCatching {
                   engine.generateWithCallback(text = text, sid = 0, speed = 1.0f) { samples ->
                     if (stopped) {
@@ -100,14 +102,33 @@ class PiperSherpaOnnxTtsEngine(context: Context) : TtsEngine {
                         runCatching(onInicioAudio)
                       }
                       audioTrack.write(samples, 0, samples.size, AudioTrack.WRITE_BLOCKING)
+                      amostrasEscritas += samples.size
                       1
                     }
                   }
                 }
                 .onFailure { e -> Log.e(TAG, "Falha ao gerar áudio Piper pra \"$text\"", e) }
+            esperarFimDaReproducao(audioTrack, amostrasEscritas)
             if (cont.isActive) cont.resume(Unit)
           }
           .start()
+    }
+  }
+
+  /**
+   * A geração acaba antes do som (docs/prontidao-demo/05-audio.md §5.3): o último trecho ainda está
+   * no buffer do AudioTrack. Com a escuta abrindo sozinha depois da fala (4.1), o microfone do celular
+   * pegaria o fim da própria frase. Espera a posição de reprodução alcançar o que foi escrito,
+   * olhando a cada 20 ms, com teto de duração esperada + 1 s (saída que não consome não trava).
+   */
+  private fun esperarFimDaReproducao(audioTrack: AudioTrack, amostrasEscritas: Long) {
+    if (amostrasEscritas <= 0 || stopped) return
+    val tetoMs = amostrasEscritas * 1000 / audioTrack.sampleRate + 1000
+    val inicio = SystemClock.elapsedRealtime()
+    while (!stopped &&
+        (audioTrack.playbackHeadPosition.toLong() and 0xFFFFFFFFL) < amostrasEscritas &&
+        SystemClock.elapsedRealtime() - inicio < tetoMs) {
+      Thread.sleep(20)
     }
   }
 

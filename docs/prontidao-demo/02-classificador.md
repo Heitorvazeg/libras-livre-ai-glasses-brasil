@@ -308,6 +308,26 @@ O bug "ACONTECER RUIM → Aconteceu." fica **fora** das correções.
 
 **Teste (JVM).** `TemplateGlossContextualizerTest` fixa a frase exata das 4 sequências.
 
+**Como ficou a onda 3 (2.5, 2.8, 2.9).**
+- **2.9:** a regra "querer/vontade + banheiro → ir ao banheiro" está no `TemplateGlossContextualizer`
+  do app. O `contextualization-model/modelo/template.py` (fonte de verdade da paridade) **não** a tem:
+  o caso fica num teste próprio (`roteiro da demo sai com as frases exatas`), fora da lista de
+  paridade, e a trilha precisa portá-la se quiser manter os dois iguais.
+- **2.8:** `libras/dialogo/AvaliadorDeFrase.kt` com a tabela deste arquivo, o mínimo da confiança, o
+  contador e `zerar()` (fim do atendimento por inatividade e "Cancelar atendimento"). O limiar é uma
+  constante de 0,60 até o seletor da onda 4. A temperatura do sidecar já era aplicada no
+  `TfliteSignClassifier` (onda 2). Os avisos são falados no ③ com a wake word pausada; na repetição, a
+  câmera continua ligada e a nova captura só abre depois do aviso. Teste: `AvaliadorDeFraseTest`
+  (uma linha da tabela por caso, falha → acerto zera, três falhas → `Desistir` e zera, glosas
+  desconhecidas, limiar configurável).
+- **2.5:** o avaliador recebe as chaves do `lexico-glosas.json`; glosa fora dele é registrada no log e
+  no CSV (`glosa_fora_do_lexico`), aparece riscada no painel e não entra na frase. Sem o léxico, todas
+  são aceitas.
+- **Pendente (manual):** A4 do guia (placeholder em "baixa", três frases até "tente outro meio") e a
+  frase falada em "alta" — precisam de uma pessoa no vídeo do `MockDeviceKit` para gerar segmentos.
+  Automatizado: o `FluxoOnda1Test` cobre o caminho sem sinais (três "Encerrar agora" manuais →
+  repita, repita, desiste).
+
 **Verificações (vão para o guia de testes).**
 - Rodar o modelo de contextualização nas 4 sequências e registrar se ele supera o template ou
   é barrado pela guarda.

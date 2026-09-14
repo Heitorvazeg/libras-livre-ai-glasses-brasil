@@ -98,6 +98,9 @@ import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.diagnostico.
 import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.diagnostico.LeitorSistema
 import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.diagnostico.LeituraSistema
 import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.diagnostico.Metricas
+import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.contextualizacao.LexicoGlosas
+import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.dialogo.AcaoBotao
+import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.dialogo.AvaliadorDeFrase
 import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.reconhecimento.ClassificadorRecusado
 import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.reconhecimento.ModeloRecusado
 import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.reconhecimento.SignClassifier
@@ -170,6 +173,8 @@ class CameraViewModel(
           metricas = metricas,
           onFrameProcessado = { frame -> gravador.frame(frame, metricas.turno) },
           onEvento = { nome, detalhe -> gravador.evento(SystemClock.uptimeMillis(), metricas.turno, nome, detalhe) },
+          // 4.1: o fim de frase automático é decidido pelo orquestrador, na main.
+          onEstadoSinalizacao = { estado -> viewModelScope.launch { dialogOrchestrator.onEstadoSinalizacao(estado) } },
       )
 
   /**
@@ -335,6 +340,13 @@ class CameraViewModel(
               _uiState.update { it.copy(conversa = Conversas.reduzir(it.conversa, evento)) }
             },
             metricas = metricas,
+            // 2.5/2.8: sem o léxico (asset ausente), o avaliador aceita todas as glosas.
+            avaliador =
+                AvaliadorDeFrase(
+                    glosasConhecidas = runCatching { LexicoGlosas.fromAssets(application).glosas }.getOrNull()),
+            esconderAvatar = { _uiState.update { it.copy(avatarVisivel = false) } },
+            pularAvatar = ::pularAvatar,
+            onEvento = { nome, detalhe -> gravador.evento(SystemClock.uptimeMillis(), metricas.turno, nome, detalhe) },
         )
     dialogOrchestrator.attachWakeWordDetector(wakeWordDetector)
     // 3.1: o MediaPipe carrega ao abrir o app, fora da thread de frames, e fica ocioso até a
@@ -479,8 +491,23 @@ class CameraViewModel(
     _uiState.update { it.copy(avatarVisivel = true) }
   }
 
-  /** Fecha a tela e devolve a memória. A próxima [abrirAvatar] recarrega do zero. */
-  fun fecharAvatar() = liberarAvatar()
+  /**
+   * "Fechar" só ESCONDE a tela (docs/prontidao-demo/09 §9.2): o Unity continua carregado e a próxima
+   * resposta anima sem os 6-9 s de carga. O avatar só é liberado por inatividade do atendimento (ou,
+   * na onda 4, por pressão de memória).
+   */
+  fun fecharAvatar() {
+    _uiState.update { it.copy(avatarVisivel = false) }
+  }
+
+  /** "Iniciar" dentro da tela do avatar (9.2): esconde a tela e começa a captura. */
+  fun iniciarPeloAvatar() {
+    fecharAvatar()
+    dialogOrchestrator.onBotaoPrincipal(AcaoBotao.INICIAR)
+  }
+
+  /** "Cancelar atendimento" (4.7). */
+  fun cancelarAtendimento() = dialogOrchestrator.cancelarAtendimento()
 
   /**
    * Destrói a WebView E fecha a tela. As duas coisas andam juntas: o DialogOrchestrator chama
@@ -879,11 +906,10 @@ class CameraViewModel(
    * dialogState em curso está prestes a precisar do mic (④→⑤, escuta do atendente via STT) — nos
    * outros estados o evento não depende de permissão nenhuma.
    */
-  fun onWakeWordButton(word: WakeWord, requestRecordAudioPermission: suspend () -> Boolean) {
-    val needsMic =
-        _uiState.value.dialogState == DialogState.AGUARDANDO_RESPOSTA && word == WakeWord.INICIAR
-    if (!needsMic) {
-      dialogOrchestrator.onWakeWord(word)
+  fun onBotaoPrincipal(acao: AcaoBotao, requestRecordAudioPermission: suspend () -> Boolean) {
+    // 4.7: botão principal e teclas de volume. Só "Ouvir resposta" precisa do microfone.
+    if (acao != AcaoBotao.OUVIR) {
+      dialogOrchestrator.onBotaoPrincipal(acao)
       return
     }
     viewModelScope.launch {
@@ -892,7 +918,7 @@ class CameraViewModel(
         // service já está anunciado como tipo "microphone" antes de escutar de verdade (ver
         // StreamingService.refreshForegroundServiceType).
         StreamingService.refreshForegroundServiceType(getApplication())
-        dialogOrchestrator.onWakeWord(word)
+        dialogOrchestrator.onBotaoPrincipal(acao)
       } else {
         wearablesViewModel.setRecentError(
             getApplication<Application>().getString(R.string.error_record_audio_permission_denied)

@@ -89,8 +89,20 @@ import com.meta.wearable.dat.externalsampleapps.cameraaccess.camera.CameraViewMo
 import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.audio.WakeWord
 import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.diagnostico.AmostraMetricas
 import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.diagnostico.MarcaEtapa
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.style.TextDecoration
+import androidx.compose.ui.text.withStyle
+import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.dialogo.AcaoBotao
+import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.dialogo.BotaoPrincipal
 import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.dialogo.Conversa
+import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.dialogo.DecisaoNaConversa
 import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.dialogo.DialogState
+import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.dialogo.RotuloBotao
+import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.dialogo.Transicoes
 import java.util.Locale
 import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.dialogo.TurnoConversa
 import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.reconhecimento.LibrasState
@@ -139,6 +151,23 @@ fun CameraScreen(
     onDispose { view.keepScreenOn = false }
   }
 
+  // 4.7: com sessão, as teclas de volume fazem o mesmo que o botão principal. Os valores são lidos no
+  // momento da tecla (rememberUpdatedState), não no momento em que o ouvinte foi registrado.
+  val botaoAtual by rememberUpdatedState(Transicoes.botaoPrincipal(ui.dialogState, wearablesUi.hasActiveDevice))
+  val acionarBotao by rememberUpdatedState { acao: AcaoBotao ->
+    cameraViewModel.onBotaoPrincipal(acao, onRequestRecordAudioPermission)
+  }
+  DisposableEffect(ui.hasSession) {
+    if (ui.hasSession) {
+      TeclasDeVolume.ouvinte = { primeiroToque ->
+        val acao = botaoAtual.acao
+        if (acao != null && primeiroToque) acionarBotao(acao)
+        acao != null
+      }
+    }
+    onDispose { TeclasDeVolume.ouvinte = null }
+  }
+
   Box(modifier = modifier.fillMaxSize().background(Color.Black)) {
     PreviewBackground(
         ui = ui,
@@ -184,12 +213,8 @@ fun CameraScreen(
           onStopPreview = cameraViewModel::stopStreaming,
           onCapturePhoto = cameraViewModel::capturePhoto,
           onToggleRecording = cameraViewModel::toggleRecording,
-          onWakeIniciar = {
-            cameraViewModel.onWakeWordButton(WakeWord.INICIAR, onRequestRecordAudioPermission)
-          },
-          onWakeEncerrar = {
-            cameraViewModel.onWakeWordButton(WakeWord.ENCERRAR, onRequestRecordAudioPermission)
-          },
+          onBotaoPrincipal = { acao -> cameraViewModel.onBotaoPrincipal(acao, onRequestRecordAudioPermission) },
+          onCancelarAtendimento = cameraViewModel::cancelarAtendimento,
           onAbrirAvatar = cameraViewModel::abrirAvatar,
           onUpdateFirmware = { activity?.let { wearablesViewModel.openFirmwareUpdate(it) } },
       )
@@ -232,8 +257,13 @@ fun CameraScreen(
           onTentarDeNovo = cameraViewModel::abrirAvatar,
           onPausar = cameraViewModel::pausarAvatar,
           onRetomar = cameraViewModel::retomarAvatar,
-          onPular =
-              if (ui.dialogState == DialogState.GERANDO_AVATAR) cameraViewModel::pularAvatar else null,
+          // 9.2: o botão principal também dentro da tela do avatar — "Pular" enquanto anima,
+          // "Iniciar" depois (esconde a tela e começa a captura).
+          botaoPrincipal = Transicoes.botaoPrincipal(ui.dialogState, wearablesUi.hasActiveDevice),
+          onBotaoPrincipal = { acao ->
+            if (acao == AcaoBotao.INICIAR) cameraViewModel.iniciarPeloAvatar()
+            else cameraViewModel.onBotaoPrincipal(acao, onRequestRecordAudioPermission)
+          },
       )
     }
 
@@ -489,8 +519,8 @@ private fun BottomBar(
     onStopPreview: () -> Unit,
     onCapturePhoto: () -> Unit,
     onToggleRecording: () -> Unit,
-    onWakeIniciar: () -> Unit,
-    onWakeEncerrar: () -> Unit,
+    onBotaoPrincipal: (AcaoBotao) -> Unit,
+    onCancelarAtendimento: () -> Unit,
     onAbrirAvatar: () -> Unit,
     onUpdateFirmware: () -> Unit,
 ) {
@@ -511,10 +541,11 @@ private fun BottomBar(
     } else {
       // Libras Livre: botões de fallback da wake word — orquestram a sessão de diálogo (só
       // quando o stream está ao vivo). Ver libras/WakeWordDetector.kt.
-      DialogControlRow(
+      ControlesDoAtendimento(
           ui = ui,
-          onWakeIniciar = onWakeIniciar,
-          onWakeEncerrar = onWakeEncerrar,
+          oculosDisponiveis = hasActiveDevice,
+          onBotaoPrincipal = onBotaoPrincipal,
+          onCancelarAtendimento = onCancelarAtendimento,
           onAbrirAvatar = onAbrirAvatar,
       )
       CaptureRow(
@@ -738,41 +769,24 @@ private fun CircleIconButton(
 
 // MARK: - Libras Livre
 
-// Estados em que cada wake word tem uma ação a disparar — ver libras/DialogOrchestrator.kt
-// (onWakeWord). Fora desses estados o botão correspondente fica desabilitado — mesma regra que
-// governa quando o motor real (SpeechRecognizerWakeWordDetector) está ouvindo. Note que NÃO
-// depende de ui.isStreaming: "Libras Livre, iniciar" em AGUARDANDO_SINAL é o próprio gatilho que
-// liga a câmera (ver DialogOrchestrator.beginSignSession/ensureCameraActive) — exigir stream ativo
-// pra habilitar o botão que liga o stream deixaria o fallback preso depois do primeiro ciclo, já
-// que a câmera é desligada de novo ao fechar cada sessão de sinais (endSignSession).
-private val DIALOG_STATES_WHERE_INICIAR_ACTS =
-    setOf(DialogState.AGUARDANDO_SINAL, DialogState.AGUARDANDO_RESPOSTA)
-private val DIALOG_STATES_WHERE_ENCERRAR_ACTS =
-    setOf(DialogState.CAPTURANDO_SINAIS, DialogState.ESCUTANDO_ATENDENTE)
-
 /**
- * Botões de fallback "Iniciar"/"Encerrar" que orquestram a sessão de diálogo — chamam
- * dialogOrchestrator.onWakeWord diretamente (ver CameraViewModel.onWakeWordButton), então
- * continuam funcionando mesmo se o motor real de wake word (ver
- * libras/SpeechRecognizerWakeWordDetector.kt) estiver sem permissão, pausado ou falhando. Os
- * rótulos mantêm as palavras da wake word de propósito ("Libras Livre, iniciar"/"encerrar") em vez
- * de traduzir pra "Start"/"End" — são o mesmo evento que o motor real dispara.
+ * Controles do atendimento (docs/prontidao-demo/04 §4.7): o botão principal grande faz o próximo
+ * passo de cada estado; "Cancelar atendimento" fica pequeno e separado; o avatar pode ser aberto a
+ * qualquer momento. Sempre visíveis: sem óculos, o botão aparece desabilitado com o motivo, em vez de
+ * um controle invisível e clicável (10.4).
  */
 @Composable
-private fun DialogControlRow(
+private fun ControlesDoAtendimento(
     ui: CameraUiState,
-    onWakeIniciar: () -> Unit,
-    onWakeEncerrar: () -> Unit,
+    oculosDisponiveis: Boolean,
+    onBotaoPrincipal: (AcaoBotao) -> Unit,
+    onCancelarAtendimento: () -> Unit,
     onAbrirAvatar: () -> Unit,
 ) {
-  val iniciarEnabled = ui.dialogState in DIALOG_STATES_WHERE_INICIAR_ACTS
-  val encerrarEnabled = ui.dialogState in DIALOG_STATES_WHERE_ENCERRAR_ACTS
-
-  // Visível sempre que há uma sessão com os óculos (mesmo sem stream ativo — ligar o stream é o
-  // que "Libras Livre, iniciar" faz agora); mesma condição de CaptureRow acima.
   Column(
-      modifier = Modifier.fillMaxWidth().alpha(if (ui.hasSession) 1f else 0f),
+      modifier = Modifier.fillMaxWidth(),
       horizontalAlignment = Alignment.CenterHorizontally,
+      verticalArrangement = Arrangement.spacedBy(8.dp),
   ) {
     Text(
         text = stringResource(R.string.dialog_state_label, ui.dialogState.name.lowercase()),
@@ -780,30 +794,25 @@ private fun DialogControlRow(
         fontSize = 12.sp,
         fontFamily = FontFamily.Monospace,
     )
-    Spacer(modifier = Modifier.height(6.dp))
+    BotaoPrincipalGrande(
+        botao = Transicoes.botaoPrincipal(ui.dialogState, oculosDisponiveis),
+        onAcao = onBotaoPrincipal,
+        modifier = Modifier.fillMaxWidth(),
+    )
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.spacedBy(10.dp),
     ) {
       CapturePill(
-          modifier = Modifier.weight(1f).testTag("wake_word_iniciar_button"),
-          icon = Icons.Filled.Mic,
-          label = stringResource(R.string.dialog_wake_iniciar),
-          contentDescription = stringResource(R.string.dialog_wake_iniciar),
-          enabled = iniciarEnabled,
-          onClick = onWakeIniciar,
+          modifier = Modifier.weight(1f).testTag("cancelar_atendimento_button"),
+          icon = Icons.Filled.Close,
+          label = stringResource(R.string.cancelar_atendimento),
+          contentDescription = stringResource(R.string.cancelar_atendimento),
+          enabled = ui.dialogState != DialogState.AGUARDANDO_SINAL || ui.avatarVisivel || ui.hasStream,
+          onClick = onCancelarAtendimento,
       )
-      CapturePill(
-          modifier = Modifier.weight(1f).testTag("wake_word_encerrar_button"),
-          icon = Icons.Filled.Stop,
-          label = stringResource(R.string.dialog_wake_encerrar),
-          contentDescription = stringResource(R.string.dialog_wake_encerrar),
-          enabled = encerrarEnabled,
-          onClick = onWakeEncerrar,
-      )
-      // Sempre habilitado: abrir o avatar é uma ação do operador, não um passo da máquina de
-      // estados. Serve para conferir o avatar antes do atendimento (ele leva 6-9 s para subir) e
-      // para reabrir a tela depois de a ter fechado no meio de uma conversa.
+      // Abrir o avatar é ação do operador, não passo da máquina de estados: conferir o avatar antes
+      // do atendimento e reabrir a tela depois de a ter fechado.
       CapturePill(
           modifier = Modifier.weight(1f).testTag("avatar_button"),
           icon = Icons.Filled.Accessibility,
@@ -815,6 +824,47 @@ private fun DialogControlRow(
     }
   }
 }
+
+/** O botão principal (4.7), no mesmo lugar sempre; também usado dentro da tela do avatar (9.2). */
+@Composable
+internal fun BotaoPrincipalGrande(
+    botao: BotaoPrincipal,
+    onAcao: (AcaoBotao) -> Unit,
+    modifier: Modifier = Modifier,
+    tag: String = "botao_principal",
+) {
+  val rotulo = stringResource(rotuloDoBotao(botao.rotulo))
+  Box(
+      modifier =
+          modifier
+              .testTag(tag)
+              .height(64.dp)
+              .clip(RoundedCornerShape(percent = 50))
+              .background(if (botao.habilitado) AppColor.Green else Color.White.copy(alpha = 0.12f))
+              .clickable(enabled = botao.habilitado) { botao.acao?.let(onAcao) }
+              .semantics { contentDescription = rotulo },
+      contentAlignment = Alignment.Center,
+  ) {
+    Text(
+        text = rotulo,
+        color = if (botao.habilitado) Color.Black else Color.White.copy(alpha = 0.6f),
+        fontSize = 20.sp,
+        fontWeight = FontWeight.Bold,
+    )
+  }
+}
+
+@StringRes
+internal fun rotuloDoBotao(rotulo: RotuloBotao): Int =
+    when (rotulo) {
+      RotuloBotao.INICIAR -> R.string.botao_iniciar
+      RotuloBotao.ENCERRAR_AGORA -> R.string.botao_encerrar_agora
+      RotuloBotao.FALANDO -> R.string.botao_falando
+      RotuloBotao.OUVIR_RESPOSTA -> R.string.botao_ouvir_resposta
+      RotuloBotao.TRANSCREVENDO -> R.string.botao_transcrevendo
+      RotuloBotao.PULAR -> R.string.avatar_pular
+      RotuloBotao.CONECTE_OS_OCULOS -> R.string.botao_conecte_oculos
+    }
 
 /**
  * Uma linha de estado da captura: erro, "Aguarde…", "Pode sinalizar" (3.1) ou "Reconhecendo…".
@@ -888,10 +938,31 @@ private fun PainelConversa(conversa: Conversa, modifier: Modifier = Modifier) {
 @Composable
 private fun TurnoNoPainel(turno: TurnoConversa, destaque: Boolean) {
   Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-    val sinais = turno.textoDosSinais()
-    if (sinais.isNotEmpty()) LinhaDoPainel(R.string.conversa_sinais, sinais, destaque)
-    turno.falado?.let { LinhaDoPainel(R.string.conversa_falado, "“$it”", destaque) }
-    turno.resposta?.let { LinhaDoPainel(R.string.conversa_resposta, "“$it”", destaque) }
+    if (turno.sinais.isNotEmpty()) {
+      // Abaixo do limiar em amarelo (2.8); fora do léxico riscado, porque não é falado (2.5).
+      val sinais = buildAnnotatedString {
+        turno.sinais.forEachIndexed { i, s ->
+          if (i > 0) append(" · ")
+          val estilo =
+              when {
+                s.foraDoLexico -> SpanStyle(color = Color.Gray, textDecoration = TextDecoration.LineThrough)
+                s.abaixoDoLimiar -> SpanStyle(color = AppColor.Yellow)
+                else -> SpanStyle()
+              }
+          withStyle(estilo) { append(TurnoConversa.textoDoSinal(s)) }
+        }
+      }
+      LinhaDoPainel(R.string.conversa_sinais, sinais, destaque)
+    }
+    when (turno.decisao) {
+      DecisaoNaConversa.REPITA ->
+          LinhaDoPainel(R.string.conversa_decisao, AnnotatedString(stringResource(R.string.conversa_decisao_repita)), destaque, AppColor.Yellow)
+      DecisaoNaConversa.DESISTIU ->
+          LinhaDoPainel(R.string.conversa_decisao, AnnotatedString(stringResource(R.string.conversa_decisao_desistiu)), destaque, AppColor.Yellow)
+      else -> Unit
+    }
+    turno.falado?.let { LinhaDoPainel(R.string.conversa_falado, AnnotatedString("“$it”"), destaque) }
+    turno.resposta?.let { LinhaDoPainel(R.string.conversa_resposta, AnnotatedString("“$it”"), destaque) }
   }
 }
 
@@ -928,7 +999,7 @@ private fun PainelMetricas(amostra: AmostraMetricas?, etapas: List<MarcaEtapa>, 
 }
 
 @Composable
-private fun LinhaDoPainel(@StringRes rotulo: Int, texto: String, destaque: Boolean) {
+private fun LinhaDoPainel(@StringRes rotulo: Int, texto: AnnotatedString, destaque: Boolean, cor: Color = Color.White) {
   val alpha = if (destaque) 1f else 0.6f
   Row(verticalAlignment = Alignment.Top) {
     Text(
@@ -939,7 +1010,7 @@ private fun LinhaDoPainel(@StringRes rotulo: Int, texto: String, destaque: Boole
     )
     Text(
         text = texto,
-        color = Color.White.copy(alpha = alpha),
+        color = cor.copy(alpha = alpha),
         fontSize = if (destaque) 20.sp else 14.sp,
         fontWeight = if (destaque) FontWeight.SemiBold else FontWeight.Normal,
     )

@@ -69,6 +69,13 @@ com os botões desabilitados.
 **Teste (manual).** Duas respostas seguidas no mesmo atendimento: a segunda anima sem a carga de
 6 a 9 s; "Fechar" e reabrir pelo botão do avatar não recarrega.
 
+**Como ficou a onda 3.** `CameraViewModel.fecharAvatar` só esconde a tela; `release()` fica para o
+atendimento ocioso (e, na onda 4, a pressão de memória). A tela do avatar recebe o botão principal
+(tag `botao_principal_avatar`): "Pular" no ⑦ e "Iniciar" depois, que esconde a tela e começa a
+captura (`iniciarPeloAvatar`). O "Pular" solto da onda 1 foi substituído por ele. "Cancelar
+atendimento" também pula a animação e esconde o avatar sem destruir. O teste manual (A9) segue
+pendente: precisa de duas respostas transcritas.
+
 ## 9.3 Rede
 
 Operação ([ponto 11](11-operacao-de-palco.md)):

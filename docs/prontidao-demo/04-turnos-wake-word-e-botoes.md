@@ -146,3 +146,32 @@ botões continuam funcionando.
 
 **Teste (JVM, em `Transicoes`).** O rótulo e a ação do botão para cada estado.
 **Manual:** tecla de volume no emulador avança o fluxo.
+
+---
+
+## Como ficou a onda 3 (4.1, 4.3, 4.7)
+
+- **`Transicoes.kt`** ganhou as regras puras: `encerrarCapturaPorSilencio` (≥ 1 segmento e parado há
+  2.500 ms), `estadoAposTranscricao` (vazio → ④), `estadoAposDecisao` (Falar → ⑤ pulando o ④;
+  PedirRepeticao → ②; Desistir/Ignorar → ①) e `botaoPrincipal(estado, oculosDisponiveis)` com a tabela
+  do 4.7. `TransicoesTest` cobre os casos do 4.1 e o rótulo/ação de cada estado.
+- **② → ③:** o `LandmarkPipeline` emite as mudanças de estado do detector (`onEstadoSinalizacao`); o
+  `DialogOrchestrator` arma o relógio de 2,5 s ao parar e o desarma ao voltar a sinalizar.
+- **③ → ⑤:** quando a frase é aceita, a escuta abre sozinha depois de a fala terminar de tocar e da
+  folga de 300 ms (5.3).
+- **⑤ → ⑥:** `SttEngine.start` ganhou `onFimDeFala`; o `VoskSttEngine` o chama quando
+  `acceptWaveForm` devolve true com texto, e acumula os enunciados para o resultado final. O motor
+  nativo do Android só aceita o parâmetro.
+- **4.3:** 30 s sem segmento na captura (reinicia a cada segmento, encerra como `TIMEOUT`, que sem
+  segmento vira `Ignorar`), 20 s na escuta, 60 s de atendimento ocioso (sem mudança). Constantes em
+  `Transicoes` até as configurações de demo da onda 4.
+- **4.7:** o `DialogControlRow` saiu; entrou o botão principal grande (tag `botao_principal`),
+  "Cancelar atendimento" e o botão do avatar, sempre visíveis. O botão só age se a ação ainda for a do
+  estado atual (um toque atrasado não pula um passo). "Cancelar atendimento" usa um contador de
+  geração para descartar continuações de fala, avatar e timers anteriores. Teclas de volume:
+  `ui/TeclasDeVolume.kt` + `MainActivity.onKeyDown`, com ouvinte registrado pela tela só com sessão
+  ativa; repetição de tecla segurada não dispara de novo.
+- **Automatizado:** `FluxoOnda1Test.teclaDeVolumeFazOMesmoQueOBotaoPrincipal` manda
+  `KEYCODE_VOLUME_UP` pelo sistema: sem sessão o estado não muda; com sessão, a captura abre (A6).
+- **Pendente (manual):** "uma volta completa tocando só Iniciar" (A5): precisa de sinais no vídeo do
+  `MockDeviceKit` e de fala para a escuta.

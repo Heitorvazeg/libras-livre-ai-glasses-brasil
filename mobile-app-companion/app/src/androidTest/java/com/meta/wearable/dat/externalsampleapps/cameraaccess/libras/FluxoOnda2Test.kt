@@ -100,12 +100,12 @@ class FluxoOnda2Test {
 
     composeTestRule.waitUntilExactlyOneExists(hasTestTag("start_session_button").and(isEnabled()), TIMEOUT)
     composeTestRule.onNodeWithTag("start_session_button").performClick()
-    composeTestRule.waitUntilExactlyOneExists(hasTestTag("wake_word_iniciar_button").and(isEnabled()), TIMEOUT)
+    composeTestRule.waitUntilExactlyOneExists(hasTestTag("botao_principal").and(isEnabled()), TIMEOUT)
 
     // O overlay aparece com a sessão e o painel ligado.
     composeTestRule.waitUntilExactlyOneExists(hasTestTag("painel_metricas"), TIMEOUT)
 
-    composeTestRule.onNodeWithTag("wake_word_iniciar_button").performClick()
+    composeTestRule.onNodeWithTag("botao_principal").performClick()
     val continuar = targetContext.getString(R.string.camera_permission_continue)
     val capturando = targetContext.getString(R.string.dialog_state_label, "capturando_sinais")
     composeTestRule.waitUntil(TIMEOUT) {
@@ -118,7 +118,8 @@ class FluxoOnda2Test {
     composeTestRule.waitUntilExactlyOneExists(hasText(capturando), TIMEOUT)
     // Alguns segundos de captura: frames processados e amostras de métrica por segundo.
     Thread.sleep(4_000)
-    composeTestRule.onNodeWithTag("wake_word_encerrar_button").performClick()
+    // "Cancelar atendimento" fecha a captura sem passar pelo fluxo "repita" (4.7).
+    composeTestRule.onNodeWithTag("cancelar_atendimento_button").performClick()
 
     composeTestRule.onNodeWithTag("end_session_button").performClick()
     composeTestRule.waitUntilExactlyOneExists(hasTestTag("start_session_button"), TIMEOUT)

@@ -108,6 +108,48 @@ class ConversaTest {
   }
 
   @Test
+  fun `turno de repeticao guarda o pedido e a nova captura abre outro turno`() {
+    val conversa =
+        aplicar(
+            EventoConversa.TurnoIniciado,
+            EventoConversa.SinalClassificado(SinalNaConversa("filho", 0.3f, abaixoDoLimiar = true)),
+            EventoConversa.DecisaoTomada(DecisaoNaConversa.REPITA),
+            EventoConversa.TurnoIniciado,
+            EventoConversa.SinalClassificado(SinalNaConversa("filho", 0.9f)),
+            EventoConversa.DecisaoTomada(DecisaoNaConversa.FALADA),
+            EventoConversa.FraseFalada("O meu filho.", Contextualizacao.Origem.TEMPLATE),
+        )
+    val repetido = conversa.anteriores.single()
+    assertEquals(DecisaoNaConversa.REPITA, repetido.decisao)
+    assertTrue(repetido.sinais.single().abaixoDoLimiar)
+    assertNull(repetido.falado)
+    assertEquals(DecisaoNaConversa.FALADA, conversa.atual!!.decisao)
+    assertEquals("O meu filho.", conversa.atual!!.falado)
+  }
+
+  @Test
+  fun `pedido de repeticao sem nenhum sinal ainda aparece no painel`() {
+    val conversa = aplicar(EventoConversa.TurnoIniciado, EventoConversa.DecisaoTomada(DecisaoNaConversa.REPITA))
+    assertTrue(conversa.atual!!.temConteudo)
+    val ignorada = aplicar(EventoConversa.TurnoIniciado, EventoConversa.DecisaoTomada(DecisaoNaConversa.IGNORADA))
+    assertFalse(ignorada.atual!!.temConteudo)
+  }
+
+  @Test
+  fun `glosa fora do lexico fica marcada como descartada`() {
+    val conversa =
+        aplicar(
+            EventoConversa.TurnoIniciado,
+            EventoConversa.SinalClassificado(SinalNaConversa("maca", 0.95f, foraDoLexico = true)),
+            EventoConversa.SinalClassificado(SinalNaConversa("medo", 0.9f)),
+        )
+    val sinais = conversa.atual!!.sinais
+    assertEquals(listOf(true, false), sinais.map { it.foraDoLexico })
+    assertEquals("MACA 95% · MEDO 90%", conversa.atual!!.textoDosSinais())
+    assertEquals(DecisaoNaConversa.DESISTIU, Conversas.decisaoNaConversa(DecisaoFrase.Desistir))
+  }
+
+  @Test
   fun `confianca aparece em porcentagem quando existe`() {
     val turno =
         TurnoConversa(

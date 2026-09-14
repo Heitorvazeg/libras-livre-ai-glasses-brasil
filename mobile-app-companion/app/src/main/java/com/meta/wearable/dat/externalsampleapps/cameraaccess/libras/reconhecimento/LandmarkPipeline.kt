@@ -73,6 +73,9 @@ class LandmarkPipeline(
     // Chamado na thread de frames: quem recebe precisa só enfileirar (o gravador faz isso).
     private val onFrameProcessado: ((FrameProcessado) -> Unit)? = null,
     private val onEvento: (nome: String, detalhe: String) -> Unit = { _, _ -> },
+    // Mudanças de estado do detector (SINALIZANDO/PARADO), para o fim de frase automático do 4.1.
+    // Chamado na thread de frames, só quando o estado muda.
+    private val onEstadoSinalizacao: (EstadoSinalizacao) -> Unit = {},
 ) {
 
   companion object {
@@ -103,6 +106,8 @@ class LandmarkPipeline(
 
   @Volatile private var collecting = false
   @Volatile private var aguardandoPrimeiroFrame = false
+  // Último estado do detector repassado a onEstadoSinalizacao; toda sessão começa PARADA.
+  @Volatile private var estadoInformado = EstadoSinalizacao.PARADO
 
   /**
    * Frames que passaram pelo MediaPipe na sessão atual, normalizáveis ou não. Zera a cada
@@ -179,6 +184,7 @@ class LandmarkPipeline(
           )
     }
     aguardandoPrimeiroFrame = true
+    estadoInformado = EstadoSinalizacao.PARADO
     framesExtraidosNaSessao = 0
     collecting = true
     onState {
@@ -338,6 +344,11 @@ class LandmarkPipeline(
     synchronized(sessionLock) {
       seg = segmentador
       if (normalizado != null) seg?.onFrame(normalizado, ts)
+    }
+    val estadoAgora = seg?.estadoAtual
+    if (estadoAgora != null && estadoAgora != estadoInformado) {
+      estadoInformado = estadoAgora
+      onEstadoSinalizacao(estadoAgora)
     }
     onFrameProcessado?.invoke(
         FrameProcessado(

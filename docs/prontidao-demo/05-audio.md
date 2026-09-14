@@ -77,6 +77,11 @@ frase do app.
 **Teste (manual).** Com a voz no alto-falante do celular e o microfone no celular, a
 transcrição da primeira resposta não contém palavras da frase falada.
 
+**Como ficou a onda 3.** `PiperSherpaOnnxTtsEngine` conta as amostras escritas e, depois da geração,
+espera `playbackHeadPosition` alcançá-las (a cada 20 ms, teto = duração + 1 s, e sai na hora se a
+fala for interrompida). O `DialogOrchestrator` espera `Transicoes.FOLGA_APOS_FALA_MS` (300 ms) antes de
+abrir a escuta. O teste manual continua pendente (precisa de voz no aparelho).
+
 ## 5.4 Vosk no aquecimento
 
 **Decisão.** As primeiras palavras da primeira resposta se perdiam enquanto o modelo carregava.

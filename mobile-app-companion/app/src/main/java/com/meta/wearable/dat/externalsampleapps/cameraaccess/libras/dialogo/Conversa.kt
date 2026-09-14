@@ -3,11 +3,8 @@
  *
  * Antes, o resultado do pipeline só aparecia num banner que "capturando" escondia e que sumia
  * junto com o stream: a banca nunca via o que o app entendeu nem o que falou. Aqui cada turno
- * guarda os sinais, a frase falada, a resposta e como o ⑦ terminou, e um redutor puro aplica os
- * eventos do DialogOrchestrator. A tela só desenha.
- *
- * Campos que dependem de itens posteriores entram com eles: a decisão do avaliador (2.8, onda 3)
- * e as marcas de glosa descartada (2.5) ou abaixo do limiar (2.8).
+ * guarda os sinais, a decisão sobre a frase (2.8), a frase falada, a resposta e como o ⑦ terminou,
+ * e um redutor puro aplica os eventos do DialogOrchestrator. A tela só desenha.
  */
 package com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.dialogo
 
@@ -15,8 +12,16 @@ import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.avatar.Desfe
 import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.contextualizacao.Contextualizacao
 import kotlin.math.roundToInt
 
-/** Um sinal classificado. [confianca] fica nula até o classificador devolver uma (2.6). */
-data class SinalNaConversa(val glosa: String, val confianca: Float? = null)
+/**
+ * Um sinal classificado. [confianca] fica nula enquanto o classificador não devolve uma;
+ * [abaixoDoLimiar] e [foraDoLexico] marcam o que o avaliador da frase (2.8, 2.5) não aceitou.
+ */
+data class SinalNaConversa(
+    val glosa: String,
+    val confianca: Float? = null,
+    val abaixoDoLimiar: Boolean = false,
+    val foraDoLexico: Boolean = false,
+)
 
 enum class DesfechoTurno {
   AVATAR,
@@ -24,24 +29,38 @@ enum class DesfechoTurno {
   PULADO,
 }
 
+/** A decisão sobre a frase do turno (2.8), como o painel a mostra. */
+enum class DecisaoNaConversa {
+  FALADA,
+  REPITA,
+  DESISTIU,
+  IGNORADA,
+}
+
 data class TurnoConversa(
     val numero: Int,
     val sinais: List<SinalNaConversa> = emptyList(),
+    val decisao: DecisaoNaConversa? = null,
     val falado: String? = null,
     val origemFalado: Contextualizacao.Origem? = null,
     val resposta: String? = null,
     val desfecho: DesfechoTurno? = null,
 ) {
-  /** Um turno recém-aberto, ou sem nenhum sinal reconhecido, não tem o que mostrar. */
+  /** Um turno recém-aberto, ou sem nada reconhecido e sem aviso, não tem o que mostrar. */
   val temConteudo: Boolean
-    get() = sinais.isNotEmpty() || falado != null || resposta != null
+    get() =
+        sinais.isNotEmpty() || falado != null || resposta != null ||
+            decisao == DecisaoNaConversa.REPITA || decisao == DecisaoNaConversa.DESISTIU
 
   /** `FILHO 92% · VACINA 88%`; sem confiança, só a glosa. */
-  fun textoDosSinais(): String =
-      sinais.joinToString(" · ") { s ->
-        val glosa = s.glosa.uppercase()
-        s.confianca?.let { "$glosa ${(it * 100).roundToInt()}%" } ?: glosa
-      }
+  fun textoDosSinais(): String = sinais.joinToString(" · ") { textoDoSinal(it) }
+
+  companion object {
+    fun textoDoSinal(s: SinalNaConversa): String {
+      val glosa = s.glosa.uppercase()
+      return s.confianca?.let { "$glosa ${(it * 100).roundToInt()}%" } ?: glosa
+    }
+  }
 }
 
 data class Conversa(val turnos: List<TurnoConversa> = emptyList()) {
@@ -54,10 +73,12 @@ data class Conversa(val turnos: List<TurnoConversa> = emptyList()) {
 }
 
 sealed interface EventoConversa {
-  /** Um "iniciar" abriu a captura: começa um turno novo. */
+  /** Um "iniciar" (ou um "repita") abriu a captura: começa um turno novo. */
   data object TurnoIniciado : EventoConversa
 
   data class SinalClassificado(val sinal: SinalNaConversa) : EventoConversa
+
+  data class DecisaoTomada(val decisao: DecisaoNaConversa) : EventoConversa
 
   data class FraseFalada(val texto: String, val origem: Contextualizacao.Origem) : EventoConversa
 
@@ -79,6 +100,7 @@ object Conversas {
           val base = if (conversa.atual == null) novoTurno(conversa) else conversa
           atualizarAtual(base) { it.copy(sinais = it.sinais + evento.sinal) }
         }
+        is EventoConversa.DecisaoTomada -> atualizarAtual(conversa) { it.copy(decisao = evento.decisao) }
         is EventoConversa.FraseFalada ->
             atualizarAtual(conversa) { it.copy(falado = evento.texto, origemFalado = evento.origem) }
         is EventoConversa.RespostaTranscrita ->
@@ -95,6 +117,14 @@ object Conversas {
         DesfechoAvatar.SEM_GLOSA,
         DesfechoAvatar.TETO_ANIMACAO,
         DesfechoAvatar.TETO_TOTAL -> DesfechoTurno.LEGENDA
+      }
+
+  fun decisaoNaConversa(decisao: DecisaoFrase): DecisaoNaConversa =
+      when (decisao) {
+        is DecisaoFrase.Falar -> DecisaoNaConversa.FALADA
+        DecisaoFrase.PedirRepeticao -> DecisaoNaConversa.REPITA
+        DecisaoFrase.Desistir -> DecisaoNaConversa.DESISTIU
+        DecisaoFrase.Ignorar -> DecisaoNaConversa.IGNORADA
       }
 
   private fun novoTurno(conversa: Conversa): Conversa {

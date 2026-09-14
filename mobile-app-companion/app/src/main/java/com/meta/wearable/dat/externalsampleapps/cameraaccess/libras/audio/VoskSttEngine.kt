@@ -64,11 +64,18 @@ class VoskSttEngine(
 
   private var pendingOnResult: ((String) -> Unit)? = null
   private var pendingOnError: ((Throwable) -> Unit)? = null
+  @Volatile private var pendingOnFimDeFala: (() -> Unit)? = null
 
-  override fun start(onResult: (String) -> Unit, onError: (Throwable) -> Unit) {
+  // Enunciados que o Vosk já fechou nesta escuta (acceptWaveForm devolveu true). O resultado final
+  // é isto + o getFinalResult: sem acumular, o texto de antes do fim de fala se perderia.
+  private val textoAcumulado = StringBuilder()
+
+  override fun start(onResult: (String) -> Unit, onError: (Throwable) -> Unit, onFimDeFala: () -> Unit) {
     stopRequested = false
     pendingOnResult = onResult
     pendingOnError = onError
+    pendingOnFimDeFala = onFimDeFala
+    synchronized(textoAcumulado) { textoAcumulado.setLength(0) }
 
     scope.launch {
       val loadedModel = ensureModelLoaded()
@@ -95,7 +102,17 @@ class VoskSttEngine(
         // uma chamada JNA sobre o ponteiro nativo do recognizer, sem estado compartilhado com a
         // main thread além do próprio `rec`.
         val chunk = if (offset == 0 && size == buffer.size) buffer else buffer.copyOfRange(offset, offset + size)
-        rec.acceptWaveForm(chunk, chunk.size)
+        // true = o Vosk fechou um enunciado (silêncio depois de fala): é o fim de fala do 4.1.
+        if (rec.acceptWaveForm(chunk, chunk.size)) {
+          val trecho = runCatching { JSONObject(rec.result).optString("text", "") }.getOrDefault("").trim()
+          if (trecho.isNotEmpty()) {
+            synchronized(textoAcumulado) {
+              if (textoAcumulado.isNotEmpty()) textoAcumulado.append(' ')
+              textoAcumulado.append(trecho)
+            }
+            pendingOnFimDeFala?.let { aviso -> scope.launch { aviso() } }
+          }
+        }
       }
 
       if (stopRequested) {
@@ -126,7 +143,9 @@ class VoskSttEngine(
     val json = withContext(Dispatchers.IO) { rec.getFinalResult() }
     runCatching { rec.close() }
     if (recognizer === rec) recognizer = null
-    val text = runCatching { JSONObject(json).optString("text", "") }.getOrDefault("")
+    val final = runCatching { JSONObject(json).optString("text", "") }.getOrDefault("").trim()
+    val text = synchronized(textoAcumulado) { listOf(textoAcumulado.toString(), final).filter { it.isNotBlank() }.joinToString(" ") }
+    pendingOnFimDeFala = null
     dispatchResult(text)
   }
 

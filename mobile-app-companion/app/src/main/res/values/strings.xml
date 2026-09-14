@@ -57,8 +57,17 @@
 
     <!-- Libras Livre: orquestração da sessão de diálogo (docs/orquestracao-dialogo-audio-plano.md) -->
     <string name="dialog_state_label" description="Current dialog-session state, shown for debugging">State: %1$s</string>
-    <string name="dialog_wake_iniciar" description="Fallback button that triggers the INICIAR wake word — deliberately not translated, it stands in for the literal Portuguese wake phrase \'Libras Livre, iniciar\'" translatable="false">Iniciar</string>
-    <string name="dialog_wake_encerrar" description="Fallback button that triggers the ENCERRAR wake word — deliberately not translated, it stands in for the literal Portuguese wake phrase \'Libras Livre, encerrar\'" translatable="false">Encerrar</string>
+    <!-- Botão principal (docs/prontidao-demo/04 §4.7): o rótulo muda com o estado do diálogo -->
+    <string name="botao_iniciar" description="Main button in the waiting state: starts capturing signs">Iniciar</string>
+    <string name="botao_encerrar_agora" description="Main button while capturing signs or listening: ends that step now">Encerrar agora</string>
+    <string name="botao_falando" description="Main button, disabled, while the app speaks the sentence">Falando…</string>
+    <string name="botao_ouvir_resposta" description="Main button when the reply transcription came back empty: listens again">Ouvir resposta</string>
+    <string name="botao_transcrevendo" description="Main button, disabled, while the reply is transcribed">Transcrevendo…</string>
+    <string name="botao_conecte_oculos" description="Main button, disabled, when no glasses are available">Conecte os óculos</string>
+    <string name="cancelar_atendimento" description="Small button that stops everything and goes back to the waiting state">Cancelar atendimento</string>
+    <string name="conversa_decisao" description="Conversation panel row label: what the app decided about the signed sentence">Aviso</string>
+    <string name="conversa_decisao_repita" description="Conversation panel: the app did not understand and asked for a repetition">Não entendi: pedido de repetição</string>
+    <string name="conversa_decisao_desistiu" description="Conversation panel: after three failures the app suggested another way to communicate">Não foi possível entender: tente outro meio</string>
 
     <!-- Libras Livre: avatar VLibras, estado 7 (docs/vlibras-webview-plano.md) -->
     <string name="avatar_open" description="Button that opens the Libras avatar screen">Avatar</string>

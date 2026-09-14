@@ -64,6 +64,13 @@ Diagnóstico: [mapa de riscos §12](../riscos-demo-2026-09-13.md#12-o-que-aparec
   substitui.
 - Turno sem nenhum conteúdo (sessão sem sinais) não desenha caixa vazia.
 
+**Como ficou a onda 3.** O turno ganhou `decisao` (falada, repita, desistiu, ignorada) e os sinais,
+as marcas `abaixoDoLimiar` (em amarelo) e `foraDoLexico` (riscado). "Não entendi: pedido de repetição"
+e "tente outro meio" aparecem numa linha "Aviso", mesmo sem nenhum sinal. `ConversaTest` ganhou o turno
+de repetição e a glosa descartada. **10.4 parcial:** o botão principal fica sempre visível e, sem
+óculos, aparece desabilitado com "Conecte os óculos"; os controles do sample (sessão, preview, foto,
+gravação) continuam como estão até o 10.3 da onda 4.
+
 ## 10.2 Faixa de estado
 
 **Decisão.** Um aviso por vez, sempre no mesmo lugar, escolhido por prioridade.
