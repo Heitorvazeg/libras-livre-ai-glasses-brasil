@@ -727,6 +727,14 @@ def teste_negativos_extras() -> None:
     _ok("negativos extras: rótulos distintos, raros de treino, SupCon e proveniência")
 
 
+def teste_evidencias_loso() -> None:
+    import unittest
+    from test_evidencias_loso import TestEvidenciasLoso
+    resultado = unittest.TextTestRunner(verbosity=2).run(
+        unittest.defaultTestLoader.loadTestsFromTestCase(TestEvidenciasLoso))
+    assert resultado.wasSuccessful(), "persistência/retomada LOSO falhou"
+
+
 TESTES = [
     ("Skeleton-DML (representação)", teste_representacao),
     ("espelhamento esquerda/direita", teste_espelho),
@@ -749,6 +757,7 @@ TESTES = [
     ("export: cabeça Skeleton-DML", teste_export_cabeca),
     ("isolamento e proveniência", teste_isolamento_proveniencia),
     ("export: contrato do checkpoint", teste_export_contrato),
+    ("LOSO: checkpoints, logits e retomada", teste_evidencias_loso),
 ]
 
 

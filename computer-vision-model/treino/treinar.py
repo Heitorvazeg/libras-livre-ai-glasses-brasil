@@ -30,6 +30,7 @@ from torch import nn
 from torch.utils.data import DataLoader, Dataset
 
 import dados as dd
+import evidencias_loso as ev
 import gcn as gg
 import modelo as mm
 import representacao as rp
@@ -125,7 +126,7 @@ def _loader(clipes, rotulos, permutacao, aumentar, batch, workers, embaralhar,
                       generator=g if embaralhar else None)
 
 
-def _avaliar(modelo, loader, criterio, dispositivo):
+def _avaliar(modelo, loader, criterio, dispositivo, *, logits=None):
     modelo.eval()
     perda, certos, total = 0.0, 0, 0
     preds, reais = [], []
@@ -139,6 +140,8 @@ def _avaliar(modelo, loader, criterio, dispositivo):
             total += y.size(0)
             preds += p.cpu().tolist()
             reais += y.cpu().tolist()
+            if logits is not None:
+                logits.extend(saida.detach().cpu().tolist())
     return perda / max(total, 1), certos / max(total, 1), preds, reais
 
 
@@ -214,7 +217,7 @@ def canais_gcn(args) -> dict:
 
 
 # Campos que NÃO definem o experimento: mudar só estes pode reaproveitar rodadas.
-IGNORAR_NA_RETOMADA = {"saida", "dispositivo", "threads", "workers", "folds"}
+IGNORAR_NA_RETOMADA = {"saida", "dispositivo", "threads", "workers", "folds", "salvar_evidencias"}
 
 
 def semear(args, rodada: int) -> None:
@@ -270,8 +273,12 @@ def semear_pesos(modelo, args, rodada: int) -> None:
 
 
 def treinar_rodada(treino, validacao, teste, rotulos, permutacao, args, dispositivo,
-                   rodada: int = 0):
-    """Treina uma rodada e devolve (acurácia no teste, predições, verdadeiros)."""
+                   rodada: int = 0, *, evidencias: dict | None = None):
+    """Devolve (acurácia, predições, verdadeiros, época, melhor modelo).
+
+    `evidencias`, quando fornecido, recebe logits da validação e do teste
+    relativos ao melhor modelo, sem alterar a seleção de época ou a otimização.
+    """
     semear(args, rodada)
     arq = getattr(args, "arquitetura", "resnet")
     ossos = bool(getattr(args, "ossos", False)) and arq == "gcn"
@@ -335,7 +342,21 @@ def treinar_rodada(treino, validacao, teste, rotulos, permutacao, args, disposit
     # A escolha do epoch usa a VALIDAÇÃO; o teste só é tocado aqui, uma vez.
     if melhores_pesos is not None:
         modelo.load_state_dict(melhores_pesos)
-    _, acc, preds, reais = _avaliar(modelo, l_teste, criterio, dispositivo)
+    logits_teste = [] if evidencias is not None else None
+    _, acc, preds, reais = _avaliar(modelo, l_teste, criterio, dispositivo, logits=logits_teste)
+    if evidencias is not None:
+        # O DataLoader de avaliação consome RNG ao criar seu iterador. Preservar
+        # estado evita que esta observação extra altere a próxima rodada sem seed.
+        devices = [dispositivo.index or 0] if dispositivo.type == "cuda" else []
+        with torch.random.fork_rng(devices=devices):
+            logits_val = []
+            _, _, pred_val, real_val = _avaliar(modelo, l_val, criterio, dispositivo, logits=logits_val)
+        evidencias.update({
+            "validacao": {"ids": [ev.id_clipe(c) for c in validacao],
+                          "logits": logits_val, "predicoes": pred_val, "verdadeiros": real_val},
+            "teste": {"ids": [ev.id_clipe(c) for c in teste],
+                      "logits": logits_teste, "predicoes": preds, "verdadeiros": reais},
+        })
     return acc, preds, reais, melhor_epoca, modelo
 
 
@@ -475,9 +496,16 @@ def main() -> None:
                     help="parte de um backbone de pretreinar.py em vez do ImageNet")
     ap.add_argument("--final", action="store_true",
                     help="treina com TODAS as pessoas e salva o checkpoint (sem avaliação)")
+    ap.add_argument("--salvar-evidencias", action="store_true",
+                    help="LOSO: salva melhor checkpoint, logits de validação/teste e IDs; "
+                         "retomada exige artefatos íntegros e mesma execução")
     ap.add_argument("--saida", default=None,
                     help="diretório de saída (padrão: resultados-<arquitetura>)")
     args = ap.parse_args()
+    if args.salvar_evidencias and args.final:
+        ap.error("--salvar-evidencias é exclusivo de LOSO, não de --final")
+    if args.epocas < 1:
+        ap.error("--epocas precisa ser positivo")
     if args.saida is None:
         args.saida = f"resultados-{args.arquitetura}"
 
@@ -555,11 +583,27 @@ def main() -> None:
     parciais = saida / "rodadas"
     parciais.mkdir(parents=True, exist_ok=True)
 
+    contexto = ev.contexto_execucao(cfg, lm_dir, clipes, args) if args.salvar_evidencias else None
+    # Validar TODOS os folds existentes antes de iniciar qualquer treino longo.
+    if contexto is not None:
+        for i, part in enumerate(particoes, 1):
+            arquivo = parciais / f"{i:02d}-{part.teste}.json"
+            if arquivo.is_file():
+                particao = ev.particao_fold(
+                    [c for c in clipes if c.pessoa in part.treino],
+                    [c for c in clipes if c.pessoa == part.validacao],
+                    [c for c in clipes if c.pessoa == part.teste])
+                ev.conferir_retomada(arquivo, json.loads(arquivo.read_text(encoding="utf-8")),
+                                     contexto, particao, rotulos)
+
     accs, nomes, todos_preds, todos_reais = [], [], [], []
     for i, part in enumerate(particoes, 1):
         arquivo = parciais / f"{i:02d}-{part.teste}.json"
         if arquivo.is_file():
             r = json.loads(arquivo.read_text(encoding="utf-8"))
+            if "evidencias" in r and contexto is None:
+                raise SystemExit(f"{arquivo}: mantenha --salvar-evidencias para conferir "
+                                 "a integridade da retomada, ou use outra --saida.")
             # CONFERIR A CONFIGURAÇÃO antes de reaproveitar. Sem isto, rodar duas
             # variantes no mesmo --saida (e o padrão é resultados-<arquitetura>,
             # igual para todas) faz a segunda herdar as rodadas da primeira em
@@ -568,8 +612,14 @@ def main() -> None:
             # rodou. É o pior modo de falha possível: número plausível e falso.
             iguais = {k: v for k, v in r.get("args", {}).items() if k not in IGNORAR_NA_RETOMADA}
             atuais = {k: v for k, v in vars(args).items() if k not in IGNORAR_NA_RETOMADA}
+            if contexto is not None:
+                # Caminhos foram substituídos por hashes no preflight acima.
+                for k in ("landmarks", "inicializar"):
+                    iguais.pop(k, None)
+                    atuais.pop(k, None)
             # Rodadas anteriores ao override explícito usavam o mesmo default.
-            iguais.setdefault("landmarks", None)
+            if contexto is None:
+                iguais.setdefault("landmarks", None)
             if iguais != atuais:
                 difs = {k: (iguais.get(k), atuais.get(k))
                         for k in set(iguais) | set(atuais) if iguais.get(k) != atuais.get(k)}
@@ -584,14 +634,20 @@ def main() -> None:
             teste = [c for c in clipes if c.pessoa == part.teste]
             print(f"\n[treino] rodada {i}/{len(particoes)} — teste={part.teste} "
                   f"val={part.validacao} treino={len(treino)} clipes")
-            acc, preds, reais, melhor, _ = treinar_rodada(treino, validacao, teste, rotulos,
-                                                          permutacao, args, dispositivo, i)
+            saidas = {} if contexto is not None else None
+            particao = ev.particao_fold(treino, validacao, teste) if contexto is not None else None
+            acc, preds, reais, melhor, modelo_fold = treinar_rodada(
+                treino, validacao, teste, rotulos, permutacao, args, dispositivo, i,
+                evidencias=saidas)
             print(f"   -> acurácia em {part.teste}: {acc:.1%} (melhor época {melhor + 1})")
             r = {"rodada": i, "teste": part.teste, "validacao": part.validacao,
                  "acuracia": acc, "melhor_epoca": melhor + 1,
                  "predicoes": preds, "verdadeiros": reais,
                  "rotulos": rotulos, "args": vars(args)}
-            arquivo.write_text(json.dumps(r, ensure_ascii=False), encoding="utf-8")
+            if contexto is not None:
+                ev.salvar_fold(arquivo, modelo_fold, r, saidas, contexto, particao, cfg)
+            else:
+                ev.escrever_json(arquivo, r)
         accs.append(r["acuracia"])
         nomes.append(r["teste"])
         todos_preds += r["predicoes"]

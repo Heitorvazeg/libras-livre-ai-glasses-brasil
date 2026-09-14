@@ -7,6 +7,7 @@ data/landmarks/*
 .cache/
 
 # Artefatos treinados
+experimentos-privados/
 models/*.keras
 models/*.tflite
 !models/.gitkeep
