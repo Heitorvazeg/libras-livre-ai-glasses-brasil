@@ -460,7 +460,7 @@ class TestNotebook(unittest.TestCase):
                     raise subprocess.CalledProcessError(1, cmd, stderr="rede indisponível")
                 if "status" in cmd:
                     return subprocess.CompletedProcess(cmd, 0, stdout="")
-                return subprocess.CompletedProcess(cmd, 0, stdout="feat/pretreino-gcn-representacao\n")
+                return subprocess.CompletedProcess(cmd, 0, stdout="poc/contrastivo-negativos-extras\n")
 
             with patch.object(subprocess, "run", side_effect=fake_git):
                 with self.assertRaisesRegex(RuntimeError, "Internet"):

@@ -203,13 +203,15 @@ distintas. O lote maior altera memória, estatísticas de BatchNorm e custo por
 passo — mesmo número de atualizações não significa mesmo custo computacional.
 O LOSO MINDS é a avaliação final; a recuperação interna não prova ganho no alvo.
 
-**Kaggle:** o notebook herdado não ativa a PoC automaticamente: aponta para a
-branch de pré-treino e não inclui `--negativos-extras`. Antes de usá-lo, publique
-a revisão da branch PoC, selecione essa branch na célula de código, acrescente
-a opção aos `PRE_ARGS` e use outro `NOME_EXPERIMENTO`. Não reutilize checkpoints
-ou folds produzidos pela implementação anterior de negativos extras. O manifesto
-do notebook detecta mudanças de código e argumentos. Não há validação GPU desta
-PoC nem lançamento automático de runs.
+**Kaggle:** o notebook desta branch já ativa a PoC — `NEGATIVOS_EXTRAS` e
+`PRE_ARGS` na célula 7, `NOME_EXPERIMENTO` distinto. A célula 3 (`BRANCH`)
+aponta para `poc/contrastivo-negativos-extras`; ao integrar/mesclar a PoC
+noutra branch (ex.: `dev`), atualize `BRANCH` de novo — esse valor não segue
+sozinho e um clone na branch errada falha rápido no `--auditar`, não em
+silêncio. Não reutilize checkpoints ou folds produzidos pela implementação
+anterior de negativos extras. O manifesto do notebook detecta mudanças de
+código e argumentos. Não há validação GPU desta PoC nem lançamento automático
+de runs.
 
 Os testes em [test_negativos_extras.py](test_negativos_extras.py), também chamados
 pelo selftest, exercitam K=2/K=3, reciclagem, gradientes, sementes, parâmetros
