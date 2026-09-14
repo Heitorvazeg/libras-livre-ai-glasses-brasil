@@ -506,12 +506,17 @@ def conferir_paridade(modelo_torch: nn.Module, destino: Path, modo: str, frames:
 
 
 def escrever_sidecar(destino: Path, rotulos: list[str], origem: dict, modo: str,
-                     paridade: dict, args: dict) -> Path:
+                     paridade: dict, args: dict, calibracao: dict | None = None) -> Path:
     """Rótulos + contrato de entrada ao lado do .tflite.
 
     Os rótulos viajam com o modelo pelo mesmo motivo de `modelo.salvar`: um
     artefato que não sabe a ordem das classes que prevê faz o app acertar o índice
     e falar a palavra errada.
+
+    `calibracao`, quando fornecido, vem de `calibracao.calibrar()` (ver
+    calibracao.py) — bloco pronto, este módulo não recalcula nem valida os
+    números, só embute. Ausente por padrão: sem `--calibracao`, o sidecar sai
+    idêntico ao de antes desta flag existir.
     """
     sidecar = destino.with_suffix(".json")
     contrato = _contrato(modo, args, origem.get("cabeca"))
@@ -519,12 +524,18 @@ def escrever_sidecar(destino: Path, rotulos: list[str], origem: dict, modo: str,
             or paridade["dtype_entrada"] != contrato["dtype"]
             or paridade["shape_saida"] != [1, len(rotulos)]):
         raise SystemExit("contrato do sidecar diverge da interface do TFLite; exportação recusada")
-    sidecar.write_text(json.dumps({
+    if calibracao is not None and calibracao.get("rotulos") != rotulos:
+        raise SystemExit("calibração foi ajustada com outra ordem de rótulos; exportação recusada")
+    corpo = {
         "schema": 1, "modelo": destino.name, "sha256": pv.hash_arquivo(destino),
         "rotulos": rotulos, "modo": modo, "contrato_entrada": contrato,
         "paridade_pytorch": paridade, "origem": origem,
         "codigo": {"sha256": md.codigo_atual()["fontes_sha256"]}, "args": args,
-    }, ensure_ascii=False, indent=2, default=str), encoding="utf-8")
+    }
+    if calibracao is not None:
+        corpo["calibracao"] = calibracao
+    sidecar.write_text(json.dumps(corpo, ensure_ascii=False, indent=2, default=str),
+                       encoding="utf-8")
     (destino.parent / f"{destino.stem}.labels.txt").write_text(
         "\n".join(rotulos) + "\n", encoding="utf-8")
     return sidecar
@@ -602,10 +613,19 @@ def main() -> None:
                          "com --checkpoint a arquitetura vem do próprio arquivo")
     ap.add_argument("--smoke", action="store_true",
                     help="pesos aleatórios: valida o toolchain, não gera entrega")
+    ap.add_argument("--calibracao", type=Path,
+                    help="JSON de calibracao.py (temperatura/limiar ajustados em "
+                         "validação); ausente: sidecar sai sem bloco de calibração, "
+                         "como antes dessa flag existir")
     args = ap.parse_args()
 
     if not args.smoke and args.checkpoint is None:
         raise SystemExit("informe --checkpoint (ou --smoke para validar o toolchain)")
+    calibracao = None
+    if args.calibracao is not None:
+        calibracao = json.loads(args.calibracao.read_text(encoding="utf-8"))
+        if calibracao.get("schema") != 1 or "temperatura" not in calibracao:
+            raise SystemExit(f"{args.calibracao}: não parece um JSON de calibracao.py")
     if args.smoke and args.checkpoint is not None:
         raise SystemExit("--smoke e --checkpoint são mutuamente exclusivos")
     if args.modo == "landmarks" and (args.frames < rp.FRAMES_POR_CANAL
@@ -647,7 +667,8 @@ def main() -> None:
 
     sidecar = escrever_sidecar(args.saida, rotulos, origem, args.modo,
                                paridade | {"precisao": precisao},
-                               vars(args) | {"saida": str(args.saida), "backend": backend})
+                               vars(args) | {"saida": str(args.saida), "backend": backend},
+                               calibracao=calibracao)
     print(f"[export] rótulos e contrato em {sidecar.name}")
     if args.smoke:
         print("[export] ⚠ --smoke: pesos aleatórios. Toolchain validado, artefato descartável.")
