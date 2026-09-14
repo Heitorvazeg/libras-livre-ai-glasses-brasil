@@ -382,7 +382,10 @@ class TestNotebook(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             base = pathlib.Path(tmp)
             inp = base / "input"
-            fixture(inp, completo=True)
+            # A célula 6 real liga FONTES_PRETREINO com "wlasl" por padrão agora
+            # (ver notebook) — sem essa entrada, entrada.localizar('wlasl') falha
+            # antes mesmo de chegar na lógica que este teste quer exercitar.
+            fixture(inp, completo=True, fontes=("minds", "vlibrasil", "malta", "wlasl"))
             work = base / "working"
             work.mkdir()
             ctx = dict(pathlib=pathlib, os=__import__("os"), sys=sys, shutil=shutil,
