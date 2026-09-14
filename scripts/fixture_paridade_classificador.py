@@ -1,33 +1,39 @@
 """Fixture de paridade entre o caminho do app e o caminho do treino (docs/prontidao-demo/02 §2.7).
 
 Gera, com semente fixa, num diretório de saída:
-  - `smoke_sinal_classifier.tflite` + `.json`: o export `--smoke --arquitetura gcn` (pesos
-    aleatórios, mesmo contrato da entrega) do MESMO modelo PyTorch usado abaixo;
+    - `smoke_sinal_classifier.tflite` + `.json` sem checkpoint (pesos aleatórios), ou
+        `real_sinal_classifier.tflite` + `.json` com `--checkpoint` GCN confiável;
+        `--somente-pytorch` omite ambos e NÃO valida conversão nem execução Android;
   - `paridade_classificador.json`: para algumas sequências sintéticas,
       1. os landmarks crus, como o MediaPipe entregaria ao app (com timestamps irregulares, frames
-         descartados e lacunas de mão);
+         descartados e lacunas de mão; não executa os detectores reais);
       2. os landmarks normalizados por `PoC/src/extract.py:frame_normalizado` (a fonte de verdade);
       3. a sequência imputada (`dados.imputar_maos`) na linha do tempo real e reamostrada PELO TEMPO
-         para os frames do contrato — o caminho do app;
+         para os frames do contrato — o caminho do app (imputação por índice);
       4. os logits do PyTorch sobre o item 3;
       5. o top-1 do PyTorch pelo caminho do TREINO: o mesmo movimento a 24 fps uniforme, sem
-         descarte, imputado e entregue com N frames (a cabeça reamostra N -> 64).
+         descarte, pelo DatasetSinais real e flags de representação do checkpoint.
 
 Os testes do app usam o fixture assim:
   - JVM: LandmarkNormalizer, HandGapImputer e ReamostragemTemporal reproduzem os itens 2 e 3;
   - instrumentado: o .tflite sobre o item 3 reproduz o item 4, e o caminho inteiro do app sobre o
     item 1 dá o top-1 do item 5.
 
-COM O `--smoke`, O TOP-1 NÃO PROVA NADA: medido, o GCN de pesos aleatórios responde sempre a mesma
+SEM CHECKPOINT, O TOP-1 NÃO PROVA RECONHECIMENTO: medido, o GCN de pesos aleatórios responde sempre a mesma
 classe, com margem de 0,003 a 0,024 logit, para qualquer entrada. Por isso os testes comparam os
 LOGITS (sensíveis à entrada) e só conferem o top-1 quando `margem_treino` passa de
-`margem_minima_top1` — o que passa a acontecer com o checkpoint real.
+`margem_minima_top1`. Pesos treinados não garantem margem alta em entradas sintéticas;
+paridade numérica não mede acurácia LOSO nem equivalência Tasks × Holistic.
 
 Mora em scripts/, e não em computer-vision-model/treino/: é ferramenta do app, e só LÊ o código
 da trilha de visão (exportar.py, dados.py, PoC/src/extract.py). Não grava nada lá, nem __pycache__.
 
-Uso (a partir da raiz, no ambiente do export — hoje torch 2.13 + litert-torch + torchvision 0.28):
+Uso (a partir da raiz, em ambiente compatível com o exportador):
     python scripts/fixture_paridade_classificador.py --saida mobile-app-companion/app/src/androidTest/assets
+    python scripts/fixture_paridade_classificador.py --checkpoint /privado/fold.pt \
+        --saida experimentos-privados/paridade-real --somente-pytorch
+O segundo comando exige saída vazia; para validar TFLite, remover --somente-pytorch
+num ambiente com conversor e runtime instalados. Não publicar artefatos reais.
 """
 from __future__ import annotations
 
@@ -49,6 +55,7 @@ sys.path.insert(0, str(TREINO.parent / "PoC" / "src"))
 
 import dados  # noqa: E402
 import exportar as ex  # noqa: E402
+import treinar as tr  # noqa: E402
 from config import load_config  # noqa: E402
 from extract import frame_normalizado  # noqa: E402
 
@@ -129,7 +136,24 @@ def _logits(modelo, seq):
         return modelo(torch.from_numpy(np.ascontiguousarray(seq[None], dtype=np.float32)))[0].numpy()
 
 
-def _sequencia(rng, frames_contrato, cfg, modelo):
+def _logits_treino(modelo, seq, cabeca):
+    """Referência pelo DatasetSinais real, sem executar novamente a cabeça do export."""
+    seq = seq[:, :, :3 if cabeca["com_z"] else 2].copy()
+    if cabeca["z_recentrado"]:
+        seq = dados.recentrar_z(seq)
+    if cabeca["imputar"]:
+        seq = dados.imputar_maos(seq, 5)
+    ds = tr.DatasetSinais([dados.Clipe("M00", "sintetico", "01", seq)],
+                          ["sintetico"], None, False, arquitetura="gcn",
+                          ossos=cabeca["ossos"], movimento=cabeca["movimento"])
+    with torch.no_grad():
+        return modelo.rede(ds[0][0].unsqueeze(0))[0].numpy()
+
+
+def _sequencia(rng, frames_contrato, cfg, modelo, cabeca=None):
+    if cabeca is None:
+        cabeca = {"com_z": True, "z_recentrado": True, "imputar": True,
+                  "ossos": True, "movimento": False}
     pose = _pose_base(rng)
     forma_mao = np.column_stack([np.linspace(0, 0.06, 21), np.linspace(0, 0.08, 21), rng.uniform(-0.05, 0.05, 21)])
     desloc = _movimento(rng)
@@ -145,8 +169,8 @@ def _sequencia(rng, frames_contrato, cfg, modelo):
                 for i, t in zip(indices, tempos)]
 
     # Caminho do TREINO: vídeo uniforme, sem descarte.
-    treino = dados.imputar_maos(_normalizar(frames_em(range(n_uniforme), t_uniforme), cfg), 5)
-    logits_treino = _logits(modelo, treino)
+    treino = _normalizar(frames_em(range(n_uniforme), t_uniforme), cfg)
+    logits_treino = _logits_treino(modelo, treino, cabeca)
     ordem = np.argsort(logits_treino)[::-1]
     margem = float(logits_treino[ordem[0]] - logits_treino[ordem[1]])
 
@@ -154,12 +178,12 @@ def _sequencia(rng, frames_contrato, cfg, modelo):
     mantidos = [i for i in range(n_uniforme) if i in (0, n_uniforme - 1) or rng.random() > 0.25]
     ts_ms = np.array([round(t_uniforme[i] * 1000 + rng.uniform(-6, 6)) if 0 < i < n_uniforme - 1 else round(t_uniforme[i] * 1000)
                       for i in mantidos], dtype=np.int64)
-    ts_ms = np.maximum.accumulate(ts_ms + np.arange(len(ts_ms)) * 0)  # não decrescente
+    ts_ms = np.maximum.accumulate(ts_ms)  # não decrescente
     crus = frames_em(mantidos, ts_ms / 1000.0)
     normalizados = _normalizar(crus, cfg)
     imputados = dados.imputar_maos(normalizados, 5)
     app = _reamostrar_pelo_tempo(imputados, ts_ms.astype(np.float64), frames_contrato)
-    logits_app = _logits(modelo, app)
+    logits_app = _logits(modelo, app[:, :, :3 if cabeca["com_z"] else 2])
 
     return {
         "largura": LARGURA, "altura": ALTURA,
@@ -176,45 +200,76 @@ def _sequencia(rng, frames_contrato, cfg, modelo):
     }
 
 
+def conferir_destino(saida: Path, checkpoint: Path | None) -> None:
+    """Pesos reais nunca sobrescrevem assets versionados, dados ou o checkpoint."""
+    destino = saida.resolve()
+    if checkpoint is not None:
+        if destino.is_relative_to(RAIZ) and not destino.is_relative_to(RAIZ / "experimentos-privados"):
+            raise SystemExit("fixture de checkpoint real exige saída privada: "
+                             "experimentos-privados/ ou diretório fora do repositório")
+        if destino.exists() and any(destino.iterdir()):
+            raise SystemExit("saída de fixture real deve estar vazia; não sobrescrever artefatos")
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--saida", type=Path, required=True)
     ap.add_argument("--semente", type=int, default=20260913)
     ap.add_argument("--frames", type=int, default=96)
     ap.add_argument("--sequencias", type=int, default=3)
+    ap.add_argument("--checkpoint", type=Path,
+                    help="checkpoint GCN confiável de modelo.salvar; ausente mantém smoke")
+    ap.add_argument("--somente-pytorch", action="store_true",
+                    help="gera referências sem converter TFLite; não serve como teste Android")
     args = ap.parse_args()
+    if args.frames < 2 or args.sequencias < 1:
+        ap.error("--frames >= 2 e --sequencias >= 1 são obrigatórios")
+    conferir_destino(args.saida, args.checkpoint)
 
     torch.manual_seed(args.semente)
     rng = np.random.default_rng(args.semente)
-    args.saida.mkdir(parents=True, exist_ok=True)
 
-    modelo, rotulos, origem = ex.montar(None, "landmarks", arquitetura="gcn")
+    modelo, rotulos, origem = ex.montar(args.checkpoint, "landmarks", arquitetura="gcn")
+    if origem["arquitetura"] != "gcn":
+        ap.error("fixture do app exige checkpoint GCN, não ResNet")
     layout = ex.resolver_layout(origem, None)
-    exemplo = ex.entrada_exemplo("landmarks", args.frames, layout["pontos"], layout["dimensoes"])
-    destino = args.saida / "smoke_sinal_classifier.tflite"
-    backend = ex.converter(modelo, exemplo, destino, quantizacao="nenhuma", backend="ai-edge")
-    precisao = ex._conferir_precisao(destino, "nenhuma")
-    paridade = ex.conferir_paridade(modelo, destino, "landmarks", args.frames, layout["pontos"],
-                                    dims=layout["dimensoes"])
-    if paridade["max_dif_logit"] > ex.TOL_LOGITS["nenhuma"] or paridade["discordancias_top1"]:
-        raise SystemExit(f"conversão divergiu do PyTorch: {paridade}")
-    ex.escrever_sidecar(destino, rotulos, origem, "landmarks", paridade | {"precisao": precisao},
-                        {"frames": args.frames, "layout": layout, "arquitetura": "gcn",
-                         "pontos": layout["pontos"], "quantizacao": "nenhuma", "smoke": True,
-                         "semente": args.semente, "saida": destino.name, "backend": backend})
-
     cfg = load_config()
-    sequencias = [_sequencia(rng, args.frames, cfg, modelo) for _ in range(args.sequencias)]
-    tentativas = len(sequencias)
+    ordem = [p["indice_mediapipe_pose"] for p in layout["pose_ordenada"]]
+    if layout["pontos"] != 57 or ordem != cfg.pose_subset:
+        ap.error("layout do checkpoint diverge dos 57 pontos/ordem do app")
+    if len(rotulos) < 2:
+        ap.error("fixture top-2 exige pelo menos dois rótulos")
+    args.saida.mkdir(parents=True, exist_ok=True)
+    exemplo = ex.entrada_exemplo("landmarks", args.frames, layout["pontos"], layout["dimensoes"])
+    destino = args.saida / ("real_sinal_classifier.tflite" if args.checkpoint else "smoke_sinal_classifier.tflite")
+    paridade = None
+    if not args.somente_pytorch:
+        backend = ex.converter(modelo, exemplo, destino, quantizacao="nenhuma", backend="ai-edge")
+        precisao = ex._conferir_precisao(destino, "nenhuma")
+        paridade = ex.conferir_paridade(modelo, destino, "landmarks", args.frames, layout["pontos"],
+                                        dims=layout["dimensoes"])
+        if paridade["max_dif_logit"] > ex.TOL_LOGITS["nenhuma"] or paridade["discordancias_top1"]:
+            raise SystemExit(f"conversão divergiu do PyTorch: {paridade}")
+        ex.escrever_sidecar(destino, rotulos, origem, "landmarks", paridade | {"precisao": precisao},
+                            {"frames": args.frames, "layout": layout, "arquitetura": "gcn",
+                             "pontos": layout["pontos"], "quantizacao": "nenhuma", "smoke": args.checkpoint is None,
+                             "semente": args.semente, "saida": destino.name, "backend": backend})
+
+    sequencias = [_sequencia(rng, args.frames, cfg, modelo, origem["cabeca"]) for _ in range(args.sequencias)]
 
     (args.saida / "paridade_classificador.json").write_text(json.dumps({
         "_origem": "scripts/fixture_paridade_classificador.py",
+                "schema": 2, "smoke": args.checkpoint is None,
+                "entrada_sintetica": True, "tflite_validado": paridade is not None,
+                "checkpoint_sha256": origem.get("sha256"), "representacao": origem["cabeca"],
+                "codigo": ex.pv.hash_arquivo(Path(__file__)),
         "semente": args.semente, "frames": args.frames, "lacuna_maxima": 5,
         "margem_minima_top1": MARGEM_MINIMA_TOP1,
-        "modelo": destino.name, "rotulos": rotulos, "sequencias": sequencias,
+                "modelo": destino.name if paridade is not None else None,
+                "rotulos": rotulos, "sequencias": sequencias,
     }), encoding="utf-8")
     print(f"[fixture] {len(sequencias)} sequências, margens do treino {[round(x['margem_treino'], 3) for x in sequencias]}, modelo {destino.name}, "
-          f"paridade tflite max_dif={paridade['max_dif_logit']:.2e}")
+                    f"TFLite validado={paridade is not None}; entrada sintética, não mede acurácia LOSO")
 
 
 if __name__ == "__main__":
