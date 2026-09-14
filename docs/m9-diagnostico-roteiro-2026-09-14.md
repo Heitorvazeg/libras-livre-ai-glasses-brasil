@@ -4,6 +4,10 @@
 real permanece pendente.** Não houve novo treino, alteração do roteiro ou de
 limiares. O piloto M01 não substitui esta análise das oito pessoas.
 
+**Continuação focada em FILHO:** a [inspeção dos 160 pares locais](investigacao-filho-2026-09-14.md)
+separa ausência nas bordas/interior, controles M12/VACINA e a assimetria de
+composição dos folds. Causa visual/linguística ainda não confirmada.
+
 ## 1. Evidências verificadas
 
 [auditar_m9_loso.py](../scripts/auditar_m9_loso.py) leu diretamente dois pacotes

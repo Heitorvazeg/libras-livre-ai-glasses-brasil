@@ -181,6 +181,22 @@ Execução concluída com os dois pacotes das seeds17/18; diagnóstico/decisão 
 [test_auditar_m9_loso.py](test_auditar_m9_loso.py). O roteiro tem quatro turnos,
 oito ocorrências e seis sinais únicos; não é uma frase única de seis sinais.
 
+### FILHO — inspeção de vídeos e landmarks locais
+
+[investigar_filho.py](investigar_filho.py) inspeciona 160 pares MINDS (FILHO,
+MEDO, APROVEITAR, VACINA; oito pessoas e cinco repetições). Requer Python 3.11+,
+NumPy e OpenCV, disponíveis no ambiente de análise existente. Aceita `--videos`,
+`--landmarks` e `--saida` obrigatória, nova dentro de `experimentos-privados`.
+
+Mede ausência nas bordas/interior, imputação de leitura e deslocamentos entre
+frames presentes. Decodifica vídeos e gera relatório, CSV de grupos, galeria de
+contatos e planilha de revisão humana em branco. Não reextrai, não infere classes,
+não pareia erros históricos por repetição nem faz diagnóstico linguístico.
+Ausência não equivale a falha durante o sinal; presença não prova ponto correto.
+
+[Resultado da investigação](../docs/investigacao-filho-2026-09-14.md) e
+[testes](test_investigar_filho.py). Imagens e artefatos permanecem privados.
+
 ## Fila do consultor: aproveitar a auditoria existente
 
 [preparar_revisao_libras.py](preparar_revisao_libras.py) lê a
