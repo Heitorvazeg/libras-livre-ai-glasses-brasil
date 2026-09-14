@@ -2,6 +2,17 @@
 
 ## Situação vigente — retomada do escopo P1–P4
 
+**Revisão posterior do commit de calibração `3e81c3f`:** infraestrutura adicionada,
+mas **não aprovada para entrega**. Há falhas reproduzidas de validação numérica,
+rejeição total e vinculação ao modelo; os 78 testes existentes passaram sem
+cobrir esses casos. Ver [parecer e limites](revisao-calibracao-3e81c3f-2026-09-14.md).
+Isso não significa calibração real do final concluída.
+
+**Foco solicitado em seguida: investigar FILHO.** A [inspeção descritiva](investigacao-filho-2026-09-14.md)
+dos vídeos/landmarks foi executada sem treino ou reextração. Material privado de
+revisão preparado; causa visual/linguística continua pendente. A ordem geral
+abaixo não autoriza iniciar o treino final enquanto o foco for essa investigação.
+
 **O trabalho experimental foi preservado em commits locais; Android está pausado.**
 Sem push, merge adicional, novo treino real ou substituição de modelos do app.
 Esta tabela e os documentos vinculados prevalecem sobre o levantamento histórico
