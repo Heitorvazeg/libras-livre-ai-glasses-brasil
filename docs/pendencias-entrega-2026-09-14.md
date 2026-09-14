@@ -1,5 +1,56 @@
 # Pendências rumo à entrega — 2026-09-14
 
+## Situação vigente — retomada do escopo P1–P4
+
+**O trabalho experimental foi preservado em commits locais; Android está pausado.**
+Sem push, merge adicional, novo treino real ou substituição de modelos do app.
+Esta tabela e os documentos vinculados prevalecem sobre o levantamento histórico
+abaixo; suas hipóteses antigas não devem ser usadas como instruções de execução.
+
+| Pendência | Resultado nesta frente | O que ainda falta |
+|---|---|---|
+| **P1 — seed/política final** | **Decidida e implementada:** seed 20260917, backbone fixado, 120 épocas, salvar última sem seleção sobreposta. [Política e testes](politica-modelo-final-2026-09-14.md). | Executar um treino final real; converter/validar esse novo artefato. Não é o checkpoint M01. |
+| **P2 / M9 — risco do roteiro** | **Diagnóstico histórico concluído:** oito pessoas × duas execuções, matrizes reconstruídas. FILHO falha 0/5 em M10 nas duas; não trocar palavras/limiares para esconder isso. [Diagnóstico e decisão](m9-diagnostico-roteiro-2026-09-14.md). | Dados contínuos novos, revisão humana e avaliação operacional antes de aprovar a demo. Não há taxa de sucesso de frase medida. |
+| **P3 — reamostragem temporal** | **Triagem concluída, hipótese original corrigida:** fps constante diferente, sozinho, não implica distorção na interpolação normalizada. M01 índice × PTS não mudou top-1. | Perdas/jitter e outros sinalizantes não cobertos. Não autorizar reextração/retreino global com base só em 12 vs. 30 fps. |
+| **P4 — README do treino** | **Corrigida:** GCN/xyz/export e limites descritos; política final atualizada. | Sem bloqueio específico de documentação de exportação. |
+
+### Ordem a partir daqui
+
+1. Produzir um único candidato final conforme P1, quando for iniciada a execução
+  longa; não comparar sementes pela acurácia no treino.
+2. Tratar calibração e ensaios do roteiro como avaliação separada, com pessoas
+  não vistas e critérios fixados antes de olhar os resultados de teste.
+3. Aprofundar P3 com dados de captura irregular, sem reformar todos os corpora
+  por uma hipótese de fps já corrigida. Android só volta a ser executado numa
+  etapa específica de integração; sua ausência não bloqueia as decisões acima.
+
+Não encerrar como resolvidos a calibração, o reconhecimento da frase nos óculos,
+o treino/export do final ou a investigação visual dos erros de M10/M11/M12.
+São os limites reais restantes, não justificativa para ampliar o escopo agora.
+
+### Marco local preservado
+
+- `3f9be42`: evidências LOSO e retomada.
+- `a97b067`: piloto/fixtures/paridade desktop.
+- `44c6dac`: suporte Android separado, sem execução do teste instrumentado.
+- `0b194a1`: documentação e snapshot pré-P1, necessário à reprodução estrita de M01.
+
+Pesos, landmarks, logits e fixtures reais permanecem privados e ignorados pelo Git.
+Arquivos não relacionados de outras frentes foram deixados fora desses commits.
+
+### Validação do fechamento desta frente
+
+- **48 testes de regressão passaram**, cobrindo M9, política final, evidências
+  LOSO e ferramentas do piloto/paridade desktop.
+- **Selftest completo do treino passou**, com dados sintéticos; isso não é novo
+  treino MINDS nem validação do futuro checkpoint final.
+- Testes executados no ambiente de treino existente (Python 3.12.3, PyTorch CPU).
+  O editor continua apontando imports de `torch` não resolvidos no ambiente
+  selecionado Python 3.14.6; não foram instalados pacotes para alterar esse ambiente.
+- Auditoria M9 executada nos dois pacotes reais; artefato resultante permanece privado.
+
+## Levantamento histórico (não executar literalmente)
+
 > **Ordem substituída pelo [plano integrado de validação](validacao-visao-app-2026-09-14.md).**
 > Preservado como histórico e registro de decisões/execuções informadas por outras
 > frentes. Não usar acurácia de treino para escolher o final; M9 não espera o final;

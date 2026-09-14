@@ -5,6 +5,11 @@
 O [plano vigente](../docs/validacao-visao-app-2026-09-14.md) separa paridade
 numérica, avaliação held-out e comparação dos detectores.
 
+**Escopo atual:** marco experimental preservado no snapshot `0b194a1`; Android
+pausado. O ajuste de política final mudou o hash do código de treino: reproduzir
+M01 nesse snapshot/ambiente original, não regravar evidências para aceitar a versão
+nova. [Pendências P1–P4](../docs/pendencias-entrega-2026-09-14.md).
+
 [fixture_paridade_classificador.py](fixture_paridade_classificador.py) aceita
 `--checkpoint` GCN confiável. Sem ele, continua smoke com pesos aleatórios.
 Exemplo a partir da raiz, num ambiente Python com as dependências de treino:
@@ -120,8 +125,8 @@ o hash desse relatório é registrado na avaliação separada.
 
 ### Conversão e paridade TFLite com os clipes reais
 
-Usar ambiente **isolado**, compatível com
-[requirements-export.txt](../computer-vision-model/treino/requirements-export.txt),
+Usar ambiente **isolado**, com versões compatíveis documentadas no
+[piloto, seção 9](../docs/piloto-tasks-holistic-M01-2026-09-14.md),
 sem alterar o ambiente que produziu as evidências do treino. Gerar fixture com
 `--checkpoint` e **sem** `--somente-pytorch` em uma nova pasta privada.
 Depois [avaliar_tflite_piloto.py](avaliar_tflite_piloto.py) compara quatro braços
@@ -157,6 +162,24 @@ configuração privada e recusou caminhos inválidos; o teste JVM do app foi ten
 mas bloqueado antes da compilação por SDK ausente. Nenhum teste instrumentado
 foi executado. Versões, hashes e pendências na seção 9 do
 [registro do piloto](../docs/piloto-tasks-holistic-M01-2026-09-14.md).
+
+### M9 — auditoria dos resultados LOSO existentes
+
+[auditar_m9_loso.py](auditar_m9_loso.py) lê os pacotes tar.gz do protocolo
+legado V-LIBRASIL+MALTA. Não extrai arquivos, não desserializa PyTorch, não treina
+e não executa Android. Requer Python 3.11+ e NumPy. Recebe `--pacotes` (um ou mais)
+e `--saida` (JSON novo privado). Confere hashes de backbone/metadados, receita,
+oito folds, denominadores, rótulos e matrizes salvas versus predições.
+
+Produz recall/confusões por sinal/pessoa e hashes dos membros. Não inventa IDs
+ausentes nos JSON legados, não calibra confiança e não trata clipes isolados como
+frases. Duas execuções podem conter os mesmos vídeos: não somar como amostras
+independentes nem chamar diferenças de efeito exclusivo da seed.
+
+Execução concluída com os dois pacotes das seeds17/18; diagnóstico/decisão em
+[M9](../docs/m9-diagnostico-roteiro-2026-09-14.md). Testes em
+[test_auditar_m9_loso.py](test_auditar_m9_loso.py). O roteiro tem quatro turnos,
+oito ocorrências e seis sinais únicos; não é uma frase única de seis sinais.
 
 ## Fila do consultor: aproveitar a auditoria existente
 

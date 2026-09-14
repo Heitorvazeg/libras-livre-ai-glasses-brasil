@@ -11,6 +11,12 @@ mantiveram 99/100 e top-1 idêntico após conversão. Maior diferença contra os
 anteriores: **5,72205e-6**. Teste Android **não executado**: Gradle bloqueado pela
 ausência do SDK. Assets de produção e ambiente de treino permanecem intactos.
 
+**Marco preservado, frente Android pausada:** reprodução estrita deste piloto
+usa o snapshot `0b194a1` e os ambientes aqui registrados. A alteração posterior
+da política do final muda o hash do código, não os resultados salvos. Não regravar
+evidências para aceitar o novo código. Continuação focada em
+[M9](m9-diagnostico-roteiro-2026-09-14.md) e [P1](politica-modelo-final-2026-09-14.md).
+
 ## 1. Insumos obtidos
 
 ### Detectores Tasks

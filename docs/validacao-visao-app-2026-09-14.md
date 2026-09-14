@@ -3,6 +3,12 @@
 **Data:** 2026-09-14. Este é o plano vigente após a revalidação. As análises
 anteriores são preservadas como histórico, não como instruções de execução.
 
+> **Retomada de escopo P1–P4:** marco experimental preservado localmente e Android
+> pausado. [M9 consolidado](m9-diagnostico-roteiro-2026-09-14.md) e
+> [política final decidida/implementada](politica-modelo-final-2026-09-14.md).
+> O treino final real não foi executado. Situação e próximos bloqueios no
+> [quadro vigente de pendências](pendencias-entrega-2026-09-14.md).
+
 > **Piloto M01 concluído:** treino de um fold, extração dos cem vídeos e avaliação
 > pareada realizados. Os sete braços tiveram 99/100 acertos, com top-1 idêntico,
 > mas diferenças em logits/confiança e segunda imputação ativa. Ver o
@@ -50,10 +56,11 @@ que WLASL foi usado. A terceira execução e duas comparações rigorosamente
 pareadas não foram comprovadas nesta revisão. Mesma semente não basta: código,
 dados, partições, ambiente e orçamento também importam.
 
-O `--final` usa todas as pessoas e seleciona época numa validação sobreposta ao
-treino. Não possui avaliação independente. Não escolher sua semente pela
-acurácia no próprio treino nem por uma validação informal contendo pessoas vistas.
-Definir semente e política de época explicitamente antes da entrega.
+Na base revisada, `--final` selecionava época numa validação sobreposta ao treino.
+P1 corrigiu esse caminho: agora exige política explícita `ultima` e seed, sem
+avaliação sobreposta. Continua sem avaliação independente. A política v1 fixa
+seed 20260917 e 120 épocas, não escolhidas pela acurácia do final ou por pessoas
+de teste já observadas. Detalhes na política vinculada acima.
 
 ### B — Risco dos sinais do roteiro confirmado
 

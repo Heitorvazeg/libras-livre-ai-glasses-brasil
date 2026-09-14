@@ -158,6 +158,12 @@ os antigos continuam aceitos.
 
 ### Evidências LOSO e retomada estrita
 
+**Marco preservado:** o piloto M01 foi executado e seus resultados permanecem
+privados. O snapshot anterior à política final é `0b194a1`; reproduzi-lo exige
+esse código e o ambiente original, sem reescrever hashes. Situação atual das
+pendências em [P1](../../docs/politica-modelo-final-2026-09-14.md) e
+[M9](../../docs/m9-diagnostico-roteiro-2026-09-14.md). Android está pausado.
+
 `--salvar-evidencias` preserva, para cada fold concluído, o **melhor modelo
 selecionado na validação**, não o último estado da otimização. O JSON de rodada
 continua no formato consumido pelos notebooks; os arquivos maiores ficam numa
@@ -195,8 +201,9 @@ dispositivo, threads e workers) invalidam a identidade estrita. `--folds` e
 o conteúdo inventariado continuar igual. Para retomar, conservar o snapshot de
 código/ambiente original. Hash não é assinatura contra adulteração maliciosa.
 
-Receita candidata com pré-treino (a partir desta pasta; **não executada nesta
-implementação**; substituir os caminhos por insumos aprovados):
+Receita candidata com pré-treino (a partir desta pasta; **oito folds completos
+não foram executados nesta implementação**, apenas o fold M01 do piloto;
+substituir os caminhos por insumos aprovados):
 
 ```bash
 python treinar.py --arquitetura gcn --ossos --com-z --z-recentrado \
@@ -216,6 +223,18 @@ saída. O notebook da PoC não foi convertido automaticamente para essa receita.
 Regressões em [test_evidencias_loso.py](test_evidencias_loso.py), também chamadas
 pelo [selftest.py](selftest.py): recarga e logits, igualdade exata de pesos/RNG,
 retomada sem retreino, compatibilidade do glob legado e rejeição de inconsistências.
+
+### Política do ajuste final (P1)
+
+`--final` exige agora `--politica-final ultima` e `--semente` explícita; salva
+o último estado do orçamento, sem validação sobreposta e sem avaliação de teste.
+Saída deve ser nova/vazia. Comandos antigos sem a política falham antes de treinar.
+Para a receita de entrega, a [política v1](../../docs/politica-modelo-final-2026-09-14.md)
+fixa seed **20260917**, orçamento **120 épocas** e o backbone já aprovado, não
+escolhidos pela acurácia do final. Não combinar com `--salvar-evidencias`.
+Metadados identificam seleção/época e ausência de avaliação independente.
+**O treino real final ainda não foi executado; 96,6% LOSO não é sua acurácia medida.**
+Guardas em [test_politica_final.py](test_politica_final.py).
 
 ### Pré-treino
 
