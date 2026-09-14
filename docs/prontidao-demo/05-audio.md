@@ -131,3 +131,25 @@ roteiro (2.9). Aparece "restrita ao roteiro" na faixa de estado, para ninguém e
 Teste de escuta: comparar a voz atual (`pt_BR-edresson-low`) com uma pt-BR "medium" do Piper,
 se houver uma disponível para o sherpa-onnx (a confirmar). Só troca se a diferença for grande.
 Está no [guia de testes](../guia-de-testes-mock-e-oculos.md).
+
+---
+
+## Como ficou a onda 4 (5.1, 5.2 seletor, 5.4, 5.5, 5.6)
+
+- **5.1:** `PiperSherpaOnnxTtsEngine(saida = …)` fixa o `TYPE_BUILTIN_SPEAKER` com "celular" e volta ao
+  roteamento padrão com "óculos", a cada fala. O TTS de reserva segue o roteamento padrão.
+- **5.2:** seletor "Microfone da resposta". No modo óculos, o `CameraViewModel` pede o SCO
+  (`AudioSessionManager.acquireListening`) e troca a fonte do `PcmMicCapture` (`configurar`); sem SCO,
+  cai para o microfone do celular com o aviso "Microfone dos óculos indisponível, usando o do celular" e
+  a escuta segue. O perfil é devolvido ao fim da escuta, na falha e no cancelamento. **Pendente:** o
+  teste manual (modo óculos sem SCO no emulador) depende de chegar ao ⑤, que exige sinais.
+- **5.4:** a etapa 4 do aquecimento chama `VoskSttEngine.carregarModelo()`.
+- **5.5:** `TtsEngine.speakAndAwait` devolve `Boolean` e ganhou `aquecer(frases)`; o Piper devolve false
+  quando não carrega ou não sintetiza e pré-sintetiza os avisos do "repita". `TtsEmCadeia` cria o
+  `AndroidTextToSpeechEngine` só na primeira falha, fica nele até reiniciar e avisa uma vez ("Voz de
+  reserva em uso"). O TTS do Android agora espera a inicialização (até 3 s), senão a primeira frase da
+  reserva se perdia. Teste: `TtsEmCadeiaTest`.
+- **5.6:** `CopiaDeAssets.garantir` com o marcador `.completo`, usada pelo Vosk e pelo eSpeak do Piper.
+  **Efeito na primeira execução depois da atualização:** as pastas já copiadas não têm marcador e são
+  copiadas de novo uma vez. Teste: `CopiaDeAssetsTest` (cópia interrompida e retomada, pasta antiga sem
+  marcador, marcador presente).

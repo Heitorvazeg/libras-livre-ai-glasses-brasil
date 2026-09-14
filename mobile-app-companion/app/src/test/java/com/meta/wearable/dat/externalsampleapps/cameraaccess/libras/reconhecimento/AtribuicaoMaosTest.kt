@@ -34,6 +34,32 @@ class AtribuicaoMaosTest {
   }
 
   @Test
+  fun `mao do atendente longe dos pulsos e descartada`() {
+    // Ombros a 200 px: raio de 100 px. A mão do atendente está na base do quadro, a ~400 px.
+    val punhos = listOf(Ponto(110f, 305f), Ponto(200f, 700f), Ponto(290f, 295f))
+    assertEquals(listOf(0, 2), AtribuicaoMaos.filtrarPorPulso(punhos, pulsoEsq, pulsoDir, larguraOmbros = 200f))
+  }
+
+  @Test
+  fun `duas pessoas - fica a de ombros mais afastados`() {
+    val aoFundo = Ponto(500f, 100f) to Ponto(560f, 100f) // 60 px
+    val pertoDaCamera = Ponto(100f, 200f) to Ponto(300f, 200f) // 200 px
+    assertEquals(1, AtribuicaoMaos.escolherPose(listOf(aoFundo, pertoDaCamera)))
+    assertEquals(null, AtribuicaoMaos.escolherPose(emptyList()))
+  }
+
+  @Test
+  fun `mao da pessoa surda com rotulo trocado passa pelo filtro e vai para o pulso certo`() {
+    // Punho 0 junto do pulso direito, punho 1 junto do esquerdo, mais a mão do atendente ao longe.
+    val punhos = listOf(Ponto(300f, 310f), Ponto(95f, 290f), Ponto(900f, 900f))
+    val mantidas = AtribuicaoMaos.filtrarPorPulso(punhos, pulsoEsq, pulsoDir, larguraOmbros = 200f)
+    assertEquals(listOf(0, 1), mantidas)
+    assertEquals(Lados(esquerda = 1, direita = 0), AtribuicaoMaos.atribuir(mantidas.map { punhos[it] }, pulsoEsq, pulsoDir).let {
+      Lados(it.esquerda?.let(mantidas::get), it.direita?.let(mantidas::get))
+    })
+  }
+
+  @Test
   fun `nenhuma mao`() {
     assertEquals(Lados(null, null), AtribuicaoMaos.atribuir(emptyList(), pulsoEsq, pulsoDir))
   }

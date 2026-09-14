@@ -15,6 +15,7 @@ import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.isEnabled
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
+import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
@@ -47,6 +48,7 @@ class FluxoOnda2Test {
 
   companion object {
     private const val TIMEOUT = 20_000L
+    private const val TIMEOUT_AQUECIMENTO = 180_000L
   }
 
   private val targetContext: Context
@@ -98,16 +100,18 @@ class FluxoOnda2Test {
     oculos.unfold()
     oculos.services.camera.setCameraFeed(copiarAsset("pessoa.mp4"))
 
+    abrirControlesDaSessao()
     composeTestRule.waitUntilExactlyOneExists(hasTestTag("start_session_button").and(isEnabled()), TIMEOUT)
     composeTestRule.onNodeWithTag("start_session_button").performClick()
-    composeTestRule.waitUntilExactlyOneExists(hasTestTag("botao_principal").and(isEnabled()), TIMEOUT)
+    // O "iniciar" espera o aquecimento (6.4): a primeira abertura copia os modelos para o disco.
+    composeTestRule.waitUntilExactlyOneExists(hasTestTag("botao_principal").and(isEnabled()), TIMEOUT_AQUECIMENTO)
 
     // O overlay aparece com a sessão e o painel ligado.
     composeTestRule.waitUntilExactlyOneExists(hasTestTag("painel_metricas"), TIMEOUT)
 
     composeTestRule.onNodeWithTag("botao_principal").performClick()
     val continuar = targetContext.getString(R.string.camera_permission_continue)
-    val capturando = targetContext.getString(R.string.dialog_state_label, "capturando_sinais")
+    val capturando = targetContext.getString(R.string.estado_capturando)
     composeTestRule.waitUntil(TIMEOUT) {
       composeTestRule.onAllNodesWithText(continuar).fetchSemanticsNodes().isNotEmpty() ||
           composeTestRule.onAllNodesWithText(capturando).fetchSemanticsNodes().isNotEmpty()
@@ -139,6 +143,15 @@ class FluxoOnda2Test {
         "sem fps_recebido nas métricas",
         linhas.any { it.startsWith("metrica,") && it.contains(",fps_recebido,") })
     android.util.Log.i("FluxoOnda2Test", "CSV ${csv.absolutePath}: $tipos")
+  }
+
+  // 10.3: os controles do sample ficam numa área recolhível.
+  private fun abrirControlesDaSessao() {
+    composeTestRule.waitUntilAtLeastOneExists(hasTestTag("mais_controles"), TIMEOUT)
+    if (composeTestRule.onAllNodesWithTag("start_session_button").fetchSemanticsNodes().isEmpty() &&
+        composeTestRule.onAllNodesWithTag("end_session_button").fetchSemanticsNodes().isEmpty()) {
+      composeTestRule.onNodeWithTag("mais_controles").performClick()
+    }
   }
 
   private fun copiarAsset(nome: String): Uri {

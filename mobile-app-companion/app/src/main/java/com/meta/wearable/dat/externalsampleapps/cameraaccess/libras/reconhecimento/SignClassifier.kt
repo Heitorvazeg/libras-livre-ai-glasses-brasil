@@ -27,6 +27,9 @@ interface SignClassifier {
   /** Classifica um segmento. Lança em caso de falha (o LandmarkPipeline trata). */
   fun classify(segmento: SegmentoSinal): Classificacao
 
+  /** Carrega e roda uma inferência descartável (aquecimento, 6.4). Lança se o modelo não serve. */
+  fun aquecer() {}
+
   fun close()
 }
 

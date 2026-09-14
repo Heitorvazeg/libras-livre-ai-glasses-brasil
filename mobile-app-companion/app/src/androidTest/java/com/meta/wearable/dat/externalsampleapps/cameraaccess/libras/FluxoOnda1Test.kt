@@ -22,6 +22,7 @@ import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.isEnabled
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
+import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
@@ -53,6 +54,7 @@ class FluxoOnda1Test {
 
   companion object {
     private const val TIMEOUT = 20_000L
+    private const val TIMEOUT_AQUECIMENTO = 180_000L
     // Os avisos do "repita" são falados pelo Piper; a primeira fala carrega o modelo.
     private const val TIMEOUT_FALA = 90_000L
   }
@@ -86,11 +88,13 @@ class FluxoOnda1Test {
   @Test
   fun capturaSemSinaisPedeRepeticaoAteDesistirComATelaLigada() {
     parearOculos()
+    abrirControlesDaSessao()
     composeTestRule.waitUntilExactlyOneExists(hasTestTag("start_session_button").and(isEnabled()), TIMEOUT)
     assertEquals("sem sessão a tela pode apagar", false, telaLigadaPedida())
 
     composeTestRule.onNodeWithTag("start_session_button").performClick()
-    composeTestRule.waitUntilExactlyOneExists(hasTestTag("botao_principal").and(isEnabled()), TIMEOUT)
+    // O "iniciar" espera o aquecimento (6.4): a primeira abertura copia os modelos para o disco.
+    composeTestRule.waitUntilExactlyOneExists(hasTestTag("botao_principal").and(isEnabled()), TIMEOUT_AQUECIMENTO)
     composeTestRule.waitUntil(TIMEOUT) { telaLigadaPedida() }
     // O pedido chegou ao sistema: o WindowManager está segurando a tela por uma janela do app.
     composeTestRule.waitUntil(TIMEOUT) { janelaQueSeguraATela()?.contains("MainActivity") == true }
@@ -128,6 +132,7 @@ class FluxoOnda1Test {
   @Test
   fun teclaDeVolumeFazOMesmoQueOBotaoPrincipal() {
     parearOculos()
+    abrirControlesDaSessao()
     composeTestRule.waitUntilExactlyOneExists(hasTestTag("start_session_button").and(isEnabled()), TIMEOUT)
     // Sem sessão: a tecla não mexe no diálogo.
     teclaVolume()
@@ -135,7 +140,8 @@ class FluxoOnda1Test {
     esperarEstado("aguardando_sinal")
 
     composeTestRule.onNodeWithTag("start_session_button").performClick()
-    composeTestRule.waitUntilExactlyOneExists(hasTestTag("botao_principal").and(isEnabled()), TIMEOUT)
+    // O "iniciar" espera o aquecimento (6.4): a primeira abertura copia os modelos para o disco.
+    composeTestRule.waitUntilExactlyOneExists(hasTestTag("botao_principal").and(isEnabled()), TIMEOUT_AQUECIMENTO)
     // ① -> ② pela tecla.
     teclaVolume()
     confirmarPermissaoDeCameraSePedida()
@@ -196,7 +202,17 @@ class FluxoOnda1Test {
         runCatching { System.loadLibrary(it) }.isSuccess
       }
 
-  private fun estadoTexto(estado: String) = targetContext.getString(R.string.dialog_state_label, estado)
+  private fun estadoTexto(estado: String): String =
+      targetContext.getString(
+          when (estado) {
+            "aguardando_sinal" -> R.string.estado_aguardando_sinal
+            "capturando_sinais" -> R.string.estado_capturando
+            "falando" -> R.string.estado_falando
+            "aguardando_resposta" -> R.string.estado_aguardando_resposta
+            "escutando_atendente" -> R.string.estado_ouvindo
+            "transcrevendo" -> R.string.estado_transcrevendo
+            else -> R.string.estado_avatar
+          })
 
   private fun esperarEstado(estado: String, timeout: Long = TIMEOUT) =
       composeTestRule.waitUntilExactlyOneExists(hasText(estadoTexto(estado)), timeout)
@@ -226,6 +242,15 @@ class FluxoOnda1Test {
       for (i in 0 until view.childCount) if (algumaViewPedeTelaLigada(view.getChildAt(i))) return true
     }
     return false
+  }
+
+  // 10.3: os controles do sample ficam numa área recolhível.
+  private fun abrirControlesDaSessao() {
+    composeTestRule.waitUntilAtLeastOneExists(hasTestTag("mais_controles"), TIMEOUT)
+    if (composeTestRule.onAllNodesWithTag("start_session_button").fetchSemanticsNodes().isEmpty() &&
+        composeTestRule.onAllNodesWithTag("end_session_button").fetchSemanticsNodes().isEmpty()) {
+      composeTestRule.onNodeWithTag("mais_controles").performClick()
+    }
   }
 
   private fun copiarAsset(nome: String): Uri {

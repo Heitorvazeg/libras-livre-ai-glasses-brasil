@@ -79,6 +79,12 @@ class TfliteSignClassifier(sidecarJson: String, modelo: ByteArray) : SignClassif
     return Classificacao(sidecar.rotulos[top.indice], top.confianca, top.margem)
   }
 
+  // 6.4: uma inferência com zeros, no contrato do sidecar.
+  override fun aquecer() {
+    val zeros = List(2) { Array(sidecar.pontos) { FloatArray(sidecar.dimensoes) } }
+    logits(SegmentoSinal(zeros, longArrayOf(0, 1)))
+  }
+
   /** Os logits crus do modelo para um segmento — exposto para os testes de paridade (2.7). */
   fun logits(segmento: SegmentoSinal): FloatArray {
     if (segmento.frames.size > sidecar.frames) {
@@ -102,6 +108,8 @@ class TfliteSignClassifier(sidecarJson: String, modelo: ByteArray) : SignClassif
 /** Ocupa o lugar do classificador quando o modelo foi recusado: toda classificação falha com o motivo. */
 class ClassificadorRecusado(private val motivo: String) : SignClassifier {
   override fun classify(segmento: SegmentoSinal): Classificacao = throw IllegalStateException(motivo)
+
+  override fun aquecer() = throw IllegalStateException(motivo)
 
   override fun close() {}
 }

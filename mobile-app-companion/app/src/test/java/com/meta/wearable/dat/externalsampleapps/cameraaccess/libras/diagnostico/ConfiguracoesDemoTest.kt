@@ -47,6 +47,50 @@ class ConfiguracoesDemoTest {
   }
 
   @Test
+  fun `padroes decididos no plano para os seletores da onda 4`() {
+    val v = ValoresDemo()
+    assertEquals(0.7f, v.segmentacao.limiarEntrada)
+    assertEquals(500L, v.segmentacao.pausaMs)
+    assertEquals(30_000L, v.tetoCapturaMs)
+    assertEquals(20_000L, v.tetoEscutaMs)
+    assertEquals(MotorWakeWord.SPEECH_RECOGNIZER, v.motorWakeWord)
+    assertEquals(true, v.comandoDeVoz)
+    assertEquals(SaidaVoz.OCULOS, v.saidaVoz)
+    assertEquals(MicrofoneResposta.CELULAR, v.microfoneResposta)
+    assertEquals(300L, v.folgaAposFalaMs)
+    assertEquals(0.60f, v.limiarConfianca)
+    assertEquals(1.5f, v.fatorLimiarMemoria)
+    assertEquals(5_000L, v.tetoTraducaoMs)
+    assertEquals(3_000L, v.tetoAnimacaoBaseMs)
+    assertEquals(1_500L, v.tetoAnimacaoPorSinalMs)
+  }
+
+  @Test
+  fun `parametros de segmentacao editados persistem e combinacao invalida nao grava`() {
+    val memoria = Memoria()
+    val configuracoes = ConfiguracoesDemo(memoria)
+    configuracoes.atualizar { it.copy(segmentacao = it.segmentacao.copy(limiarEntrada = 0.9f, pausaMs = 650)) }
+    val reaberta = ConfiguracoesDemo(memoria).valores.value.segmentacao
+    assertEquals(0.9f, reaberta.limiarEntrada)
+    assertEquals(650L, reaberta.pausaMs)
+
+    // Saída acima da entrada: o construtor recusa e nada muda.
+    val antes = configuracoes.valores.value
+    runCatching { configuracoes.atualizar { it.copy(segmentacao = it.segmentacao.copy(limiarSaida = 2f)) } }
+    assertEquals(antes, configuracoes.valores.value)
+    assertEquals(antes, ConfiguracoesDemo(memoria).valores.value)
+  }
+
+  @Test
+  fun `segmentacao gravada invalida cai no padrao inteiro`() {
+    val memoria = Memoria().apply {
+      mapa["seg_limiar_entrada"] = "0.3"
+      mapa["seg_limiar_saida"] = "0.5"
+    }
+    assertEquals(ValoresDemo().segmentacao, ConfiguracoesDemo(memoria).valores.value.segmentacao)
+  }
+
+  @Test
   fun `valor ilegivel cai no padrao`() {
     val memoria = Memoria().apply {
       mapa["gravador_sessao"] = "talvez"

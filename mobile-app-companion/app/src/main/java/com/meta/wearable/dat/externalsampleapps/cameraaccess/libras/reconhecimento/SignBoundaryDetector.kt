@@ -164,6 +164,16 @@ class SignBoundaryDetector(
   }
 
   /**
+   * Volta de uma pausa do stream (docs/prontidao-demo/03 §3.2): esquece o frame de referência e o
+   * instante do último frame, para que o intervalo sem frames não vire pausa (que fecharia o sinal),
+   * oclusão nem velocidade. O estado e o sinal em andamento continuam.
+   */
+  fun descontarPausa() {
+    recentes.clear()
+    tsAnterior = null
+  }
+
+  /**
    * Fecha o segmento em aberto, ao encerrar a sessão. Aplica a duração mínima como qualquer outro
    * fechamento: um espasmo no fim da sessão continua não sendo sinal. Devolve true se chamou
    * [onBoundary].

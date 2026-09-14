@@ -234,3 +234,20 @@ subponto acima.
   pose), `evento` (segmento, descarte, classificação, latência) e `metrica` (3.8). Formatação e
   escrita numa thread própria. Testes: `GravadorSessaoTest` (colunas, escape, arquivo) e o
   `LandmarkPipelineTurnosTest` instrumentado (uma linha por frame processado).
+
+---
+
+## Como ficou a onda 4 (1.8 edição, 1.10 script, 1.11)
+
+- **1.8:** os dez parâmetros do `ParametrosSegmentacao` são editáveis em "Configurações de demo →
+  Segmentação (valores estimados)", salvos entre execuções e lidos a cada nova captura. Uma combinação
+  inválida (ex.: limiar de saída ≥ entrada) é recusada e o valor anterior fica. Teste:
+  `ConfiguracoesDemoTest` (persistência e recusa).
+- **1.10:** `scripts/calibracao_fronteiras.py` (só biblioteca padrão) lê os CSVs R1/R2 e imprime o piso
+  de ruído (p95 de `v_suavizada` em R1), os limiares sugeridos (meio das faixas 1,5–2× e 2,5–3×), a
+  checagem do p10 dentro dos sinais de R2, a maior pausa interna e a maior perda de mãos. Sai com
+  código 1 se a checagem falha. Teste: `scripts/test_calibracao_fronteiras.py` (CSVs sintéticos no
+  formato do gravador). A busca em grade (P2) não foi feita.
+- **1.11:** `LibrasState` ganhou `estadoSinalizacao` e `sinaisNaSessao`; a faixa de estado mostra
+  "● sinalizando · N sinais" / "○ parado · N sinais". O critério de ~200 ms depende do fps do aparelho
+  (a mudança sai no frame em que o detector muda de estado) e fica para o teste com os óculos.

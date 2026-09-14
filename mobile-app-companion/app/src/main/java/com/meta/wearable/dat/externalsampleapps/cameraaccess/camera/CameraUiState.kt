@@ -20,7 +20,10 @@ import com.meta.wearable.dat.core.session.DeviceSessionState
 import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.avatar.AvatarState
 import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.diagnostico.AmostraMetricas
 import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.diagnostico.MarcaEtapa
+import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.ResultadoEtapa
+import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.dialogo.Aviso
 import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.dialogo.Conversa
+import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.dialogo.TipoAviso
 import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.dialogo.DialogState
 import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.reconhecimento.LibrasState
 
@@ -71,6 +74,13 @@ data class CameraUiState(
     val metricas: AmostraMetricas? = null,
     val etapasTurno: List<MarcaEtapa> = emptyList(),
     val arquivoGravacao: String? = null,
+    // Libras Livre: avisos ativos da faixa de estado, por origem (10.2). A tela escolhe um.
+    val avisos: Map<TipoAviso, Aviso> = emptyMap(),
+    // Libras Livre: aquecimento ao abrir o app (6.4) e se o "iniciar" já pode ser usado.
+    val aquecimento: List<ResultadoEtapa> = emptyList(),
+    val aquecido: Boolean = false,
+    // Libras Livre: interruptor "Comando de voz" (4.6), espelhado das configurações de demo.
+    val comandoDeVoz: Boolean = true,
 ) {
   /** A session exists and is connected (or connecting); a stream can be started. */
   val hasSession: Boolean

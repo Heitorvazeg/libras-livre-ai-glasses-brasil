@@ -80,7 +80,10 @@ Cada onda acrescenta os testes listados no seu arquivo do plano.
    - **fold / unfold**: dobrar e abrir;
    - **power off**: desligar.
 5. **Sem o modelo de visão:** configurações de demo → placeholder no modo **roteiro** (2.6)
-   [onda 2]. Hoje o placeholder devolve só `[placeholder:Nf]`.
+   [onda 2]. As glosas das 4 sequências saem em ordem, uma por segmento detectado.
+6. **Configurações de demo** ficam no topo do menu de debug (toque em "Configurações de demo" para
+   abrir). Os controles do sample (sessão, preview, foto, gravação) ficam em "Controles da sessão", na
+   tela da câmera [onda 4].
 
 ### A.3 Cenários
 
@@ -183,7 +186,7 @@ Estes itens só aparecem com hardware real:
 **4. Calibração rápida do detector** [onda 2 + script da onda 4]
 
 ```bash
-python scripts/calibracao_fronteiras.py sessoes/R1-*.csv sessoes/R2-*.csv
+python scripts/calibracao_fronteiras.py sessoes/R1-*.csv sessoes/R2-*.csv   # [onda 4]
 ```
 
 O script calcula:

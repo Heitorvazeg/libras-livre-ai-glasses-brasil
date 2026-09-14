@@ -196,3 +196,21 @@ Critério do ensaio. Etapa acima da meta vira item de otimização. Detalhes no
 Só se, **depois** de 6.1 e 6.2, o int8 continuar acima da meta no aparelho. Nesse caso,
 um build **local** com a variante no lugar do int8, com o carimbo de proveniência atualizado só
 nessa cópia. Nada disso entra no git.
+
+---
+
+## Como ficou a onda 4 (6.3, 6.4)
+
+- **6.4:** `libras/Aquecimento.kt` roda as etapas em sequência e publica ✓/✗ + ms + motivo; o
+  `CameraViewModel` o dispara ao abrir. Etapas: MediaPipe, classificador (`SignClassifier.aquecer`:
+  inferência com zeros no `.tflite`, nada no placeholder), contextualização descartável, Vosk, Piper
+  (com os avisos do 2.8) e avatar (não bloqueia). O cartão "Preparando…" vira "Pronto ✓" ou "Pronto com
+  N falha(s) ✗", recolhível; um ✗ nas etapas que bloqueiam vai para a faixa; cada etapa vira evento no
+  CSV. O botão principal mostra "Preparando…" até as cinco primeiras terminarem. Testes:
+  `AquecimentoTest` (ordem, falha com motivo, liberação com o avatar carregando) e `FluxoOnda4Test`.
+  **Medido no emulador:** MediaPipe ~450 ms, Vosk ~600 ms, Piper ~2,3 s; o avatar não carrega (WebGL do
+  emulador) e cai em ✗ aos 20 s. O teste com o build sem os `.task` (A17) segue manual.
+- **6.3:** o `beginSignSession` não pré-carrega mais o avatar (só a nova tentativa do 9.5); o aquecimento
+  o carrega. `AvatarPlayer.visivel` é sincronizado com a tela: pronto e escondido, pausa
+  (`onPause` + `pauseTimers`); `play()` retoma; ao fim da animação com a tela fechada, pausa de novo. A
+  medição de CPU com o avatar pausado é do aparelho real.

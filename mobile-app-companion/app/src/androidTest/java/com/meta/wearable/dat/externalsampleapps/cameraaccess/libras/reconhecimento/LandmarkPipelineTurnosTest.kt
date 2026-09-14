@@ -104,6 +104,13 @@ class LandmarkPipelineTurnosTest {
 
         pipeline.endSession()
         pipeline.stop() // fim do stream, como o CameraViewModel faz a cada turno
+        // O stop() não espera o frame que já estava no MediaPipe: lê o contador depois que ele para.
+        var anterior = -1
+        val limiteEstavel = SystemClock.elapsedRealtime() + 3_000
+        while (pipeline.framesExtraidosNaSessao != anterior && SystemClock.elapsedRealtime() < limiteEstavel) {
+          anterior = pipeline.framesExtraidosNaSessao
+          Thread.sleep(300)
+        }
         framesExtraidosTotal += pipeline.framesExtraidosNaSessao
       }
     } finally {

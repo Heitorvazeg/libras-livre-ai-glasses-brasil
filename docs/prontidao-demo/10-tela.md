@@ -167,3 +167,26 @@ sessão, painel de métricas e modo do placeholder (padrões: desligado, desliga
 instância única do app. A seção `SecaoConfiguracoesDemo` fica no topo da folha do menu de debug,
 acima do `MockDeviceKitScreen`, com "Voltar ao padrão". Valor ilegível no armazenamento cai no
 padrão. Teste: `ConfiguracoesDemoTest` (JVM). A onda 4 acrescenta os outros seletores.
+
+---
+
+## Como ficou a onda 4 (10.2–10.6)
+
+- **10.2:** `libras/dialogo/Avisos.kt` (`escolherAviso`, `avisosDaCaptura`) e a `FaixaDeEstado` na tela,
+  com o estado do diálogo em português ao lado. Os avisos ativos ficam em `CameraUiState.avisos` por
+  origem; os erros do reconhecimento (modelo recusado, MediaPipe) entram como bloqueio. Teste:
+  `AvisosTest`. Os avisos da faixa usam textos próprios, diferentes das linhas do painel de conversa.
+- **10.3:** no alto, a faixa, o cartão do aquecimento e o painel de conversa (e o painel de métricas,
+  quando ligado); embaixo, o botão principal grande, "Cancelar atendimento", o avatar e o interruptor
+  "Comando de voz". Os controles do sample (preview, foto, gravação, iniciar/encerrar sessão) ficam em
+  "Controles da sessão", recolhidos. O `InstrumentationTest` do sample abre essa área antes de usá-los.
+  **Pendente:** a leitura a ~1,5 m (manual).
+- **10.4:** os controles do sample não usam mais `alpha(0)`: sem sessão, aparecem desabilitados; o botão
+  principal mostra "Conecte os óculos".
+- **10.5:** o preview só é desenhado durante a captura (e no preview manual, no ①). O esqueleto (10.5b,
+  P2) não foi feito.
+- **10.6:** `ConfiguracoesDemo` com todos os seletores P1 da tabela (gravador, painel, placeholder,
+  limiar de confiança, segmentação, tetos, motor da wake word, comando de voz, saída de voz, microfone,
+  folga, fator de memória, tetos do ⑦) e a ação "Simular queda do avatar". Os seletores dos itens P2
+  (3.8b, 3.9, 5.7, 7.5, 8.2, 10.5b) ficam de fora. A seção abre e fecha no topo do menu de debug. Testes:
+  `ConfiguracoesDemoTest`. **Pendente:** "mudar, fechar e reabrir o app" (manual, A20).

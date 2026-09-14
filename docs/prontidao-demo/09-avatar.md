@@ -127,3 +127,13 @@ Teste ([guia de testes](../guia-de-testes-mock-e-oculos.md)):
 - anima?
 - quanto tempo leva para ficar pronto?
 - quanta memória usa no aparelho real?
+
+---
+
+## Como ficou a onda 4 (9.5, tetos editáveis)
+
+- **9.5:** a cada "iniciar" que abre a câmera, um avatar em `FALHOU` ou `OCIOSO` volta a carregar em
+  segundo plano, exceto se a última liberação foi por memória e ela continua baixa. "Simular queda do
+  avatar" nas configurações de demo carrega `chrome://crash` na WebView. O teste instrumentado existe e é
+  pulado quando o avatar não carrega (caso do emulador desta sessão); vale no aparelho.
+- Os três tetos do 9.1 passaram para as configurações de demo.

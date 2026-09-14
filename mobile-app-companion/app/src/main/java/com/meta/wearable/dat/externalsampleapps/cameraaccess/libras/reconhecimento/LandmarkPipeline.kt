@@ -55,6 +55,11 @@ data class LibrasState(
     // quem sinaliza sinaliza para ninguém: o stream ainda está subindo ou o tronco não está no
     // quadro.
     val podeSinalizar: Boolean = false,
+    // 1.11: "● sinalizando / ○ parado" e quantos sinais a sessão já capturou.
+    val estadoSinalizacao: EstadoSinalizacao = EstadoSinalizacao.PARADO,
+    val sinaisNaSessao: Int = 0,
+    // 3.5: tronco fora do quadro / ninguém no quadro.
+    val enquadramento: Enquadramento = Enquadramento.OK,
     val isClassifying: Boolean = false,
     val lastResult: String? = null,
     val error: String? = null,
@@ -68,7 +73,8 @@ class LandmarkPipeline(
     // Quem fala o resultado (e quando) é decisão do DialogOrchestrator. Dispara UMA VEZ POR SINAL.
     private val onRecognized: (Classificacao) -> Unit,
     private val onRecognitionFailed: () -> Unit = {},
-    private val parametros: ParametrosSegmentacao = ParametrosSegmentacao(),
+    // Lidos a cada sessão: a edição nas configurações de demo (1.8) vale na próxima captura.
+    private val parametros: () -> ParametrosSegmentacao = { ParametrosSegmentacao() },
     private val metricas: Metricas? = null,
     // Chamado na thread de frames: quem recebe precisa só enfileirar (o gravador faz isso).
     private val onFrameProcessado: ((FrameProcessado) -> Unit)? = null,
@@ -106,8 +112,15 @@ class LandmarkPipeline(
 
   @Volatile private var collecting = false
   @Volatile private var aguardandoPrimeiroFrame = false
-  // Último estado do detector repassado a onEstadoSinalizacao; toda sessão começa PARADA.
-  @Volatile private var estadoInformado = EstadoSinalizacao.PARADO
+  // Último estado do detector repassado a onEstadoSinalizacao; null força repassar o próximo (início
+  // de sessão, volta de pausa).
+  @Volatile private var estadoInformado: EstadoSinalizacao? = null
+
+  // 3.5: frames descartados por falta de ombros ou de pose, na última janela de 1 s.
+  private val janelaEnquadramento = JanelaEnquadramento()
+  @Volatile private var enquadramentoInformado = Enquadramento.OK
+  // 1.11: segmentos entregues ao classificador na sessão.
+  @Volatile private var sinaisNaSessao = 0
 
   /**
    * Frames que passaram pelo MediaPipe na sessão atual, normalizáveis ou não. Zera a cada
@@ -175,7 +188,7 @@ class LandmarkPipeline(
     synchronized(sessionLock) {
       segmentador =
           Segmentador(
-              parametros = parametros,
+              parametros = parametros(),
               onSegmento = ::onSegmento,
               onDescartado = { limites ->
                 Log.d(TAG, "Movimento de ${limites.duracaoMovimentoMs} ms descartado (espasmo)")
@@ -184,11 +197,15 @@ class LandmarkPipeline(
           )
     }
     aguardandoPrimeiroFrame = true
-    estadoInformado = EstadoSinalizacao.PARADO
+    estadoInformado = null
+    enquadramentoInformado = Enquadramento.OK
+    sinaisNaSessao = 0
+    synchronized(sessionLock) { janelaEnquadramento.reiniciar() }
     framesExtraidosNaSessao = 0
     collecting = true
     onState {
       copy(isCollecting = true, podeSinalizar = false, lastResult = null,
+          estadoSinalizacao = EstadoSinalizacao.PARADO, sinaisNaSessao = 0, enquadramento = Enquadramento.OK,
           error = if (error == ERRO_MODELOS || error?.startsWith(ModeloRecusado.PREFIXO) == true) error else null)
     }
     // O aquecimento ainda não terminou, ou falhou: tenta de novo, fora desta thread. Frames que
@@ -205,7 +222,7 @@ class LandmarkPipeline(
     collecting = false
     aguardandoPrimeiroFrame = false
     synchronized(sessionLock) { segmentador?.forcarFechamento() }
-    onState { copy(isCollecting = false, podeSinalizar = false) }
+    onState { copy(isCollecting = false, podeSinalizar = false, enquadramento = Enquadramento.OK) }
     val pendentes = synchronized(sessionLock) { classificacoesEmVoo.toList() }
     pendentes.joinAll()
   }
@@ -218,6 +235,8 @@ class LandmarkPipeline(
       Log.d(TAG, "Segmento com ${frames.size} frames — curto demais, ignorado")
       return
     }
+    val sinais = ++sinaisNaSessao
+    onState { copy(sinaisNaSessao = sinais) }
     onState { copy(isClassifying = true, error = null) }
     val job = scope.launch {
       val resultado =
@@ -248,6 +267,23 @@ class LandmarkPipeline(
     }
     synchronized(sessionLock) { classificacoesEmVoo.add(job) }
     job.invokeOnCompletion { synchronized(sessionLock) { classificacoesEmVoo.remove(job) } }
+  }
+
+  /**
+   * O stream voltou de uma pausa dos óculos (toque na haste, 3.2). O detector desconta o intervalo
+   * parado — a pausa não fecha o sinal em andamento nem conta como inatividade — e o indicador volta a
+   * "aguarde o primeiro frame válido".
+   */
+  fun retomarDepoisDePausa() {
+    synchronized(sessionLock) {
+      segmentador?.descontarPausa()
+      janelaEnquadramento.reiniciar()
+    }
+    if (!collecting) return
+    aguardandoPrimeiroFrame = true
+    estadoInformado = null
+    enquadramentoInformado = Enquadramento.OK
+    onState { copy(podeSinalizar = false, enquadramento = Enquadramento.OK) }
   }
 
   private fun descricao(l: LimitesSegmento) =
@@ -335,6 +371,18 @@ class LandmarkPipeline(
     framesExtraidosNaSessao++
     val normalizado = fl?.let { LandmarkNormalizer.normalize(it, frameW, frameH) }
     metricas?.frameProcessado(comPose = normalizado != null)
+    val resultadoFrame =
+        when {
+          fl == null -> ResultadoFrame.SEM_POSE
+          normalizado == null -> ResultadoFrame.SEM_OMBROS
+          else -> ResultadoFrame.NORMALIZADO
+        }
+    val enquadramento = synchronized(sessionLock) { janelaEnquadramento.registrar(ts, resultadoFrame) }
+    if (enquadramento != enquadramentoInformado) {
+      enquadramentoInformado = enquadramento
+      onEvento("enquadramento", enquadramento.name)
+      onState { copy(enquadramento = enquadramento) }
+    }
     if (normalizado != null && aguardandoPrimeiroFrame) {
       aguardandoPrimeiroFrame = false
       metricas?.marcarDesdeOInicio(Etapa.INICIAR_PODE_SINALIZAR, SystemClock.uptimeMillis())
@@ -348,6 +396,7 @@ class LandmarkPipeline(
     val estadoAgora = seg?.estadoAtual
     if (estadoAgora != null && estadoAgora != estadoInformado) {
       estadoInformado = estadoAgora
+      onState { copy(estadoSinalizacao = estadoAgora) }
       onEstadoSinalizacao(estadoAgora)
     }
     onFrameProcessado?.invoke(

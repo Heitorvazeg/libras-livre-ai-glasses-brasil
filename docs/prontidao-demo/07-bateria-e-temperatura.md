@@ -90,3 +90,11 @@ o aparelho não aguenta o regime normal:
 1. mãos em repouso → rodar só a pose, sem a detecção de mãos;
 2. detector em "parado" → processar 1 frame a cada 2;
 3. GPU (já é o [3.9](03-captura-e-landmarks.md#39-mediapipe-em-cpu-ou-gpu-p2)).
+
+---
+
+## Como ficou a onda 4 (7.3)
+
+A amostragem por segundo lê `currentThermalStatus` sempre (a folga térmica já ia para o painel e o CSV
+na onda 2); `THERMAL_STATUS_SEVERE` ou pior põe "Celular muito quente: desempenho reduzido" na faixa e
+tira quando volta. O ensaio longo segue no guia.

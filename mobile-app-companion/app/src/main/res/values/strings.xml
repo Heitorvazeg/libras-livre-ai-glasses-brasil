@@ -77,6 +77,58 @@
     <string name="avatar_retry" description="Button that retries loading the VLibras player">Tentar de novo</string>
     <string name="avatar_pular" description="Button that ends the avatar step right away, leaving the caption on screen">Pular</string>
 
+    <!-- Libras Livre: faixa de estado (docs/prontidao-demo/10-tela.md §10.2) -->
+    <string name="aviso_repita" description="Status bar warning after the app asked for a repetition">Não entendi — peça para repetir</string>
+    <string name="aviso_desistiu" description="Status bar warning after three failed sentences">Não foi possível entender — tente outro meio</string>
+    <string name="aviso_voz_reserva" description="Status bar warning: the local voice failed and the Android system voice is being used">Voz de reserva em uso</string>
+    <string name="aviso_stream_pausado" description="Status bar block: the glasses paused the camera stream after a tap on the temple">Stream pausado nos óculos — toque na haste para retomar</string>
+    <string name="aviso_mic_oculos_indisponivel" description="Status bar warning: glasses microphone unavailable, the phone microphone is used instead">Microfone dos óculos indisponível, usando o do celular</string>
+    <string name="aviso_celular_quente" description="Status bar warning: the phone is overheating">Celular muito quente: desempenho reduzido</string>
+    <string name="aviso_avatar_liberado_memoria" description="Status bar warning: the avatar was unloaded because memory is low">Avatar liberado por falta de memória; resposta em legenda</string>
+    <string name="aviso_aquecimento_falhou" description="Status bar block: a warm-up step failed; the argument lists which">Preparação com falha — %1$s</string>
+    <string name="aviso_aguarde" description="Status bar: capture opened, waiting for the first usable frame">Aguarde…</string>
+    <string name="aviso_sinalizando" description="Status bar while the person is signing, with the number of signs captured">● sinalizando · %1$d sinais</string>
+    <string name="aviso_parado" description="Status bar while the person is at rest, with the number of signs captured">○ parado · %1$d sinais</string>
+    <string name="aviso_tronco_fora" description="Status bar warning: shoulders not visible, the person should step back">Afaste-se: tronco fora do quadro</string>
+    <string name="aviso_ninguem" description="Status bar warning: nobody visible in the camera">Ninguém no quadro</string>
+    <string name="falha_camera_sem_dispositivo" description="Camera failure cause: no active glasses">Óculos não conectados</string>
+    <string name="falha_camera_permissao" description="Camera failure cause: camera permission on the glasses not granted yet">Permissão de câmera dos óculos pendente</string>
+    <string name="falha_camera_atualizacao" description="Camera failure cause: glasses require an update">Os óculos pedem atualização</string>
+    <string name="falha_camera_sessao" description="Camera failure cause: glasses session did not become ready">Óculos não responderam (dobrados ou fora do rosto?)</string>
+    <string name="falha_camera_stream" description="Camera failure cause: stream did not start">Câmera não subiu (bateria ou temperatura dos óculos?)</string>
+    <string name="falha_camera_pausa_longa" description="Camera failure cause: the stream stayed paused too long and the capture was ended">Stream pausado por muito tempo: captura encerrada</string>
+    <string name="estado_aguardando_sinal" description="Dialog state in Portuguese: waiting for signs">Aguardando sinais</string>
+    <string name="estado_capturando" description="Dialog state in Portuguese: capturing signs">Capturando</string>
+    <string name="estado_falando" description="Dialog state in Portuguese: speaking the sentence">Falando</string>
+    <string name="estado_aguardando_resposta" description="Dialog state in Portuguese: waiting for the attendant's reply">Aguardando resposta</string>
+    <string name="estado_ouvindo" description="Dialog state in Portuguese: listening to the attendant">Ouvindo a resposta</string>
+    <string name="estado_transcrevendo" description="Dialog state in Portuguese: transcribing">Transcrevendo</string>
+    <string name="estado_avatar" description="Dialog state in Portuguese: showing the answer">Mostrando a resposta</string>
+    <string name="comando_de_voz" description="Switch on the main screen that turns voice commands on or off">Comando de voz</string>
+    <string name="mais_controles" description="Toggle that shows the sample's session, preview, photo and recording controls">Controles da sessão</string>
+    <string name="botao_preparando" description="Main button, disabled, while the app warms up its models">Preparando…</string>
+
+    <!-- Libras Livre: aquecimento (docs/prontidao-demo/06-latencia.md §6.4) -->
+    <string name="aquecimento_titulo" description="Title of the warm-up checklist card">Preparando…</string>
+    <string name="aquecimento_resumo_ok" description="Collapsed warm-up summary when every step succeeded">Pronto ✓</string>
+    <string name="aquecimento_resumo_falhas" description="Collapsed warm-up summary when some step failed; the argument is how many">Pronto com %1$d falha(s) ✗</string>
+    <string name="aquecimento_etapa_mediapipe" description="Warm-up step: loading MediaPipe">MediaPipe</string>
+    <string name="aquecimento_etapa_classificador" description="Warm-up step: loading the sign classifier">Classificador</string>
+    <string name="aquecimento_etapa_contextualizacao" description="Warm-up step: sentence builder">Contextualização</string>
+    <string name="aquecimento_etapa_vosk" description="Warm-up step: loading the speech recognizer">Transcrição (Vosk)</string>
+    <string name="aquecimento_etapa_voz" description="Warm-up step: loading the voice">Voz (Piper)</string>
+    <string name="aquecimento_etapa_avatar" description="Warm-up step: loading the avatar">Avatar</string>
+    <string name="aquecimento_vosk_falhou" description="Warm-up failure reason: speech recognizer model did not load">Modelo do Vosk não carregou</string>
+    <string name="aquecimento_avatar_falhou" description="Warm-up failure reason: avatar did not load">Avatar não carregou (a legenda cobre)</string>
+
+    <!-- Libras Livre: configurações de demo, onda 4 (docs/prontidao-demo/10-tela.md §10.6) -->
+    <string name="demo_config_segmentacao" description="Section: sign segmentation parameters">Segmentação (valores estimados)</string>
+    <string name="demo_config_tempos" description="Section: dialog timeouts">Tempos do diálogo</string>
+    <string name="demo_config_audio" description="Section: audio">Áudio e voz</string>
+    <string name="demo_config_avatar" description="Section: avatar">Avatar</string>
+    <string name="demo_config_simular_queda" description="Action that crashes the avatar renderer to test automatic recovery">Simular queda do avatar</string>
+    <string name="demo_config_valor_invalido" description="Shown when an edited value is rejected">Valor inválido — mantido o anterior</string>
+
     <!-- Libras Livre: configurações de demo no menu de debug (docs/prontidao-demo/10-tela.md §10.6) -->
     <string name="demo_config_title" description="Title of the demo settings section in the debug menu">Configurações de demo</string>
     <string name="demo_config_reset" description="Button that restores every demo setting to its default">Voltar ao padrão</string>

@@ -46,6 +46,9 @@ class Segmentador(
 
   fun forcarFechamento(): Boolean = detector.forcarFechamento()
 
+  /** Volta de uma pausa do stream (3.2): o intervalo sem frames não conta como pausa nem oclusão. */
+  fun descontarPausa() = detector.descontarPausa()
+
   private fun recortar(limites: LimitesSegmento): List<FrameComTempo> {
     val de = limites.inicioMs - parametros.preRollMs
     val ate = limites.fimDoMovimentoMs + parametros.posRollMs

@@ -49,8 +49,11 @@ class VLibrasGlosaTranslator(
     private val cache: GlosaCache,
     private val endpoint: String = ENDPOINT,
     private val io: CoroutineDispatcher = Dispatchers.IO,
-    private val tetoMs: Long = TETO_MS,
+    tetoMs: Long = TETO_MS,
 ) : GlosaTranslator {
+
+  /** Editável nas configurações de demo (9.1); vale na próxima tradução. */
+  @Volatile var tetoMs: Long = tetoMs
 
   // A requisição roda num escopo próprio para que o teto possa ABANDONÁ-LA: um withContext(io)
   // esperaria o HttpURLConnection sair do bloqueio, e socket não responde a cancelamento.

@@ -109,6 +109,27 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.isActive
+import android.app.ActivityManager
+import android.content.ComponentCallbacks2
+import android.content.res.Configuration
+import android.os.PowerManager
+import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.Aquecimento
+import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.TextosLibras
+import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.EtapaAquecimento
+import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.StatusEtapa
+import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.audio.AndroidTextToSpeechEngine
+import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.audio.OpenWakeWordDetector
+import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.audio.TtsEmCadeia
+import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.diagnostico.MicrofoneResposta
+import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.diagnostico.MotorWakeWord
+import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.diagnostico.PressaoDeMemoria
+import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.dialogo.Aviso
+import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.dialogo.DecisaoNaConversa
+import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.dialogo.EventoConversa
+import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.dialogo.ParametrosDialogo
+import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.dialogo.TipoAviso
+import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.reconhecimento.LandmarkPipeline.Companion.ERRO_MODELOS
+import com.meta.wearable.dat.externalsampleapps.cameraaccess.ui.AcoesDeDemo
 
 class CameraViewModel(
     application: Application,
@@ -124,6 +145,9 @@ class CameraViewModel(
     // convergir — generosos porque envolvem handshake real com os óculos via Bluetooth.
     private const val CAMERA_SESSION_READY_TIMEOUT_MS = 6000L
     private const val CAMERA_STREAM_READY_TIMEOUT_MS = 8000L
+    // Espera do avatar ficar pronto no aquecimento (o AvatarPlayer desiste sozinho em 20 s).
+    private const val AVATAR_AQUECIMENTO_MS = 25_000L
+    private const val MB = 1024L * 1024L
   }
 
   private val deviceSelector: DeviceSelector = wearablesViewModel.deviceSelector
@@ -161,15 +185,26 @@ class CameraViewModel(
             gravador.evento(SystemClock.uptimeMillis(), marca.turno, "latencia", Metricas.linhaLog(marca))
           })
 
-  private val speaker = Speaker(application, PiperSherpaOnnxTtsEngine(application))
+  // Voz em cadeia (5.5): Piper com saída selecionável (5.1); o TTS do Android só é criado se o Piper
+  // falhar (8.3), e aí fica em uso até reiniciar o app, com aviso na faixa.
+  private val vozEmCadeia =
+      TtsEmCadeia(
+          principal = PiperSherpaOnnxTtsEngine(application, saida = { configuracoes.valores.value.saidaVoz }),
+          criarReserva = { AndroidTextToSpeechEngine(application) },
+          onReserva = { definirAviso(TipoAviso.VOZ_RESERVA, textos.vozReserva) },
+      )
+  private val speaker = Speaker(application, vozEmCadeia)
+  private val classificador: SignClassifier by lazy { criarClassificador() }
+  private val textos = TextosLibras(application)
   private val landmarkPipeline =
       LandmarkPipeline(
           context = application,
           scope = viewModelScope,
-          classifier = criarClassificador(),
+          classifier = classificador,
           onState = { transform -> _uiState.update { it.copy(libras = it.libras.transform()) } },
           onRecognized = { classificacao -> dialogOrchestrator.onSignRecognized(classificacao) },
           onRecognitionFailed = { dialogOrchestrator.onSignRecognitionFailed() },
+          parametros = { configuracoes.valores.value.segmentacao },
           metricas = metricas,
           onFrameProcessado = { frame -> gravador.frame(frame, metricas.turno) },
           onEvento = { nome, detalhe -> gravador.evento(SystemClock.uptimeMillis(), metricas.turno, nome, detalhe) },
@@ -213,6 +248,10 @@ class CameraViewModel(
             if (s == AvatarState.ANIMANDO) {
               inicioTextoAvatarMs?.let { metricas.marcar(Etapa.TEXTO_AVATAR, SystemClock.elapsedRealtime() - it) }
               inicioTextoAvatarMs = null
+            }
+            // 8.1: a animação terminou com uma liberação por memória pendente.
+            if (s == AvatarState.PRONTO && liberarAvatarAoTerminar) {
+              liberarAvatar(porMemoria = true)
             }
             // Falhou no meio da espera do ⑦ (renderer morto, Unity que não ficou pronto): desiste
             // agora. Sem isto o turno pagaria os AVATAR_TIMEOUT_MS inteiros para chegar à mesma
@@ -261,7 +300,7 @@ class CameraViewModel(
           audioSource = MediaRecorder.AudioSource.VOICE_RECOGNITION,
           preferredDeviceType = AudioDeviceInfo.TYPE_BUILTIN_MIC,
       )
-  private val sttEngine: SttEngine = VoskSttEngine(application, attendantAudioCapture)
+  private val sttEngine = VoskSttEngine(application, attendantAudioCapture)
 
   // Motor de wake word: ainda SpeechRecognizerWakeWordDetector (motor de destravamento, §4 item
   // 7), NÃO OpenWakeWordDetector (motor real escolhido, §4 item 9) — este último exige os dois
@@ -272,11 +311,23 @@ class CameraViewModel(
   // Os botões de fallback (DialogControlRow) não passam por aqui — chamam
   // dialogOrchestrator.onWakeWord diretamente via onWakeWordButton, então continuam funcionando
   // mesmo se o motor real falhar/estiver sem permissão.
-  private val wakeWordDetector: WakeWordDetector =
-      SpeechRecognizerWakeWordDetector(
-          context = application,
-          onWakeWord = { word -> dialogOrchestrator.onWakeWord(word) },
-      )
+  // Trocável pelas configurações de demo (4.5); só o motor selecionado existe (8.3).
+  private var motorAtual = configuracoes.valores.value.motorWakeWord
+  private var wakeWordDetector: WakeWordDetector = criarWakeWordDetector(configuracoes.valores.value.motorWakeWord)
+
+  private fun criarWakeWordDetector(motor: MotorWakeWord): WakeWordDetector =
+      when (motor) {
+        MotorWakeWord.SPEECH_RECOGNIZER ->
+            SpeechRecognizerWakeWordDetector(
+                context = getApplication(),
+                onWakeWord = { word -> dialogOrchestrator.onWakeWord(word) },
+            )
+        MotorWakeWord.OPEN_WAKE_WORD ->
+            OpenWakeWordDetector(
+                context = getApplication(),
+                onWakeWord = { word -> dialogOrchestrator.onWakeWord(word) },
+            )
+      }
 
   // Per-frame work (byte copy, NAL parsing, MediaMuxer writes, decoder feed) runs at frame rate and
   // must stay off the main thread. A single-threaded dispatcher keeps frames serialized so the
@@ -322,13 +373,12 @@ class CameraViewModel(
             scope = viewModelScope,
             landmarkPipeline = landmarkPipeline,
             speaker = speaker,
-            audioSessionManager = audioSessionManager,
             sttEngine = sttEngine,
             contextualizer = glossContextualizer,
             ensureCameraActive = ::ensureCameraActiveForLibras,
             deactivateCamera = ::deactivateCameraForLibras,
             playAvatar = ::playAvatar,
-            prepareAvatar = avatarPlayer::prepare,
+            aoIniciarCaptura = ::recarregarAvatarSeCaiu,
             releaseAvatar = ::liberarAvatar,
             onAvatarUnavailable = { text ->
               // Degradação explícita, nunca silêncio: a pessoa surda perde o avatar, mas a
@@ -338,20 +388,81 @@ class CameraViewModel(
             },
             onConversa = { evento ->
               _uiState.update { it.copy(conversa = Conversas.reduzir(it.conversa, evento)) }
+              // 2.8: "não entendi" fica na faixa até a próxima frase aceita.
+              if (evento is EventoConversa.DecisaoTomada) {
+                when (evento.decisao) {
+                  DecisaoNaConversa.REPITA -> definirAviso(TipoAviso.REPITA, textos.repita)
+                  DecisaoNaConversa.DESISTIU -> definirAviso(TipoAviso.REPITA, textos.desistiu)
+                  else -> limparAviso(TipoAviso.REPITA)
+                }
+              }
             },
             metricas = metricas,
             // 2.5/2.8: sem o léxico (asset ausente), o avaliador aceita todas as glosas.
             avaliador =
                 AvaliadorDeFrase(
-                    glosasConhecidas = runCatching { LexicoGlosas.fromAssets(application).glosas }.getOrNull()),
+                    glosasConhecidas = runCatching { LexicoGlosas.fromAssets(application).glosas }.getOrNull(),
+                    limiar = { configuracoes.valores.value.limiarConfianca },
+                ),
             esconderAvatar = { _uiState.update { it.copy(avatarVisivel = false) } },
             pularAvatar = ::pularAvatar,
             onEvento = { nome, detalhe -> gravador.evento(SystemClock.uptimeMillis(), metricas.turno, nome, detalhe) },
+            parametros = {
+              val v = configuracoes.valores.value
+              ParametrosDialogo(tetoCapturaMs = v.tetoCapturaMs, tetoEscutaMs = v.tetoEscutaMs, folgaAposFalaMs = v.folgaAposFalaMs)
+            },
+            antesDeEscutar = ::prepararMicrofoneDaResposta,
+            depoisDeEscutar = ::devolverMicrofoneDaResposta,
+            onFalhaCamera = { falha -> definirAviso(TipoAviso.CAMERA_NAO_SUBIU, textos.falhaCamera(falha)) },
         )
     dialogOrchestrator.attachWakeWordDetector(wakeWordDetector)
-    // 3.1: o MediaPipe carrega ao abrir o app, fora da thread de frames, e fica ocioso até a
-    // captura. Antes ele nascia no primeiro frame, e o "iniciar" chegava antes dele.
-    viewModelScope.launch { landmarkPipeline.carregarModelos() }
+    AcoesDeDemo.simularQuedaDoAvatar = { viewModelScope.launch { avatarPlayer.simularQueda() } }
+
+    // 4.5, 4.6: motor da wake word e interruptor "Comando de voz" seguem as configurações de demo.
+    viewModelScope.launch {
+      configuracoes.valores.map { it.motorWakeWord }.distinctUntilChanged().collect { motor ->
+        if (motor == motorAtual) return@collect
+        Log.i(TAG, "trocando o motor de wake word: $motorAtual -> $motor")
+        wakeWordDetector.stop()
+        motorAtual = motor
+        wakeWordDetector = criarWakeWordDetector(motor)
+        dialogOrchestrator.attachWakeWordDetector(wakeWordDetector)
+      }
+    }
+    viewModelScope.launch {
+      configuracoes.valores.map { it.comandoDeVoz }.distinctUntilChanged().collect { ligado ->
+        dialogOrchestrator.setWakeWordHabilitada(ligado)
+        _uiState.update { it.copy(comandoDeVoz = ligado) }
+      }
+    }
+    // 9.1: o teto da tradução mora no tradutor.
+    viewModelScope.launch {
+      configuracoes.valores.map { it.tetoTraducaoMs }.distinctUntilChanged().collect { glosaTranslator.tetoMs = it }
+    }
+    // 6.3: o Unity pausa quando a tela do avatar fecha.
+    viewModelScope.launch {
+      uiState.map { it.avatarVisivel }.distinctUntilChanged().collect { avatarPlayer.visivel = it }
+    }
+    // 3.2: pausa do stream pelo toque na haste, com aviso na faixa.
+    viewModelScope.launch {
+      uiState.map { it.isPaused }.distinctUntilChanged().collect { pausado ->
+        dialogOrchestrator.onStreamPausado(pausado)
+        if (pausado) definirAviso(TipoAviso.STREAM_PAUSADO, textos.streamPausado) else limparAviso(TipoAviso.STREAM_PAUSADO)
+      }
+    }
+    // A câmera subiu: some o aviso de falha e o de erro dos óculos.
+    viewModelScope.launch {
+      uiState.map { it.isStreaming }.distinctUntilChanged().collect { streaming ->
+        if (streaming) {
+          limparAviso(TipoAviso.CAMERA_NAO_SUBIU)
+          limparAviso(TipoAviso.ERRO_OCULOS)
+          limparAviso(TipoAviso.PAUSA_LONGA)
+        }
+      }
+    }
+
+    // 6.4 (e 3.1, 5.4, 5.5, 6.3): tudo o que é pesado carrega ao abrir o app, em sequência.
+    viewModelScope.launch { aquecer() }
 
     // 1.9: com o gravador ligado, um CSV por sessão com os óculos — abre quando a sessão começa (ou
     // quando o interruptor é ligado no meio dela) e fecha quando qualquer um dos dois termina.
@@ -377,6 +488,7 @@ class CameraViewModel(
       while (isActive) {
         delay(1_000)
         val valores = configuracoes.valores.value
+        verificarTemperaturaEMemoria(valores.fatorLimiarMemoria)
         val ligado = valores.painelMetricas || gravador.arquivo != null
         val sistema = if (ligado) withContext(Dispatchers.Default) { leitorSistema.ler() } else LeituraSistema()
         val filaCheia = landmarkPipeline.filaCheiaDecoder + (hevcDecoder?.vezesFilaCheia ?: 0)
@@ -405,7 +517,11 @@ class CameraViewModel(
 
   // Tetos do ⑦ (docs/prontidao-demo/09-avatar.md §9.1). O da tradução mora no glosaTranslator,
   // que é quem faz a requisição; os dois precisam andar juntos.
-  private val tetosAvatar = TetosAvatar()
+  private val tetosAvatar: TetosAvatar
+    get() {
+      val v = configuracoes.valores.value
+      return TetosAvatar(traducaoMs = v.tetoTraducaoMs, animacaoBaseMs = v.tetoAnimacaoBaseMs, animacaoPorSinalMs = v.tetoAnimacaoPorSinalMs)
+    }
 
   // Completado por pularAvatar(): o "Pular" do operador encerra o ⑦ em qualquer ponto.
   @Volatile private var puloDoAvatar: CompletableDeferred<Unit>? = null
@@ -506,6 +622,9 @@ class CameraViewModel(
     dialogOrchestrator.onBotaoPrincipal(AcaoBotao.INICIAR)
   }
 
+  /** Interruptor "Comando de voz" da tela principal (4.6), salvo nas configurações de demo. */
+  fun definirComandoDeVoz(ligado: Boolean) = configuracoes.atualizar { it.copy(comandoDeVoz = ligado) }
+
   /** "Cancelar atendimento" (4.7). */
   fun cancelarAtendimento() = dialogOrchestrator.cancelarAtendimento()
 
@@ -514,9 +633,180 @@ class CameraViewModel(
    * isto quando o atendimento encerra por inatividade, e uma tela aberta sobre uma WebView
    * destruída mostraria um retângulo preto sem dono.
    */
-  private fun liberarAvatar() {
+  private fun liberarAvatar() = liberarAvatar(porMemoria = false)
+
+  private fun liberarAvatar(porMemoria: Boolean) {
+    liberarAvatarAoTerminar = false
+    avatarLiberadoPorMemoria = porMemoria
     avatarPlayer.release()
     _uiState.update { it.copy(avatarVisivel = false, avatarLegenda = null) }
+    if (porMemoria) {
+      gravador.evento(SystemClock.uptimeMillis(), metricas.turno, "avatar_liberado_memoria", "")
+      definirAviso(TipoAviso.AVATAR_LIBERADO_MEMORIA, textos.avatarLiberadoMemoria)
+    }
+  }
+
+  // MARK: - Libras: avisos, aquecimento, microfone, memória (docs/prontidao-demo, onda 4)
+
+  private fun definirAviso(tipo: TipoAviso, texto: String) {
+    _uiState.update { it.copy(avisos = it.avisos + (tipo to Aviso(tipo, texto, SystemClock.uptimeMillis()))) }
+  }
+
+  private fun limparAviso(tipo: TipoAviso) {
+    if (tipo !in _uiState.value.avisos) return
+    _uiState.update { it.copy(avisos = it.avisos - tipo) }
+  }
+
+  /** 6.4: as etapas do plano, em ordem. O "iniciar" libera depois das cinco primeiras. */
+  private suspend fun aquecer() {
+    val etapas =
+        listOf(
+            EtapaAquecimento(textos.etapaMediaPipe, bloqueiaIniciar = true) {
+              if (!landmarkPipeline.carregarModelos()) error(ERRO_MODELOS)
+            },
+            EtapaAquecimento(textos.etapaClassificador, bloqueiaIniciar = true) {
+              withContext(Dispatchers.Default) { classificador.aquecer() }
+            },
+            EtapaAquecimento(textos.etapaContextualizacao, bloqueiaIniciar = true) {
+              glossContextualizer.contextualize(listOf("filho", "medo"))
+            },
+            EtapaAquecimento(textos.etapaVosk, bloqueiaIniciar = true) {
+              if (!sttEngine.carregarModelo()) error(textos.voskNaoCarregou)
+            },
+            EtapaAquecimento(textos.etapaVoz, bloqueiaIniciar = true) {
+              val frases = listOf(DialogOrchestrator.AVISO_REPITA, DialogOrchestrator.AVISO_DESISTIR)
+              if (!speaker.aquecer(frases)) error(textos.vozReserva)
+            },
+            EtapaAquecimento(textos.etapaAvatar, bloqueiaIniciar = false) {
+              avatarPlayer.prepare()
+              val final =
+                  withTimeoutOrNull(AVATAR_AQUECIMENTO_MS) {
+                    uiState.first { it.avatarState == AvatarState.PRONTO || it.avatarState == AvatarState.FALHOU }
+                  }
+              if (final?.avatarState != AvatarState.PRONTO) error(textos.avatarNaoCarregou)
+            },
+        )
+    val resultados =
+        Aquecimento(etapas, relogioMs = { SystemClock.elapsedRealtime() }) { lista, pronto ->
+              _uiState.update { it.copy(aquecimento = lista, aquecido = pronto) }
+            }
+            .executar()
+    for (r in resultados) {
+      val detalhe = "status=${r.status},ms=${r.ms}" + (r.motivo?.let { ",motivo=$it" } ?: "")
+      gravador.evento(SystemClock.uptimeMillis(), 0, "aquecimento_${r.nome}", detalhe)
+      Log.i(TAG, "aquecimento: ${r.nome} $detalhe")
+    }
+    // O avatar tem legenda como piso: só as etapas que bloqueiam viram bloqueio na faixa.
+    val falhas = resultados.filterIndexed { i, r -> r.status == StatusEtapa.FALHOU && etapas[i].bloqueiaIniciar }
+    if (falhas.isNotEmpty()) {
+      definirAviso(TipoAviso.AQUECIMENTO_FALHOU, textos.aquecimentoFalhou(falhas.joinToString { "${it.nome}: ${it.motivo}" }))
+    }
+  }
+
+  // 5.2: microfone da resposta. No celular, sem troca de perfil Bluetooth; nos óculos, troca para
+  // HFP e, sem SCO, cai para o celular com aviso em vez de abortar a escuta.
+  @Volatile private var escutaPelosOculos = false
+
+  private suspend fun prepararMicrofoneDaResposta() {
+    if (configuracoes.valores.value.microfoneResposta == MicrofoneResposta.OCULOS) {
+      if (audioSessionManager.acquireListening() != null) {
+        attendantAudioCapture.configurar(MediaRecorder.AudioSource.VOICE_COMMUNICATION, AudioDeviceInfo.TYPE_BLUETOOTH_SCO)
+        escutaPelosOculos = true
+        limparAviso(TipoAviso.MIC_OCULOS_INDISPONIVEL)
+        return
+      }
+      definirAviso(TipoAviso.MIC_OCULOS_INDISPONIVEL, textos.micOculosIndisponivel)
+    } else {
+      limparAviso(TipoAviso.MIC_OCULOS_INDISPONIVEL)
+    }
+    attendantAudioCapture.configurar(MediaRecorder.AudioSource.VOICE_RECOGNITION, AudioDeviceInfo.TYPE_BUILTIN_MIC)
+    escutaPelosOculos = false
+  }
+
+  private fun devolverMicrofoneDaResposta() {
+    if (!escutaPelosOculos) return
+    escutaPelosOculos = false
+    audioSessionManager.releaseListening()
+  }
+
+  // 8.1: liberação pendente de um avatar que estava animando, e o motivo da última liberação (9.5).
+  @Volatile private var liberarAvatarAoTerminar = false
+  @Volatile private var avatarLiberadoPorMemoria = false
+  @Volatile private var memoriaBaixaAgora = false
+
+  private val memoriaCallbacks by lazy {
+      object : ComponentCallbacks2 {
+        @Suppress("DEPRECATION")
+        override fun onTrimMemory(level: Int) {
+          // A partir do Android 14 os níveis RUNNING_* podem não chegar a apps em primeiro plano; a
+          // verificação por segundo cobre esse caso.
+          if (level >= ComponentCallbacks2.TRIM_MEMORY_RUNNING_LOW) {
+            viewModelScope.launch { reagirAMemoriaBaixa("onTrimMemory($level)") }
+          }
+        }
+
+        override fun onConfigurationChanged(newConfig: Configuration) {}
+
+        @Deprecated("Deprecated in Java")
+        override fun onLowMemory() {
+          viewModelScope.launch { reagirAMemoriaBaixa("onLowMemory") }
+        }
+      }
+  }
+
+  // Registrado depois da declaração acima (a ordem dos init{} segue a do arquivo).
+  init {
+    getApplication<Application>().registerComponentCallbacks(memoriaCallbacks)
+  }
+
+  private fun verificarTemperaturaEMemoria(fatorLimiar: Float) {
+    val app = getApplication<Application>()
+    // 7.3: estado térmico sério ou pior avisa na faixa.
+    val power = app.getSystemService(Application.POWER_SERVICE) as? PowerManager
+    val termico = power?.currentThermalStatus ?: PowerManager.THERMAL_STATUS_NONE
+    if (termico >= PowerManager.THERMAL_STATUS_SEVERE) definirAviso(TipoAviso.CELULAR_QUENTE, textos.celularQuente)
+    else limparAviso(TipoAviso.CELULAR_QUENTE)
+    // 8.1: verificação ativa.
+    val am = app.getSystemService(Application.ACTIVITY_SERVICE) as? ActivityManager ?: return
+    val info = ActivityManager.MemoryInfo().also { am.getMemoryInfo(it) }
+    memoriaBaixaAgora = PressaoDeMemoria.memoriaBaixa(info.availMem, info.threshold, info.lowMemory, fatorLimiar)
+    if (memoriaBaixaAgora) reagirAMemoriaBaixa("availMem=${info.availMem / MB}MB threshold=${info.threshold / MB}MB")
+  }
+
+  private fun reagirAMemoriaBaixa(origem: String) {
+    val decisao =
+        PressaoDeMemoria.decidir(
+            baixa = true,
+            avatar = avatarPlayer.state,
+            vozReservaCriada = vozEmCadeia.reservaCriada,
+            vozReservaEmUso = vozEmCadeia.emReserva,
+        )
+    when (decisao.avatar) {
+      PressaoDeMemoria.AcaoAvatar.LIBERAR_AGORA -> {
+        Log.w(TAG, "memória baixa ($origem) — liberando o avatar")
+        liberarAvatar(porMemoria = true)
+      }
+      PressaoDeMemoria.AcaoAvatar.LIBERAR_DEPOIS_DA_ANIMACAO -> liberarAvatarAoTerminar = true
+      PressaoDeMemoria.AcaoAvatar.NENHUMA -> Unit
+    }
+    if (decisao.liberarVozReserva && vozEmCadeia.liberarReservaOciosa()) {
+      Log.w(TAG, "memória baixa ($origem) — voz de reserva ociosa liberada")
+    }
+  }
+
+  /**
+   * 9.5: no "iniciar", um avatar que caiu (renderer morto, carga que travou) ou foi liberado volta a
+   * carregar em segundo plano — sem ninguém tocar em "Tentar de novo". Não tenta se a última
+   * liberação foi por falta de memória e ela continua baixa.
+   */
+  private fun recarregarAvatarSeCaiu() {
+    val estado = avatarPlayer.state
+    if (estado != AvatarState.FALHOU && estado != AvatarState.OCIOSO) return
+    if (avatarLiberadoPorMemoria && memoriaBaixaAgora) return
+    Log.i(TAG, "avatar em $estado no iniciar — recarregando em segundo plano")
+    avatarLiberadoPorMemoria = false
+    limparAviso(TipoAviso.AVATAR_LIBERADO_MEMORIA)
+    avatarPlayer.prepare()
   }
 
   // MARK: - Surface
@@ -577,7 +867,9 @@ class CameraViewModel(
         // All session errors surface through the snackbar, including
         // DAT_APP_ON_THE_GLASSES_UPDATE_REQUIRED, which the SDK delivers as a one-shot event.
         Log.e(TAG, "Session error: ${error.description}")
-        wearablesViewModel.setRecentError(error.getLocalizedDescription(getApplication()))
+        val mensagem = error.getLocalizedDescription(getApplication())
+        wearablesViewModel.setRecentError(mensagem)
+        definirAviso(TipoAviso.ERRO_OCULOS, mensagem)
       }
     }
   }
@@ -715,7 +1007,9 @@ class CameraViewModel(
     streamErrorJob = viewModelScope.launch {
       stream.errorStream.collect { error ->
         Log.e(TAG, "Stream error: ${error.description}")
-        wearablesViewModel.setRecentError(error.getLocalizedDescription(getApplication()))
+        val mensagem = error.getLocalizedDescription(getApplication())
+        wearablesViewModel.setRecentError(mensagem)
+        definirAviso(TipoAviso.ERRO_OCULOS, mensagem)
       }
     }
   }
@@ -948,8 +1242,19 @@ class CameraViewModel(
    * [uiState] em vez do fluxo orientado a toque na tela. Devolve false sem lançar se a sessão ou o
    * stream não ficarem prontos a tempo (sem óculos pareados, permissão de câmera pendente etc.).
    */
-  private suspend fun ensureCameraActiveForLibras(): Boolean {
-    if (_uiState.value.isStreaming) return true
+  private suspend fun ensureCameraActiveForLibras(): FalhaCamera? {
+    if (_uiState.value.isStreaming) return null
+    // 3.2: stream pausado nos óculos — startStreaming() sairia cedo e o "iniciar" desistiria em
+    // silêncio. Mostra a mensagem e espera a retomada até o teto da pausa.
+    if (_uiState.value.isPaused) {
+      definirAviso(TipoAviso.STREAM_PAUSADO, textos.streamPausado)
+      val retomou =
+          withTimeoutOrNull(DialogOrchestrator.TETO_PAUSA_MS) { uiState.first { it.isStreaming } }
+      return if (retomou != null) null else FalhaCamera.PAUSA_LONGA
+    }
+    // 3.4: a causa vai para a faixa de estado.
+    val wearables = wearablesViewModel.uiState.value
+    FalhaCamera.antesDeTentar(wearables.hasActiveDevice, wearables.isFirmwareUpdateRequired)?.let { return it }
     if (!_uiState.value.hasSession) {
       startSession()
       val sessionReady =
@@ -958,7 +1263,7 @@ class CameraViewModel(
           }
       if (sessionReady == null) {
         Log.w(TAG, "Sessão com os óculos não ficou pronta a tempo — câmera não ligada")
-        return false
+        return FalhaCamera.depoisDeEsperar(sessaoPronta = false, streamPronto = false, permissaoPendente = false)
       }
     }
     startStreaming()
@@ -966,9 +1271,12 @@ class CameraViewModel(
         withTimeoutOrNull(CAMERA_STREAM_READY_TIMEOUT_MS) { uiState.first { it.isStreaming } }
     if (streamReady == null) {
       Log.w(TAG, "Stream não ficou pronto a tempo (permissão pendente ou falha) — câmera não ligada")
-      return false
     }
-    return true
+    return FalhaCamera.depoisDeEsperar(
+        sessaoPronta = true,
+        streamPronto = streamReady != null,
+        permissaoPendente = _uiState.value.showCameraPermissionRedirectConfirm,
+    )
   }
 
   /**
@@ -1077,10 +1385,12 @@ class CameraViewModel(
     avatarPlayer.release()
     glossContextualizer.close()
     speaker.shutdown()
-    sttEngine.stop()
+    sttEngine.encerrar()
     attendantAudioCapture.cleanup()
     audioSessionManager.releaseListening()
     wakeWordDetector.stop()
+    AcoesDeDemo.simularQuedaDoAvatar = null
+    getApplication<Application>().unregisterComponentCallbacks(memoriaCallbacks)
   }
 
   class Factory(

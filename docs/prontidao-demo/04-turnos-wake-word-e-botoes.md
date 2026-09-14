@@ -175,3 +175,17 @@ botões continuam funcionando.
   `KEYCODE_VOLUME_UP` pelo sistema: sem sessão o estado não muda; com sessão, a captura abre (A6).
 - **Pendente (manual):** "uma volta completa tocando só Iniciar" (A5): precisa de sinais no vídeo do
   `MockDeviceKit` e de fala para a escuta.
+
+---
+
+## Como ficou a onda 4 (4.5, 4.6, 4.3 editável)
+
+- **4.5:** "Configurações de demo → Áudio e voz → Motor da wake word". Trocar para o motor anterior
+  (`stop()`) e cria o novo; `attachWakeWordDetector` aceita troca em tempo de execução.
+- **4.6:** interruptor "Comando de voz" na tela principal (abaixo do botão principal) e nas
+  configurações; `Transicoes.wakeWordAtiva(estado, habilitada)` e
+  `DialogOrchestrator.setWakeWordHabilitada`. Teste: `TransicoesTest` (desligado, nenhum estado ouve; o
+  botão continua valendo).
+- **4.3:** os tetos da captura e da escuta passaram para as configurações de demo.
+- **Pendente:** a comparação dos dois motores em modo avião e a medição de memória nas trocas (8.3) são
+  do aparelho real.

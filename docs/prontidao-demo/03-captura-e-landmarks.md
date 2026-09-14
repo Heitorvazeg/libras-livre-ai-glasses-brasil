@@ -225,3 +225,30 @@ preview. A bateria dos óculos não entra: o SDK não a expõe (7.4). Teste: `Me
 **Mudança.** Um seletor "MediaPipe: CPU / GPU" nas configurações de demo. O `LandmarkExtractor`
 é recriado com `BaseOptions.setDelegate(GPU)` quando o seletor muda, **fora** de uma sessão
 ativa. Se a GPU falhar ao criar, volta para CPU e avisa.
+
+---
+
+## Como ficou a onda 4 (3.2, 3.4, 3.5, 3.6)
+
+- **3.2:** o `CameraViewModel` repassa `PAUSED`/retomada ao `DialogOrchestrator.onStreamPausado`. Na
+  captura, a pausa cancela os relógios de silêncio e de teto; na volta, o detector desconta o intervalo
+  sem frames (`SignBoundaryDetector.descontarPausa`: a pausa não fecha o sinal nem vira oclusão) e o
+  indicador volta a "Aguarde…". Passando de 30 s (`TETO_PAUSA_MS`), a captura encerra sem decisão (não
+  conta para o "repita"), com aviso, e o diálogo volta ao ①. No "iniciar" com o stream pausado, a
+  faixa mostra a mensagem e o app espera a retomada até o teto. Teste instrumentado
+  (`FluxoOnda4Test`): tap no meio da captura mostra "Stream pausado nos óculos" e mantém "Capturando";
+  o segundo tap tira o aviso. **Limitação:** o recorte de um sinal que atravessa a pausa inclui o
+  intervalo de tempo parado na reamostragem; a pausa de 30 s não foi testada automaticamente.
+- **3.4:** `ensureCameraActiveForLibras` devolve `FalhaCamera` (sem dispositivo, permissão pendente,
+  atualização obrigatória, sessão sem resposta, stream que não subiu, pausa longa) e a causa vai para a
+  faixa. Os erros de sessão e de stream do SDK também. Testes: `FalhaCameraTest` (JVM) e
+  `FluxoOnda4Test` (permissão negada sem confirmar: aparece "Permissão de câmera dos óculos pendente").
+  **Pendente:** power off, doff e fold no `MockDeviceKit` (A14) — sem óculos ativos, o botão principal
+  já fica desabilitado com "Conecte os óculos".
+- **3.5:** `JanelaEnquadramento` (janela de 1 s, > 50% descartados por > 1 s); `ResultadoFrame` distingue
+  sem pose de sem ombros. O estado vai para `LibrasState.enquadramento`, a faixa e o CSV (evento
+  `enquadramento`); a porcentagem sem pose já estava no painel. Teste: `JanelaEnquadramentoTest`.
+- **3.6:** `setNumPoses(2)` com a pose de ombros mais afastados; `setNumHands(4)` com o filtro de punho a
+  menos de 0,5 largura de ombro de um pulso; a atribuição de lado continua a do 2.4. Teste:
+  `AtribuicaoMaosTest` (mão do atendente descartada, duas pessoas, rótulo trocado). O custo das 2 poses
+  e 4 mãos precisa ser medido no painel do aparelho real.

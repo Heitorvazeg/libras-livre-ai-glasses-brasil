@@ -25,6 +25,7 @@ enum class RotuloBotao {
   TRANSCREVENDO,
   PULAR,
   CONECTE_OS_OCULOS,
+  PREPARANDO,
 }
 
 data class BotaoPrincipal(val rotulo: RotuloBotao, val acao: AcaoBotao?) {
@@ -59,7 +60,9 @@ object Transicoes {
           DialogState.AGUARDANDO_RESPOSTA,
       )
 
-  fun wakeWordAtiva(estado: DialogState): Boolean = estado in ESTADOS_COM_WAKE_WORD
+  /** [habilitada] é o interruptor "Comando de voz" (4.6): desligado, nenhum estado ouve. */
+  fun wakeWordAtiva(estado: DialogState, habilitada: Boolean = true): Boolean =
+      habilitada && estado in ESTADOS_COM_WAKE_WORD
 
   /**
    * ②→③ automático (4.1): com pelo menos um segmento entregue ao classificador e o detector PARADO há
@@ -92,11 +95,15 @@ object Transicoes {
    * O botão principal de cada estado (4.7): o atendente só precisa lembrar que o botão grande faz o
    * próximo passo. Sem óculos disponíveis, o ① não tem como começar a captura.
    */
-  fun botaoPrincipal(estado: DialogState, oculosDisponiveis: Boolean): BotaoPrincipal =
+  fun botaoPrincipal(estado: DialogState, oculosDisponiveis: Boolean, aquecido: Boolean = true): BotaoPrincipal =
       when (estado) {
         DialogState.AGUARDANDO_SINAL ->
-            if (oculosDisponiveis) BotaoPrincipal(RotuloBotao.INICIAR, AcaoBotao.INICIAR)
-            else BotaoPrincipal(RotuloBotao.CONECTE_OS_OCULOS, null)
+            when {
+              !oculosDisponiveis -> BotaoPrincipal(RotuloBotao.CONECTE_OS_OCULOS, null)
+              // 6.4: habilita quando as etapas 1 a 5 do aquecimento terminaram (com ✓ ou ✗).
+              !aquecido -> BotaoPrincipal(RotuloBotao.PREPARANDO, null)
+              else -> BotaoPrincipal(RotuloBotao.INICIAR, AcaoBotao.INICIAR)
+            }
         DialogState.CAPTURANDO_SINAIS -> BotaoPrincipal(RotuloBotao.ENCERRAR_AGORA, AcaoBotao.ENCERRAR_CAPTURA)
         DialogState.FALANDO -> BotaoPrincipal(RotuloBotao.FALANDO, null)
         DialogState.AGUARDANDO_RESPOSTA -> BotaoPrincipal(RotuloBotao.OUVIR_RESPOSTA, AcaoBotao.OUVIR)

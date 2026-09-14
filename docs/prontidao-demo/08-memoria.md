@@ -86,3 +86,17 @@ demo. Comandos e tabela no [guia de testes](../guia-de-testes-mock-e-oculos.md).
 Operação: instalar o APK final com antecedência e manter uma cópia no notebook
 ([ponto 11](11-operacao-de-palco.md)). Reduzir o APK de verdade, baixando os modelos externos
 na primeira execução, fica para depois da demo.
+
+---
+
+## Como ficou a onda 4 (8.1, 8.3)
+
+- **8.1:** `libras/diagnostico/PressaoDeMemoria.kt` (pura) decide o que liberar; os dois gatilhos estão
+  no `CameraViewModel`: `ComponentCallbacks2` registrado na `Application` (`RUNNING_LOW` ou pior) e a
+  verificação por segundo (`availMem < fator × threshold` ou `lowMemory`, fator 1,5 editável). Avatar
+  animando termina antes de ser liberado; liberado por memória, avisa na faixa e não recarrega no próximo
+  "iniciar" enquanto a memória continuar baixa (9.5). A voz de reserva só é liberada se ociosa. Teste:
+  `PressaoDeMemoriaTest`. **Pendente:** `adb shell am send-trim-memory` e o limiar forçado no aparelho.
+- **8.3:** a voz de reserva nasce só quando o Piper falha (`TtsEmCadeia`); a troca do motor de wake word
+  para o anterior antes de criar o novo; o `AndroidSpeechRecognizerSttEngine` continua sem instância.
+  Teste: `TtsEmCadeiaTest` (a reserva não é criada enquanto o Piper funciona).

@@ -6,11 +6,11 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-// AndroidTextToSpeechEngine - impl-base de TtsEngine usando android.speech.tts.TextToSpeech
+// AndroidTextToSpeechEngine - TtsEngine usando android.speech.tts.TextToSpeech
 //
-// Ver docs/orquestracao-dialogo-audio-plano.md §4 item 10, §6.6. Motor do sistema (não local) —
-// fica como fallback atrás da mesma interface; o motor padrão é o PiperSherpaOnnxTtsEngine (local).
-// Era o que o Speaker chamava direto antes da interface TtsEngine existir.
+// Motor do sistema: é a voz de RESERVA da TtsEmCadeia (docs/prontidao-demo/05-audio.md §5.5), criada
+// só quando o Piper falha. Segue o roteamento padrão do Android e não respeita o seletor de saída
+// de voz (limitação aceita no 5.1). Avisa o fim no onDone, que já é o fim real da reprodução (5.3).
 
 package com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.audio
 
@@ -20,15 +20,19 @@ import android.speech.tts.UtteranceProgressListener
 import android.util.Log
 import java.util.Locale
 import kotlin.coroutines.resume
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.withTimeoutOrNull
 
 class AndroidTextToSpeechEngine(context: Context) : TtsEngine {
 
   companion object {
     private const val TAG = "Libras:AndroidTtsEngine"
+    // A inicialização é assíncrona: como reserva, o motor é criado no momento em que precisa falar.
+    private const val ESPERA_PRONTO_MS = 3_000L
   }
 
-  @Volatile private var ready = false
+  private val pronto = CompletableDeferred<Boolean>()
 
   // O OnInitListener dispara de forma assíncrona, depois que o construtor retorna — então `tts`
   // já está atribuído quando o callback acessa setLanguage().
@@ -36,21 +40,25 @@ class AndroidTextToSpeechEngine(context: Context) : TtsEngine {
       TextToSpeech(context.applicationContext) { status ->
         if (status == TextToSpeech.SUCCESS) {
           val result = tts.setLanguage(Locale("pt", "BR"))
-          ready =
-              result != TextToSpeech.LANG_MISSING_DATA && result != TextToSpeech.LANG_NOT_SUPPORTED
-          if (!ready) Log.w(TAG, "pt-BR indisponível no TTS do aparelho (result=$result)")
+          val ok = result != TextToSpeech.LANG_MISSING_DATA && result != TextToSpeech.LANG_NOT_SUPPORTED
+          if (!ok) Log.w(TAG, "pt-BR indisponível no TTS do aparelho (result=$result)")
+          pronto.complete(ok)
         } else {
           Log.e(TAG, "Falha ao inicializar TextToSpeech (status=$status)")
+          pronto.complete(false)
         }
       }
 
-  override suspend fun speakAndAwait(text: String, onInicioAudio: () -> Unit) {
-    if (!ready) {
-      Log.w(TAG, "TTS ainda não está pronto — ignorando \"$text\"")
-      return
+  override suspend fun aquecer(frases: List<String>): Boolean =
+      withTimeoutOrNull(ESPERA_PRONTO_MS) { pronto.await() } ?: false
+
+  override suspend fun speakAndAwait(text: String, onInicioAudio: () -> Unit): Boolean {
+    if (withTimeoutOrNull(ESPERA_PRONTO_MS) { pronto.await() } != true) {
+      Log.w(TAG, "TTS do Android indisponível — não falou \"$text\"")
+      return false
     }
     val utteranceId = "libras-${System.nanoTime()}"
-    suspendCancellableCoroutine<Unit> { cont ->
+    return suspendCancellableCoroutine { cont ->
       tts.setOnUtteranceProgressListener(
           object : UtteranceProgressListener() {
             override fun onStart(id: String?) {
@@ -58,21 +66,23 @@ class AndroidTextToSpeechEngine(context: Context) : TtsEngine {
             }
 
             override fun onDone(id: String?) {
-              if (id == utteranceId && cont.isActive) cont.resume(Unit)
+              if (id == utteranceId && cont.isActive) cont.resume(true)
             }
 
             @Deprecated("Deprecated in Java")
             override fun onError(id: String?) {
-              if (id == utteranceId && cont.isActive) cont.resume(Unit)
+              if (id == utteranceId && cont.isActive) cont.resume(false)
             }
 
             override fun onError(id: String?, errorCode: Int) {
-              if (id == utteranceId && cont.isActive) cont.resume(Unit)
+              if (id == utteranceId && cont.isActive) cont.resume(false)
             }
           }
       )
       cont.invokeOnCancellation { tts.stop() }
-      tts.speak(text, TextToSpeech.QUEUE_FLUSH, null, utteranceId)
+      if (tts.speak(text, TextToSpeech.QUEUE_FLUSH, null, utteranceId) != TextToSpeech.SUCCESS && cont.isActive) {
+        cont.resume(false)
+      }
     }
   }
 

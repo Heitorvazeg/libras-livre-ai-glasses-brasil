@@ -21,8 +21,8 @@
 package com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.dialogo
 
 import android.os.SystemClock
+import com.meta.wearable.dat.externalsampleapps.cameraaccess.camera.FalhaCamera
 import android.util.Log
-import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.audio.AudioSessionManager
 import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.audio.Speaker
 import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.audio.SttEngine
 import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.audio.WakeWord
@@ -42,24 +42,31 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 
+/** Tempos do diálogo que as configurações de demo editam (4.3, 5.3); lidos a cada uso. */
+data class ParametrosDialogo(
+    val tetoCapturaMs: Long = Transicoes.TETO_CAPTURA_SEM_SEGMENTO_MS,
+    val tetoEscutaMs: Long = Transicoes.TETO_ESCUTA_MS,
+    val folgaAposFalaMs: Long = Transicoes.FOLGA_APOS_FALA_MS,
+    val silencioFimFraseMs: Long = Transicoes.SILENCIO_FIM_FRASE_MS,
+)
+
 class DialogOrchestrator(
     private val scope: CoroutineScope,
     private val landmarkPipeline: LandmarkPipeline,
     private val speaker: Speaker,
-    // Troca A2DP/HFP: fica fora do caminho da escuta enquanto o microfone da resposta é o do celular
-    // (docs/prontidao-demo/05 §5.2); volta com o modo óculos do seletor (onda 4).
-    private val audioSessionManager: AudioSessionManager,
     private val sttEngine: SttEngine,
     // Glossário -> frase em PT-BR (modelo sob guarda -> template -> passthrough).
     private val contextualizer: GlossContextualizer,
-    // Liga a câmera/stream dos óculos sob demanda e espera ficar pronta; false se não subiu a tempo.
-    private val ensureCameraActive: suspend () -> Boolean,
+    // Liga a câmera/stream dos óculos sob demanda e espera ficar pronta; devolve a causa se não subiu
+    // (3.4), e quem chama a mostra na faixa de estado.
+    private val ensureCameraActive: suspend () -> FalhaCamera?,
     // Desliga o stream; a captura de vídeo só é necessária no ②.
     private val deactivateCamera: () -> Unit,
     // ⑦: suspende até a animação terminar, um teto estourar ou o operador pular (9.1).
     private val playAvatar: suspend (String) -> DesfechoAvatar,
-    // Pré-carrega o avatar escondido (o Unity leva 6-9 s). O aquecimento do 6.4 assume na onda 4.
-    private val prepareAvatar: () -> Unit,
+    // Cada "iniciar" que abre a câmera: é quando o avatar que caiu volta a carregar sozinho (9.5). O
+    // pré-carregamento em si é do aquecimento (6.3, 6.4).
+    private val aoIniciarCaptura: () -> Unit,
     // Fim do atendimento por inatividade: devolve os ~300 MB do processo do renderer.
     private val releaseAvatar: () -> Unit,
     // Caminho degradado do ⑦: a legenda fica na tela.
@@ -76,6 +83,14 @@ class DialogOrchestrator(
     private val pularAvatar: () -> Unit = {},
     // Eventos para o gravador de sessão (1.9): decisão, glosa fora do léxico, cancelamento.
     private val onEvento: (nome: String, detalhe: String) -> Unit = { _, _ -> },
+    // Tetos e folga editáveis (4.3, 5.3).
+    private val parametros: () -> ParametrosDialogo = { ParametrosDialogo() },
+    // Antes de abrir a escuta: escolhe o microfone (celular, ou óculos com troca de perfil, 5.2).
+    private val antesDeEscutar: suspend () -> Unit = {},
+    // Depois da escuta: devolve o perfil Bluetooth, se foi trocado.
+    private val depoisDeEscutar: () -> Unit = {},
+    // A câmera não subiu ou uma pausa longa encerrou a captura (3.4, 3.2).
+    private val onFalhaCamera: (FalhaCamera) -> Unit = {},
 ) {
 
   companion object {
@@ -88,6 +103,9 @@ class DialogOrchestrator(
     // Atendimento ocioso depois do ⑦: libera o avatar e zera o contador do "repita" (4.3: sem mudança).
     private const val OCIOSO_ATENDIMENTO_MS = 60_000L
 
+    // Stream pausado nos óculos por mais que isto encerra a captura (3.2).
+    const val TETO_PAUSA_MS = 30_000L
+
     // Avisos do fluxo "repita" (2.8), falados ao atendente no ③.
     const val AVISO_REPITA = "Não consegui entender. Peça para repetir, com uma pausa entre os sinais."
     const val AVISO_DESISTIR = "Não foi possível entender. Tente outro meio de comunicação."
@@ -97,6 +115,13 @@ class DialogOrchestrator(
   val state: StateFlow<DialogState> = _state.asStateFlow()
 
   private var wakeWordDetector: WakeWordDetector? = null
+
+  // Interruptor "Comando de voz" (4.6).
+  private var wakeWordHabilitada = true
+
+  // Stream pausado nos óculos (3.2) e o relógio da pausa longa.
+  private var streamPausado = false
+  private var pausaJob: Job? = null
 
   // Teto do estado ativo: captura sem segmento (30 s), escuta (20 s) ou atendimento ocioso (60 s).
   // Um campo só, porque os três estados são mutuamente exclusivos.
@@ -121,15 +146,69 @@ class DialogOrchestrator(
   // Evita um segundo "iniciar" enquanto a câmera do primeiro ainda sobe.
   private var startingSignSession = false
 
-  /** Liga a fonte de wake words — chamar uma vez, na criação. */
+  /**
+   * Liga a fonte de wake words. Aceita troca em tempo de execução (4.5): o motor anterior é parado e
+   * liberado antes de o novo começar a ouvir — um motor de cada tipo por vez (8.3).
+   */
   fun attachWakeWordDetector(detector: WakeWordDetector) {
+    wakeWordDetector?.takeIf { it !== detector }?.stop()
     wakeWordDetector = detector
-    if (Transicoes.wakeWordAtiva(_state.value)) detector.start()
+    if (Transicoes.wakeWordAtiva(_state.value, wakeWordHabilitada)) detector.start()
   }
 
   /** Religa o detector depois que RECORD_AUDIO é concedido, se o estado atual espera wake word. */
   fun resumeWakeWordDetectorIfActive() {
-    if (Transicoes.wakeWordAtiva(_state.value)) wakeWordDetector?.start()
+    if (Transicoes.wakeWordAtiva(_state.value, wakeWordHabilitada)) wakeWordDetector?.start()
+  }
+
+  /** Interruptor "Comando de voz" (4.6): desligado, nenhum estado ouve; os botões seguem valendo. */
+  fun setWakeWordHabilitada(habilitada: Boolean) {
+    if (wakeWordHabilitada == habilitada) return
+    wakeWordHabilitada = habilitada
+    if (habilitada) resumeWakeWordDetectorIfActive() else wakeWordDetector?.pause()
+  }
+
+  /**
+   * O stream dos óculos pausou (toque na haste) ou voltou (3.2). Durante a captura, a pausa congela o
+   * detector: não fecha o sinal, não conta como inatividade nem como falha do "repita". Passando de
+   * [TETO_PAUSA_MS], a captura encerra com aviso e o diálogo volta ao ①. Chamar na main.
+   */
+  fun onStreamPausado(pausado: Boolean) {
+    if (streamPausado == pausado) return
+    streamPausado = pausado
+    if (_state.value != DialogState.CAPTURANDO_SINAIS) return
+    if (pausado) {
+      tetoJob?.cancel()
+      silencioJob?.cancel()
+      val minhaGeracao = geracao
+      pausaJob?.cancel()
+      pausaJob =
+          scope.launch {
+            delay(TETO_PAUSA_MS)
+            if (minhaGeracao == geracao && streamPausado && _state.value == DialogState.CAPTURANDO_SINAIS) {
+              encerrarCapturaPorPausaLonga()
+            }
+          }
+    } else {
+      pausaJob?.cancel()
+      landmarkPipeline.retomarDepoisDePausa()
+      armarTetoDaCaptura()
+    }
+  }
+
+  private fun encerrarCapturaPorPausaLonga() {
+    Log.w(TAG, "Stream pausado por mais de ${TETO_PAUSA_MS}ms — encerrando a captura")
+    geracao++
+    tetoJob?.cancel()
+    silencioJob?.cancel()
+    capturaAberta = false
+    scope.launch { landmarkPipeline.endSession() }
+    classificacoes.clear()
+    falhas = 0
+    deactivateCamera()
+    onEvento("pausa_longa", "teto_ms=$TETO_PAUSA_MS")
+    onFalhaCamera(FalhaCamera.PAUSA_LONGA)
+    voltarAoInicio()
   }
 
   /** Chamado pelo [WakeWordDetector] quando uma frase é ouvida. */
@@ -201,16 +280,18 @@ class DialogOrchestrator(
   fun onEstadoSinalizacao(estado: EstadoSinalizacao) {
     if (_state.value != DialogState.CAPTURANDO_SINAIS) return
     silencioJob?.cancel()
-    if (estado != EstadoSinalizacao.PARADO) return
+    if (estado != EstadoSinalizacao.PARADO || streamPausado) return
     val paradoDesde = SystemClock.elapsedRealtime()
     val minhaGeracao = geracao
     silencioJob =
         scope.launch {
-          delay(Transicoes.SILENCIO_FIM_FRASE_MS)
+          val silencio = parametros().silencioFimFraseMs
+          delay(silencio)
           val segmentos = classificacoes.size + falhas
           if (minhaGeracao == geracao &&
               _state.value == DialogState.CAPTURANDO_SINAIS &&
-              Transicoes.encerrarCapturaPorSilencio(segmentos, SystemClock.elapsedRealtime() - paradoDesde)) {
+              !streamPausado &&
+              Transicoes.encerrarCapturaPorSilencio(segmentos, SystemClock.elapsedRealtime() - paradoDesde, silencio)) {
             endSignSession(MotivoEncerramento.SILENCIO)
           }
         }
@@ -225,9 +306,13 @@ class DialogOrchestrator(
     geracao++
     tetoJob?.cancel()
     silencioJob?.cancel()
+    pausaJob?.cancel()
     startingSignSession = false
     speaker.stop()
-    if (anterior == DialogState.ESCUTANDO_ATENDENTE || anterior == DialogState.TRANSCREVENDO) sttEngine.stop()
+    if (anterior == DialogState.ESCUTANDO_ATENDENTE || anterior == DialogState.TRANSCREVENDO) {
+      sttEngine.stop()
+      depoisDeEscutar()
+    }
     if (capturaAberta) {
       capturaAberta = false
       scope.launch { landmarkPipeline.endSession() }
@@ -251,12 +336,15 @@ class DialogOrchestrator(
     val minhaGeracao = geracao
     scope.launch {
       try {
-        if (!ensureCameraActive()) {
-          Log.w(TAG, "Câmera/stream não ficou pronta a tempo — 'iniciar' ignorado")
+        val falha = ensureCameraActive()
+        if (falha != null) {
+          Log.w(TAG, "Câmera/stream não subiu ($falha) — 'iniciar' ignorado")
+          onEvento("camera_nao_subiu", falha.name)
+          onFalhaCamera(falha)
           return@launch
         }
         if (minhaGeracao != geracao || _state.value != DialogState.AGUARDANDO_SINAL) return@launch
-        prepareAvatar()
+        aoIniciarCaptura()
         iniciarCaptura()
       } finally {
         startingSignSession = false
@@ -278,10 +366,11 @@ class DialogOrchestrator(
   // 4.3: 30 s sem nenhum segmento encerram a captura; cada segmento reinicia o relógio.
   private fun armarTetoDaCaptura() {
     tetoJob?.cancel()
+    if (streamPausado) return
     val minhaGeracao = geracao
     tetoJob =
         scope.launch {
-          delay(Transicoes.TETO_CAPTURA_SEM_SEGMENTO_MS)
+          delay(parametros().tetoCapturaMs)
           if (minhaGeracao == geracao && _state.value == DialogState.CAPTURANDO_SINAIS) {
             endSignSession(MotivoEncerramento.TIMEOUT)
           }
@@ -292,6 +381,7 @@ class DialogOrchestrator(
     if (_state.value != DialogState.CAPTURANDO_SINAIS) return
     tetoJob?.cancel()
     silencioJob?.cancel()
+    pausaJob?.cancel()
     // Pausa a wake word já aqui; a classificação de um sinal em aberto ainda vai terminar.
     setState(DialogState.FALANDO)
     val minhaGeracao = geracao
@@ -327,7 +417,7 @@ class DialogOrchestrator(
       when (Transicoes.estadoAposDecisao(decisao)) {
         DialogState.ESCUTANDO_ATENDENTE -> {
           // 5.3: a fala já terminou de tocar; a folga evita pegar o eco no microfone do celular.
-          delay(Transicoes.FOLGA_APOS_FALA_MS)
+          delay(parametros().folgaAposFalaMs)
           if (minhaGeracao == geracao && _state.value == DialogState.FALANDO) beginListening()
         }
         DialogState.CAPTURANDO_SINAIS -> iniciarCaptura()
@@ -355,21 +445,28 @@ class DialogOrchestrator(
     if (atual != DialogState.FALANDO && atual != DialogState.AGUARDANDO_RESPOSTA) return
     setState(DialogState.ESCUTANDO_ATENDENTE)
     val minhaGeracao = geracao
-    // Microfone do celular (5.2): sem troca de perfil Bluetooth.
-    sttEngine.start(
-        onResult = { text -> onAttendantTranscribed(text) },
-        onError = { onAttendantTranscriptionFailed() },
-        // 4.1: o Vosk fechou um enunciado com texto.
-        onFimDeFala = {
-          if (minhaGeracao == geracao && _state.value == DialogState.ESCUTANDO_ATENDENTE) endListening()
-        },
-    )
     tetoJob?.cancel()
-    tetoJob =
-        scope.launch {
-          delay(Transicoes.TETO_ESCUTA_MS)
-          if (minhaGeracao == geracao && _state.value == DialogState.ESCUTANDO_ATENDENTE) endListening()
-        }
+    scope.launch {
+      // 5.2: microfone do celular, ou dos óculos com troca de perfil (e queda para o celular sem SCO).
+      antesDeEscutar()
+      if (minhaGeracao != geracao || _state.value != DialogState.ESCUTANDO_ATENDENTE) {
+        depoisDeEscutar()
+        return@launch
+      }
+      sttEngine.start(
+          onResult = { text -> onAttendantTranscribed(text) },
+          onError = { onAttendantTranscriptionFailed() },
+          // 4.1: o Vosk fechou um enunciado com texto.
+          onFimDeFala = {
+            if (minhaGeracao == geracao && _state.value == DialogState.ESCUTANDO_ATENDENTE) endListening()
+          },
+      )
+      tetoJob =
+          scope.launch {
+            delay(parametros().tetoEscutaMs)
+            if (minhaGeracao == geracao && _state.value == DialogState.ESCUTANDO_ATENDENTE) endListening()
+          }
+    }
   }
 
   private fun endListening() {
@@ -385,6 +482,7 @@ class DialogOrchestrator(
     if (_state.value != DialogState.TRANSCREVENDO) return
     fimDaFalaMs?.let { metricas?.marcar(Etapa.FIM_FALA_TEXTO, SystemClock.elapsedRealtime() - it) }
     fimDaFalaMs = null
+    depoisDeEscutar()
     val text = rawText.replace(TRAILING_ENCERRAR_PATTERN, "").trim()
     if (Transicoes.estadoAposTranscricao(text) == DialogState.AGUARDANDO_RESPOSTA) {
       setState(DialogState.AGUARDANDO_RESPOSTA)
@@ -410,6 +508,7 @@ class DialogOrchestrator(
     if (atual != DialogState.TRANSCREVENDO && atual != DialogState.ESCUTANDO_ATENDENTE) return
     tetoJob?.cancel()
     fimDaFalaMs = null
+    depoisDeEscutar()
     setState(DialogState.AGUARDANDO_RESPOSTA)
   }
 
@@ -434,7 +533,7 @@ class DialogOrchestrator(
   // Único ponto que muda o estado E decide se a wake word deve estar ouvindo.
   private fun setState(newState: DialogState) {
     _state.value = newState
-    if (Transicoes.wakeWordAtiva(newState)) {
+    if (Transicoes.wakeWordAtiva(newState, wakeWordHabilitada)) {
       wakeWordDetector?.start()
     } else {
       wakeWordDetector?.pause()

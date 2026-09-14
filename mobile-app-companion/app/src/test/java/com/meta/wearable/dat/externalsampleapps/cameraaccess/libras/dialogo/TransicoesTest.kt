@@ -80,6 +80,22 @@ class TransicoesTest {
   }
 
   @Test
+  fun `com o comando de voz desligado nenhum estado ativa a wake word`() {
+    // 4.6: os botões continuam valendo (a regra do botão não depende da voz).
+    for (estado in DialogState.entries) {
+      assertFalse("wake word em $estado", Transicoes.wakeWordAtiva(estado, habilitada = false))
+    }
+    assertEquals(AcaoBotao.INICIAR, Transicoes.botaoPrincipal(DialogState.AGUARDANDO_SINAL, true).acao)
+  }
+
+  @Test
+  fun `antes do aquecimento terminar o iniciar fica desabilitado`() {
+    val botao = Transicoes.botaoPrincipal(DialogState.AGUARDANDO_SINAL, oculosDisponiveis = true, aquecido = false)
+    assertEquals(RotuloBotao.PREPARANDO, botao.rotulo)
+    assertFalse(botao.habilitado)
+  }
+
+  @Test
   fun `sem oculos o botao do 1 fica desabilitado com o motivo`() {
     val botao = Transicoes.botaoPrincipal(DialogState.AGUARDANDO_SINAL, oculosDisponiveis = false)
     assertEquals(RotuloBotao.CONECTE_OS_OCULOS, botao.rotulo)
