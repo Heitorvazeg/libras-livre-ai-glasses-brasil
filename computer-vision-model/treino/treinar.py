@@ -8,7 +8,8 @@ PoC (`PoC/results/relatorio.md`, 70,0%), para que a comparação seja direta.
 Uso:
     python treinar.py                      # LOSO completo no MINDS (8 rodadas)
     python treinar.py --epocas 5 --folds 1 # rodada única, para testar o encanamento
-    python treinar.py --final              # treina com TODOS e salva o checkpoint
+    python treinar.py --final --politica-final ultima --semente 20260917
+                                          # ajuste com TODOS, sem avaliação independente
 
 Referências: Alves et al. 2024 (arXiv 2404.19148), dos Santos et al. 2025
 (arXiv 2510.24887). Ver docs/investigacao-expansao-dataset.md, Achado D.
@@ -278,7 +279,11 @@ def treinar_rodada(treino, validacao, teste, rotulos, permutacao, args, disposit
 
     `evidencias`, quando fornecido, recebe logits da validação e do teste
     relativos ao melhor modelo, sem alterar a seleção de época ou a otimização.
+    No final com política `ultima`, não avalia e devolve (None, [], [], época, modelo).
     """
+    final_fixo = getattr(args, "politica_final", None) == "ultima"
+    if final_fixo and (not getattr(args, "final", False) or validacao or teste or evidencias is not None):
+        raise ValueError("final fixo exige --final e conjuntos de validação/teste vazios")
     semear(args, rodada)
     arq = getattr(args, "arquitetura", "resnet")
     ossos = bool(getattr(args, "ossos", False)) and arq == "gcn"
@@ -306,10 +311,10 @@ def treinar_rodada(treino, validacao, teste, rotulos, permutacao, args, disposit
     sem = int(getattr(args, "semente", None) or 0)
     l_treino = _loader(treino, rotulos, permutacao, True, args.batch, args.workers, True,
                        arq, ossos, mov, sem, rodada)
-    l_val = _loader(validacao, rotulos, None, False, args.batch, args.workers, False,
-                    arq, ossos, mov, sem, rodada)
-    l_teste = _loader(teste, rotulos, None, False, args.batch, args.workers, False,
-                      arq, ossos, mov, sem, rodada)
+    l_val = None if final_fixo else _loader(validacao, rotulos, None, False, args.batch, args.workers, False,
+                                           arq, ossos, mov, sem, rodada)
+    l_teste = None if final_fixo else _loader(teste, rotulos, None, False, args.batch, args.workers, False,
+                                             arq, ossos, mov, sem, rodada)
 
     melhor_perda, melhores_pesos, melhor_epoca = float("inf"), None, -1
     for epoca in range(args.epocas):
@@ -323,6 +328,8 @@ def treinar_rodada(treino, validacao, teste, rotulos, permutacao, args, disposit
             otim.zero_grad()
             saida = modelo(x)
             perda = criterio(saida, y)
+            if final_fixo and not torch.isfinite(perda):
+                raise ValueError("perda não finita no final; não salvar checkpoint")
             perda.backward()
             otim.step()
             soma += perda.item() * y.size(0)
@@ -331,6 +338,10 @@ def treinar_rodada(treino, validacao, teste, rotulos, permutacao, args, disposit
 
         if agendador is not None:
             agendador.step()
+        if final_fixo:
+            print(f"      época {epoca + 1:>2}/{args.epocas}  treino {soma / max(total,1):.3f}"
+                  f"/{certos / max(total,1):.1%}  sem avaliação; seleção=última", flush=True)
+            continue
         val_perda, val_acc, _, _ = _avaliar(modelo, l_val, criterio, dispositivo)
         if val_perda < melhor_perda:
             melhor_perda, melhor_epoca = val_perda, epoca
@@ -339,7 +350,13 @@ def treinar_rodada(treino, validacao, teste, rotulos, permutacao, args, disposit
               f"/{certos / max(total,1):.1%}  val {val_perda:.3f}/{val_acc:.1%}"
               f"{'  <- melhor' if melhor_epoca == epoca else ''}", flush=True)
 
-    # A escolha do epoch usa a VALIDAÇÃO; o teste só é tocado aqui, uma vez.
+    if final_fixo:
+        modelo.eval()
+        if any(not torch.isfinite(v).all() for v in modelo.state_dict().values()):
+            raise ValueError("estado não finito no final; não salvar checkpoint")
+        return None, [], [], args.epocas - 1, modelo
+
+    # No LOSO, a escolha usa a VALIDAÇÃO; o teste só é tocado aqui, uma vez.
     if melhores_pesos is not None:
         modelo.load_state_dict(melhores_pesos)
     logits_teste = [] if evidencias is not None else None
@@ -496,6 +513,8 @@ def main() -> None:
                     help="parte de um backbone de pretreinar.py em vez do ImageNet")
     ap.add_argument("--final", action="store_true",
                     help="treina com TODAS as pessoas e salva o checkpoint (sem avaliação)")
+    ap.add_argument("--politica-final", choices=["ultima"], default=argparse.SUPPRESS,
+                    help="obrigatório com --final: salva a última época, sem seleção em dados vistos")
     ap.add_argument("--salvar-evidencias", action="store_true",
                     help="LOSO: salva melhor checkpoint, logits de validação/teste e IDs; "
                          "retomada exige artefatos íntegros e mesma execução")
@@ -506,8 +525,16 @@ def main() -> None:
         ap.error("--salvar-evidencias é exclusivo de LOSO, não de --final")
     if args.epocas < 1:
         ap.error("--epocas precisa ser positivo")
+    if args.final and (getattr(args, "politica_final", None) != "ultima" or args.semente is None):
+        ap.error("--final exige --politica-final ultima e --semente explícita")
+    if not args.final and hasattr(args, "politica_final"):
+        ap.error("--politica-final só pode ser usado com --final")
     if args.saida is None:
         args.saida = f"resultados-{args.arquitetura}"
+    if args.final:
+        destino_final = AQUI / args.saida
+        if destino_final.exists() and (not destino_final.is_dir() or any(destino_final.iterdir())):
+            ap.error("--final exige saída nova ou vazia; não sobrescrever artefatos")
 
     torch.set_num_threads(args.threads)
     if args.dispositivo == "auto":
@@ -547,24 +574,25 @@ def main() -> None:
     inicio = time.perf_counter()
 
     if args.final:
-        # Sem holdout: é o modelo de entrega, e a estimativa de qualidade dele é
-        # o número da LOSO rodada antes — não um teste que ele já viu.
-        print("[treino] modo final: treinando com todas as pessoas")
+        # Final é ajuste para implantação, não estimativa de generalização.
+        # Não escolher época usando uma pessoa que também participa do treino.
+        print("[treino] modo final: todas as pessoas, última época; sem avaliação independente")
         todas = dd.pessoas(clipes)
-        val = [c for c in clipes if c.pessoa == todas[-1]]
         treino = clipes
-        # Snapshot antes de treinar. Este modo NÃO é uma avaliação independente:
-        # validação reutiliza parte do treino; registrar isso sem disfarçar.
         procedencia = mm.proveniencia_execucao(
             cfg, mm.inventario_final(lm_dir, clipes),
             {"metodo": "final_sem_holdout", "treino_pessoas": todas,
-             "validacao_pessoas": [todas[-1]], "teste": [],
-             "validacao_sobrepoe_treino": True}, vars(args))
-        _, _, _, _, modelo_final = treinar_rodada(treino, val, val, rotulos, permutacao,
-                                                  args, dispositivo)
+             "validacao_pessoas": [], "teste": [],
+             "validacao_sobrepoe_treino": False, "avaliacao_independente": False,
+             "politica_selecao": "ultima", "epoca_fixa": args.epocas}, vars(args))
+        backbone_sha = mm.pv.hash_arquivo(Path(args.inicializar)) if args.inicializar else None
+        _, _, _, epoca_final, modelo_final = treinar_rodada(
+            treino, [], [], rotulos, permutacao, args, dispositivo)
         destino = saida / "modelo_final.pt"
         mm.salvar(modelo_final, destino, rotulos,
                   {"fontes": args.fontes, "pessoas": todas, "args": vars(args),
+                   "epoca_salva": epoca_final + 1, "politica_selecao": "ultima",
+                   "avaliacao_independente": False, "backbone_sha256": backbone_sha,
                    "proveniencia": procedencia,
                    "pontos": cfg["pose_indices"], "limite_escala": rp.LIMITE,
                    "limite_escala_z": rp.LIMITE_Z if args.com_z else None})
