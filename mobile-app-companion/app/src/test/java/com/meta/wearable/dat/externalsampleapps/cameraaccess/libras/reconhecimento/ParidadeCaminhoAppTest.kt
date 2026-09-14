@@ -19,7 +19,13 @@ import org.junit.Test
 
 class ParidadeCaminhoAppTest {
 
-  private val fixture = File("src/androidTest/assets/paridade_classificador.json")
+  private val fixture =
+    File(
+      System.getProperty(
+        "librasLivre.paridadeClassificadorJson",
+        "src/androidTest/assets/paridade_classificador.json",
+      )
+    )
 
   private fun pontos(a: JSONArray): List<FloatArray> =
       List(a.length()) { i -> a.getJSONArray(i).let { p -> FloatArray(p.length()) { c -> p.getDouble(c).toFloat() } } }

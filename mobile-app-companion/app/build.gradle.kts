@@ -14,9 +14,50 @@ plugins {
   alias(libs.plugins.compose.compiler)
 }
 
+// Opt-in privado: só experimentos-privados/ ou caminhos fora do repositório.
+// Valida também o destino do JSON para não aceitar links para fontes versionadas.
+val classificadorFixtures =
+    providers.gradleProperty("librasLivre.classificadorFixtures").orNull?.let { caminho ->
+      val informado = File(caminho)
+      if (!informado.isAbsolute) {
+        throw GradleException("librasLivre.classificadorFixtures exige um diretório absoluto.")
+      }
+      val repositorio = rootProject.projectDir.parentFile.canonicalFile.toPath()
+      val privados = repositorio.resolve("experimentos-privados")
+      val diretorio = informado.canonicalFile
+      val json = File(diretorio, "paridade_classificador.json").canonicalFile
+      for (arquivo in listOf(diretorio, json)) {
+        val destino = arquivo.toPath()
+        if (destino.startsWith(repositorio) && !destino.startsWith(privados)) {
+          throw GradleException(
+              "librasLivre.classificadorFixtures deve ficar em experimentos-privados/ " +
+                  "ou fora do repositório (inclusive o destino canônico do JSON)."
+          )
+        }
+      }
+      if (!diretorio.isDirectory || !json.isFile) {
+        throw GradleException(
+            "librasLivre.classificadorFixtures exige um diretório existente " +
+                "contendo paridade_classificador.json."
+        )
+      }
+      diretorio
+    }
+val paridadeClassificadorJson =
+    File(
+        classificadorFixtures ?: file("src/androidTest/assets"),
+        "paridade_classificador.json",
+    ).canonicalFile
+
 android {
   namespace = "com.meta.wearable.dat.externalsampleapps.cameraaccess"
   compileSdk = 36
+
+  classificadorFixtures?.let { diretorio ->
+    // Substituição, não adição: evita colisão com o smoke versionado. Este opt-in é para
+    // testes isolados do classificador; as demais fixtures de mídia padrão ficam de fora.
+    sourceSets.getByName("androidTest").assets.setSrcDirs(listOf(diretorio))
+  }
 
   buildFeatures { buildConfig = true }
 
@@ -143,6 +184,12 @@ tasks
 // disco. Eles não são entrada dos testes de unidade por padrão: sem declarar aqui, trocar só o
 // .tflite, o carimbo ou uma tabela deixa a tarefa UP-TO-DATE e as guardas nem rodam.
 tasks.withType<Test>().configureEach {
+  systemProperty("librasLivre.paridadeClassificadorJson", paridadeClassificadorJson.absolutePath)
+  // Também declara o smoke padrão: editar só o JSON deve invalidar UP-TO-DATE.
+  inputs
+      .file(paridadeClassificadorJson)
+      .withPropertyName("paridadeClassificadorJson")
+      .withPathSensitivity(PathSensitivity.RELATIVE)
   inputs
       .files(
           "src/main/assets/modelo_contextualizacao.tflite",

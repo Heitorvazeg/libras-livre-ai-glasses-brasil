@@ -24,7 +24,12 @@ import org.junit.runner.RunWith
 class ClassificadorSmokeTest {
 
   private val assets = InstrumentationRegistry.getInstrumentation().context.assets
-  private val nome = "smoke_sinal_classifier"
+  private val nome by lazy {
+    require(!fixture.isNull("modelo") && fixture.optBoolean("tflite_validado", true)) {
+      "fixture somente PyTorch: converter e validar TFLite antes do teste Android"
+    }
+    fixture.getString("modelo").removeSuffix(".tflite")
+  }
 
   private val sidecar by lazy { assets.open("$nome.json").bufferedReader().use { it.readText() } }
   private val modelo by lazy { assets.open("$nome.tflite").use { it.readBytes() } }
@@ -101,7 +106,7 @@ class ClassificadorSmokeTest {
    *
    * O top-1 contra o caminho do TREINO só é conferido quando a margem do treino é folgada: com o
    * `--smoke`, o modelo de pesos aleatórios responde sempre a mesma classe, com margem ~0,01 — um
-   * top-1 igual ali não provaria nada. Com o checkpoint real, a checagem passa a valer.
+  * top-1 igual ali não provaria nada. Pesos reais também podem ter margem baixa no sintético.
    */
   @Test
   fun caminhoInteiroDoAppReproduzOPytorchEOTop1DoTreino() {
@@ -136,7 +141,7 @@ class ClassificadorSmokeTest {
           assertEquals("sequência $s: top-1 do app × do treino", seq.getInt("top1_treino"), top1)
         } else {
           android.util.Log.i("ClassificadorSmokeTest",
-              "sequência $s: margem do treino ${seq.getDouble("margem_treino")} < $margemMinima, top-1 não conferido (modelo sem treino)")
+              "sequência $s: margem do treino ${seq.getDouble("margem_treino")} < $margemMinima, top-1 não conferido (margem insuficiente)")
         }
       }
     } finally {
