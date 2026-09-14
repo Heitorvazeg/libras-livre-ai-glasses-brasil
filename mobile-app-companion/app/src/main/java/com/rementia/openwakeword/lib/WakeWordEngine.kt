@@ -3,7 +3,8 @@
  * 2.0 — ver docs/orquestracao-dialogo-audio-plano.md §4 item 9. Biblioteca não publicada em nenhum
  * repositório Maven/JitPack (README manda ./gradlew publishToMavenLocal), por isso o código-fonte
  * entra direto no projeto em vez de uma dependência Gradle. Conteúdo idêntico ao original, salvo
- * este comentário — consumido por OpenWakeWordDetector.kt (pacote
+ * este comentário e o `context.cacheDir` passado ao OnnxModelRunner (pesos externos — ver o
+ * header de ml/OnnxModelRunner.kt) — consumido por OpenWakeWordDetector.kt (pacote
  * .../libras/audio), que é quem escolhe os modelos .onnx (mel-spectrogram/embedding oficiais do
  * openWakeWord + os dois classificadores custom treinados pras frases "Libras Livre,
  * iniciar/encerrar").
@@ -173,7 +174,7 @@ class WakeWordEngine(
         private val model: WakeWordModel
     ) : AutoCloseable {
 
-        private val modelRunner = OnnxModelRunner(assetManager, model.modelPath)
+        private val modelRunner = OnnxModelRunner(assetManager, model.modelPath, context.cacheDir)
         private val audioProcessor = AudioProcessor(assetManager, modelRunner)
 
         fun process(audioBuffer: FloatArray): Float {

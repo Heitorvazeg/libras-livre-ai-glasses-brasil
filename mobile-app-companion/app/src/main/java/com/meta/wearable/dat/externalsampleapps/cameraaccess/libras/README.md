@@ -119,7 +119,7 @@ Três decisões que vieram de medição, não de palpite (`docs/vlibras-webview-
 | `SttEngine.kt` / `VoskSttEngine.kt` / `AndroidSpeechRecognizerSttEngine.kt` | transcrição da resposta do atendente — **Vosk é o motor ativo** (`CameraViewModel`), o `SpeechRecognizer` é fallback |
 | `WakeWordDetector.kt` | interface do gatilho da sessão (`INICIAR`/`ENCERRAR`) |
 | `SpeechRecognizerWakeWordDetector.kt` | **motor ativo** — escuta contínua no mic do celular via `SpeechRecognizer` |
-| `OpenWakeWordDetector.kt` | motor real escolhido; **não ativo** — depende dos classificadores pt-BR treinados |
+| `OpenWakeWordDetector.kt` | motor real escolhido; **não ativo** — classificadores treinados com ACAV100M + fala real em português (`../../wake-word-model/`): falso-positivo 0,52/h (`iniciar`) e 0,49/h (`encerrar`), alvo 0,2/h, recall 0,69/0,58, falta validar em hardware real (ver `wake-word-model/resultados/*/relatorio.md`) |
 | `AudioSessionManager.kt` | troca A2DP↔HFP para escutar a resposta do atendente pelo mic dos óculos |
 | `PcmMicCapture.kt` | captura de PCM cru configurável (fonte e dispositivo); usada pelo `VoskSttEngine` |
 
@@ -152,22 +152,23 @@ emulador: `./gradlew testDebugUnitTest`.
 
 ## Pré-requisito: assets em `app/src/main/assets/`
 
-Nenhum modelo pesado entra no git. Baixe tudo a partir de `mobile-app-companion/`:
+Modelos **internos** vêm no clone (versionados); modelos **externos** são baixados.
+Os externos, a partir de `mobile-app-companion/`:
 
 ```bash
 ./download-assets.sh
 ```
 
-O que o script traz, o que falta e como gerar o `.tflite` de contextualização
-estão em `mobile-app-companion/README.md` §2.3.
+O que o script traz e como atualizar o `.tflite` de contextualização estão em
+`mobile-app-companion/README.md` §2.3.
 
-Resumo do que **não** é baixável:
+Já versionados no git:
 
-- `modelo_contextualizacao.tflite` — gerado por
-  `contextualization-model/exportacao/para_tflite.py`. Ausente, o app usa o template.
-- `wakeword/libras_livre_{iniciar,encerrar}.onnx` — precisam ser treinados; o
-  openWakeWord só publica modelos prontos em inglês. Ausentes, o
-  `OpenWakeWordDetector` não sobe e o fallback assume.
+- `modelo_contextualizacao.tflite` + `glosa_ids.json` + `destokenizar.json`, amarrados por
+  `modelo_contextualizacao.proveniencia.json` (conferido por
+  `ModeloContextualizacaoProvenienciaTest`).
+- `wakeword/libras_livre_{iniciar,encerrar}.onnx[.data]` — classificadores pt-BR treinados
+  em `wake-word-model/`.
 
 O player do avatar (`vlibras/vlibras.js` + `vlibras/target/`, 13,5 MB) **é** baixado
 pelo script. Sem ele, o `AvatarPlayer` reporta falha e o app cai na legenda.

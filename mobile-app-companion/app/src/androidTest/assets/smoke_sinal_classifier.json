@@ -1,0 +1,352 @@
+{
+  "schema": 1,
+  "modelo": "smoke_sinal_classifier.tflite",
+  "sha256": "90555420f4017403f93d5aaa32198261e4f6b799ead7d59f6959d2c6e8fc3ec3",
+  "rotulos": [
+    "classe00",
+    "classe01",
+    "classe02",
+    "classe03",
+    "classe04",
+    "classe05",
+    "classe06",
+    "classe07",
+    "classe08",
+    "classe09",
+    "classe10",
+    "classe11",
+    "classe12",
+    "classe13",
+    "classe14",
+    "classe15",
+    "classe16",
+    "classe17",
+    "classe18",
+    "classe19"
+  ],
+  "modo": "landmarks",
+  "contrato_entrada": {
+    "shape": [
+      1,
+      96,
+      57,
+      3
+    ],
+    "dtype": "float32",
+    "layout_landmarks": {
+      "pontos": 57,
+      "dimensoes": 3,
+      "coordenadas": [
+        "x",
+        "y",
+        "z"
+      ],
+      "fonte_layout": "config_smoke",
+      "pose_ordenada": [
+        {
+          "nome": "nariz",
+          "indice_mediapipe_pose": 0
+        },
+        {
+          "nome": "olho_esq",
+          "indice_mediapipe_pose": 2
+        },
+        {
+          "nome": "olho_dir",
+          "indice_mediapipe_pose": 5
+        },
+        {
+          "nome": "orelha_esq",
+          "indice_mediapipe_pose": 7
+        },
+        {
+          "nome": "orelha_dir",
+          "indice_mediapipe_pose": 8
+        },
+        {
+          "nome": "boca_esq",
+          "indice_mediapipe_pose": 9
+        },
+        {
+          "nome": "boca_dir",
+          "indice_mediapipe_pose": 10
+        },
+        {
+          "nome": "ombro_esq",
+          "indice_mediapipe_pose": 11
+        },
+        {
+          "nome": "ombro_dir",
+          "indice_mediapipe_pose": 12
+        },
+        {
+          "nome": "cotovelo_esq",
+          "indice_mediapipe_pose": 13
+        },
+        {
+          "nome": "cotovelo_dir",
+          "indice_mediapipe_pose": 14
+        },
+        {
+          "nome": "pulso_esq",
+          "indice_mediapipe_pose": 15
+        },
+        {
+          "nome": "pulso_dir",
+          "indice_mediapipe_pose": 16
+        },
+        {
+          "nome": "quadril_esq",
+          "indice_mediapipe_pose": 23
+        },
+        {
+          "nome": "quadril_dir",
+          "indice_mediapipe_pose": 24
+        }
+      ],
+      "maos": [
+        {
+          "lado": "esquerda",
+          "indices": [
+            0,
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8,
+            9,
+            10,
+            11,
+            12,
+            13,
+            14,
+            15,
+            16,
+            17,
+            18,
+            19,
+            20
+          ]
+        },
+        {
+          "lado": "direita",
+          "indices": [
+            0,
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8,
+            9,
+            10,
+            11,
+            12,
+            13,
+            14,
+            15,
+            16,
+            17,
+            18,
+            19,
+            20
+          ]
+        }
+      ],
+      "limite_escala": 2.0
+    },
+    "descricao": "landmarks normalizados em unidades de ombro (origem no ponto médio dos ombros, escala = distância entre eles), ordem [pose | mão esquerda 21 | mão direita 21]; mão ausente = zeros. O pré-processamento do ST-GCN (recentragem do z, imputação de lacunas curtas, ossos, reamostragem temporal) está dentro do grafo.",
+    "frames_fixos": 96,
+    "temporal": {
+      "frames": 96,
+      "dinamico": false,
+      "reamostragem_embutida": true,
+      "reamostragem_alvo": 64,
+      "politica_app": "exigir_shape_exato; adaptação temporal a validar com dados reais"
+    },
+    "normalizacao_embutida": false,
+    "imputacao_embutida": true
+  },
+  "paridade_pytorch": {
+    "amostras": 8,
+    "max_dif_logit": 5.960464477539063e-08,
+    "discordancias_top1": 0,
+    "shape_entrada": [
+      1,
+      96,
+      57,
+      3
+    ],
+    "dtype_entrada": "float32",
+    "shape_saida": [
+      1,
+      20
+    ],
+    "precisao": {
+      "tipos_tensores": {
+        "float32": 113,
+        "bool": 9,
+        "int32": 22,
+        "int64": 2
+      },
+      "tamanho_mb": 2.0
+    }
+  },
+  "origem": {
+    "smoke": true,
+    "arquitetura": "gcn",
+    "aviso": "pesos aleatórios — não é modelo de entrega",
+    "cabeca": {
+      "z_recentrado": true,
+      "imputar": true,
+      "ossos": true,
+      "movimento": false,
+      "com_z": true
+    }
+  },
+  "codigo": {
+    "sha256": "da03ece8a2d0adac67a383ed168ca16286727b95f840952619d9355658d30a43"
+  },
+  "args": {
+    "frames": 96,
+    "layout": {
+      "pontos": 57,
+      "dimensoes": 3,
+      "coordenadas": [
+        "x",
+        "y",
+        "z"
+      ],
+      "fonte_layout": "config_smoke",
+      "pose_ordenada": [
+        {
+          "nome": "nariz",
+          "indice_mediapipe_pose": 0
+        },
+        {
+          "nome": "olho_esq",
+          "indice_mediapipe_pose": 2
+        },
+        {
+          "nome": "olho_dir",
+          "indice_mediapipe_pose": 5
+        },
+        {
+          "nome": "orelha_esq",
+          "indice_mediapipe_pose": 7
+        },
+        {
+          "nome": "orelha_dir",
+          "indice_mediapipe_pose": 8
+        },
+        {
+          "nome": "boca_esq",
+          "indice_mediapipe_pose": 9
+        },
+        {
+          "nome": "boca_dir",
+          "indice_mediapipe_pose": 10
+        },
+        {
+          "nome": "ombro_esq",
+          "indice_mediapipe_pose": 11
+        },
+        {
+          "nome": "ombro_dir",
+          "indice_mediapipe_pose": 12
+        },
+        {
+          "nome": "cotovelo_esq",
+          "indice_mediapipe_pose": 13
+        },
+        {
+          "nome": "cotovelo_dir",
+          "indice_mediapipe_pose": 14
+        },
+        {
+          "nome": "pulso_esq",
+          "indice_mediapipe_pose": 15
+        },
+        {
+          "nome": "pulso_dir",
+          "indice_mediapipe_pose": 16
+        },
+        {
+          "nome": "quadril_esq",
+          "indice_mediapipe_pose": 23
+        },
+        {
+          "nome": "quadril_dir",
+          "indice_mediapipe_pose": 24
+        }
+      ],
+      "maos": [
+        {
+          "lado": "esquerda",
+          "indices": [
+            0,
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8,
+            9,
+            10,
+            11,
+            12,
+            13,
+            14,
+            15,
+            16,
+            17,
+            18,
+            19,
+            20
+          ]
+        },
+        {
+          "lado": "direita",
+          "indices": [
+            0,
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8,
+            9,
+            10,
+            11,
+            12,
+            13,
+            14,
+            15,
+            16,
+            17,
+            18,
+            19,
+            20
+          ]
+        }
+      ],
+      "limite_escala": 2.0
+    },
+    "arquitetura": "gcn",
+    "pontos": 57,
+    "quantizacao": "nenhuma",
+    "smoke": true,
+    "semente": 20260913,
+    "saida": "smoke_sinal_classifier.tflite",
+    "backend": "ai-edge"
+  }
+}

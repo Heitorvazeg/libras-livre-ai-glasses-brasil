@@ -1,0 +1,7 @@
+sinais.mp4 — vídeo do FluxoCompletoTest (meio corpo, 12,9 s, HEVC 540x960, 30 fps, sem B-frames).
+
+Uma pessoa parada cuja parte abaixo dos ombros estica e volta três vezes: o detector de fronteiras
+vê três segmentos e o silêncio no fim fecha a frase. Gerado por scripts/gerar_video_sinais.py a
+partir de male_full_height_hands.jpg, imagem de teste do MediaPipe
+(https://storage.googleapis.com/mediapipe-assets/male_full_height_hands.jpg, projeto
+google-ai-edge/mediapipe, Apache License 2.0).

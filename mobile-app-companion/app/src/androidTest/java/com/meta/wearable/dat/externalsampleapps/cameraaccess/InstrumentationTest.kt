@@ -467,8 +467,19 @@ class InstrumentationTest {
     return device
   }
 
+  // Libras Livre (docs/prontidao-demo/10-tela.md §10.3): os controles do sample (sessão, preview, foto,
+  // gravação) ficam numa área recolhível da tela da câmera. Abre a área, se ainda estiver fechada.
+  private fun showSessionControls() {
+    composeTestRule.waitUntilAtLeastOneExists(hasTestTag("mais_controles"), timeoutMillis = STREAM_TIMEOUT)
+    val fechada =
+        composeTestRule.onAllNodesWithTag("start_session_button").fetchSemanticsNodes().isEmpty() &&
+            composeTestRule.onAllNodesWithTag("end_session_button").fetchSemanticsNodes().isEmpty()
+    if (fechada) composeTestRule.onNodeWithTag("mais_controles").performClick()
+  }
+
   // Active device → Start Session is shown and enabled.
   private fun waitForActiveDevice() {
+    showSessionControls()
     composeTestRule.waitUntilExactlyOneExists(
         hasTestTag("start_session_button").and(isEnabled()),
         timeoutMillis = STREAM_TIMEOUT,

@@ -3,8 +3,15 @@
 > **Status (2026-09-12): implementado em grande parte.** `libras/dialogo/` tem os
 > sete estados e o orquestrador; `libras/audio/` tem TTS (Piper/sherpa-onnx), STT
 > (Vosk pt-BR) e a troca A2DP/HFP, todos ativos. Duas pendências: o wake word real
-> (`OpenWakeWordDetector`) espera os classificadores pt-BR serem treinados, e o
-> estado ⑦ (handoff para o avatar) depende da branch do player VLibras.
+> (`OpenWakeWordDetector`) já tem classificadores pt-BR treinados em três rodadas
+> (pool de negativos ACAV100M + fala real em português via MLS) — pipeline em
+> [`../wake-word-model/`](../wake-word-model/README.md), decisões em
+> [`wake-word-treino-plano.md`](./wake-word-treino-plano.md). Falso-positivo caiu
+> de 103–280/h (Rodada 1) pra **0,52/h (`iniciar`) e 0,49/h (`encerrar`)**, com
+> recall 0,69/0,58 (limiar recalibrado por classificador) — ainda acima do alvo do
+> config (0,2/h) e sem validação em hardware real. `SpeechRecognizerWakeWordDetector`
+> continua sendo o motor ativo; e o estado ⑦ (handoff para o avatar) depende da
+> branch do player VLibras.
 
 > Plano de implementação da conversa completa: óculos veem a pessoa sinalizando →
 > app reconhece e fala pro atendente → atendente responde de voz, acionado por
@@ -509,27 +516,48 @@ validar cada camada isolada antes de integrar.
 - [x] Escolher o motor inicial pra destravar (ver §4, item 7):
   `SpeechRecognizer` contínuo (`SpeechRecognizerWakeWordDetector.kt`).
 - [x] Escolher o motor real (ver §4, item 9; §8, item 1): `openWakeWord`.
-- [ ] Gerar o dataset sintético em pt-BR pras duas frases: adaptar o notebook
-  `automatic_model_training.ipynb` do `openWakeWord` pra usar uma voz Piper
-  pt-BR (a mesma família de vozes da Fase 2) no lugar da voz inglesa default,
-  gerando positivos sintéticos + augmentation de ruído/RIR.
-- [ ] Curar negativos/confusables em pt-BR na mão (frases parecidas, menções
+- [x] **[REVISADO]** Gerar o dataset sintético em pt-BR pras duas frases — mas não
+  via `automatic_model_training.ipynb` como este item previa originalmente: o
+  `piper-sample-generator` que o notebook usa (checkpoint multi-falante) só existe
+  pronto em en/de/fr/nl, não em pt-BR (verificado nos releases oficiais e na busca
+  do HuggingFace — ver `docs/wake-word-treino-plano.md` §2). Substituto: 6 vozes
+  Piper pt-BR de comunidade (a mesma família da Fase 2) com timbre/velocidade
+  variados, mais RIR (MIT) e ruído ambiente (ESC-50) reais na augmentation —
+  `wake-word-model/dados/sintetizar.py`.
+- [x] Curar negativos/confusables em pt-BR na mão (frases parecidas, menções
   soltas a "Libras Livre" sem o resto, "iniciar"/"encerrar" soltos em
-  contexto de atendimento) — não existe dataset pronto pra isso.
-- [ ] Treinar os dois classificadores (um por frase) e exportar em `.onnx`
-  quantizado (int8) — o próprio pipeline de treino do `openWakeWord` já
-  exporta `.onnx` nativamente (`.tflite` é que exigiria conversão extra, e
-  nem é o formato que a integração Android abaixo espera — ver correção em
-  §4 item 9). Medir tamanho final de cada `.onnx`.
+  contexto de atendimento, e a **frase irmã** de cada classificador como negativo)
+  — `wake-word-model/dados/frases.py`.
+- [x] Treinar os dois classificadores (um por frase) e exportar em `.onnx`
+  (2026-09-12, `wake-word-model/treinar.sh`) — o próprio pipeline de treino do
+  `openWakeWord` já exporta `.onnx` nativamente (`.tflite` é que exigiria
+  conversão extra, e nem é o formato que a integração Android abaixo espera — ver
+  correção em §4 item 9). Três rodadas na mesma sessão: a Rodada 1 pulou o pool
+  de negativos pré-computado do ACAV100M (~17 GB) por achar inviável sem medir;
+  a Rodada 2 mediu a banda real (~14 MB/s, ~20 min pro arquivo inteiro) e
+  baixou; a Rodada 3 acrescentou fala real em português (MLS, 600 clipes) e
+  mais confusáveis manuscritos pra `libras_livre_encerrar` especificamente (ver
+  `docs/wake-word-treino-plano.md` §3).
+  **Resultado medido** (`wake-word-model/resultados/*/relatorio.md`):
+  falso-positivo caiu de 103-280/h (Rodada 1) pra **0,52/h (`iniciar`) e 0,49/h
+  (`encerrar`)** (Rodada 3, alvo: 0,2/h), com recall 0,69/0,58 (limiar
+  recalibrado por classificador — `THRESHOLD_INICIAR`/`THRESHOLD_ENCERRAR` em
+  `OpenWakeWordDetector.kt`). Nenhuma rodada colapsou o treino (compare com
+  `max_negative_weight: 1500` sem ACAV100M — esse sim dava TP=0 em tudo).
+  **Ressalva de variância:** rodadas com config de dado idêntica já produziram
+  recalls visivelmente diferentes (sem seed fixa) — tratar estes números como
+  ordem de grandeza. **Ainda sem validação em hardware real**; ver
+  `wake-word-treino-plano.md` §4 pro detalhe completo.
 - [x] Vendorizar `Re-MENTIA/openwakeword-android-kt` em
   `app/src/main/java/com/rementia/openwakeword/lib/` (não publicada em
   Maven/JitPack — ver §4 item 9) e implementar `OpenWakeWordDetector.kt`
-  atrás da interface `WakeWordDetector` existente. Falta só colocar os
-  assets: `melspectrogram.onnx`/`embedding_model.onnx` (fixos, baixar
-  prontos) e os dois classificadores custom treinados no item acima, em
-  `app/src/main/assets/`. Não wireado como motor padrão no
-  `CameraViewModel` ainda — depende do item de treino e da comparação
-  abaixo.
+  atrás da interface `WakeWordDetector` existente. Assets prontos pra copiar
+  de `wake-word-model/treino/libras_livre_{iniciar,encerrar}.onnx` (mais
+  `melspectrogram.onnx`/`embedding_model.onnx`, fixos, via
+  `download-assets.sh`) pra `app/src/main/assets/` — mas ver o item acima antes
+  de fazer isso pra testar de verdade: falta a validação em hardware do critério
+  de sucesso abaixo. Não wireado como motor padrão no
+  `CameraViewModel` ainda — depende da validação abaixo.
 - [ ] Validar taxa de falso-positivo/falso-negativo num ambiente ruidoso
   parecido com um balcão de atendimento (não silêncio de laboratório),
   **incluindo confundir uma frase pela outra** e confundir com menções

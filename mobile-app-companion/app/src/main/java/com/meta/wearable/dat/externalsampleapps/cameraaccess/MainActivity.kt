@@ -23,6 +23,8 @@ import android.Manifest.permission.INTERNET
 import android.Manifest.permission.RECORD_AUDIO
 import android.content.pm.PackageManager
 import android.os.Bundle
+import android.view.KeyEvent
+import com.meta.wearable.dat.externalsampleapps.cameraaccess.ui.TeclasDeVolume
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -117,6 +119,15 @@ class MainActivity : ComponentActivity() {
           onRequestRecordAudioPermission = ::requestRecordAudioPermission,
       )
     }
+  }
+
+  // Libras Livre (docs/prontidao-demo/04 §4.7): com sessão ativa na tela da câmera, as teclas de
+  // volume fazem o mesmo que o botão principal. Fora disso, ajustam o volume.
+  override fun onKeyDown(keyCode: Int, event: KeyEvent): Boolean {
+    if (keyCode == KeyEvent.KEYCODE_VOLUME_UP || keyCode == KeyEvent.KEYCODE_VOLUME_DOWN) {
+      if (TeclasDeVolume.ouvinte?.invoke(event.repeatCount == 0) == true) return true
+    }
+    return super.onKeyDown(keyCode, event)
   }
 
   override fun onStart() {

@@ -95,13 +95,14 @@ as instale no mesmo `venv`.
 
 ### Caminho mais curto: rodar o app
 
-Não exige treinar nada. Os modelos pesados são baixados por script; o app cai em
-fallbacks documentados para o que ainda não existe.
+Não exige treinar nada. Os modelos **nossos** (contextualização, wake word) já vêm
+no clone; os **externos** (MediaPipe, voz, transcrição, avatar) são baixados por
+script, e o build do APK falha com a lista do que faltar.
 
 ```bash
 git clone <este-repositório> && cd libras-livre-ai-glasses-brasil/mobile-app-companion
 echo "github_token=SEU_TOKEN" >> local.properties
-./download-assets.sh          # MediaPipe, TTS, STT, wake word e avatar — ~125 MB
+./download-assets.sh          # MediaPipe, TTS, STT, wake word (fixos) e avatar — ~80 MB de download
 # abra no Android Studio, sincronize o Gradle e execute
 ```
 
@@ -163,17 +164,18 @@ Duas ressalvas que precisam acompanhar qualquer citação desses números:
 | Extração de landmarks on-device (Pose + Hands, 57 pontos) | pronto |
 | Normalização e imputação de lacunas, com paridade testada contra o Python | pronto |
 | Detecção de fronteiras entre sinais | implementada, **parâmetros não calibrados** |
-| Classificação de sinal no app | **placeholder** — o export TFLite do ST-GCN não existe |
-| Contextualização glosa → português | pronta e integrada (`.tflite` sob guarda, template como piso) |
+| Classificação de sinal no app | **placeholder** — o export do ST-GCN para TFLite existe (`treino/exportar.py --arquitetura gcn`), mas falta o checkpoint treinado e o classificador TFLite no app |
+| Contextualização glosa → português | pronta, integrada e versionada (`.tflite` sob guarda, template como piso; carimbo de proveniência testado) |
 | Fala (TTS Piper/sherpa-onnx) e transcrição (Vosk pt-BR) | prontas |
 | Avatar em Libras para a pessoa surda (VLibras em WebView) | implementado, da transcrição à tela; **depende de rede** e não medido em aparelho ARM |
-| Wake word "Libras Livre, iniciar/encerrar" | **fallback ativo** — os classificadores pt-BR precisam ser treinados |
+| Wake word "Libras Livre, iniciar/encerrar" | classificadores pt-BR treinados e versionados (falso positivo ~0,5/h, meta 0,2/h); **motor ativo ainda é o fallback** (`SpeechRecognizer`), falta validar o offline em hardware |
 | Coleta própria no cenário de balcão | pendente |
 | Validação de vocabulário com consultor de Libras | pendente |
 
-O maior bloqueio técnico é o **export do ST-GCN para TFLite**: `treino/exportar.py`
-cobre apenas a ResNet-18, e portar o cálculo de ossos para dentro do grafo é
-trabalho novo, não uma flag.
+O maior bloqueio técnico é **levar o ST-GCN treinado até o app**: o export com o
+pré-processamento dentro do grafo já existe, mas falta o checkpoint da configuração
+de entrega (ossos + z) e o classificador TFLite no app — incluindo alinhar o contrato
+de entrada, porque o app hoje normaliza só x e y, e o modelo de entrega usa z.
 
 ---
 
@@ -185,6 +187,7 @@ trabalho novo, não uma flag.
 | Navegar a documentação de decisões | [`docs/README.md`](./docs/README.md) |
 | Rodar ou entender a trilha de visão | [`computer-vision-model/README.md`](./computer-vision-model/README.md) |
 | Rodar ou entender a trilha de contextualização | [`contextualization-model/README.md`](./contextualization-model/README.md) |
+| Treinar os classificadores de wake word (pt-BR) | [`wake-word-model/README.md`](./wake-word-model/README.md) |
 | Buildar e rodar o app | [`mobile-app-companion/README.md`](./mobile-app-companion/README.md) |
 | Ver como a IA está plugada no app | [`.../cameraaccess/libras/README.md`](./mobile-app-companion/app/src/main/java/com/meta/wearable/dat/externalsampleapps/cameraaccess/libras/README.md) |
 

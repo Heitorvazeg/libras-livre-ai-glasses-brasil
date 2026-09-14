@@ -100,8 +100,9 @@ class HandGapImputer(private val lacunaMaxima: Int = 5) {
         val a = de[offset + i]
         val b = ate[offset + i]
         val destino = alvo[offset + i]
-        destino[0] = a[0] * (1f - peso) + b[0] * peso
-        destino[1] = a[1] * (1f - peso) + b[1] * peso
+        // Todos os canais, como `saida[..., a:b, :]` no Python (inclui o z, 2.1); a ausência
+        // continua decidida só por x,y.
+        for (c in destino.indices) destino[c] = a[c] * (1f - peso) + b[c] * peso
       }
     }
   }
