@@ -21,7 +21,6 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
@@ -31,9 +30,10 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Refresh
+import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.dialogo.AcaoBotao
+import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.dialogo.BotaoPrincipal
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
@@ -73,13 +73,17 @@ fun AvatarScreen(
     onTentarDeNovo: () -> Unit,
     onPausar: () -> Unit,
     onRetomar: () -> Unit,
+    // Botão principal dentro da tela do avatar (docs/prontidao-demo/09 §9.2): "Pular" no ⑦, "Iniciar"
+    // depois, "Confirmar" em ②.5 (docs/confirmacao-e-modo-economia-plano.md §1.3). Null esconde o
+    // botão.
+    botaoPrincipal: BotaoPrincipal? = null,
+    onBotaoPrincipal: (AcaoBotao) -> Unit = {},
     modifier: Modifier = Modifier,
     // Libras Livre — confirmação de reconhecimento (docs/confirmacao-e-modo-economia-plano.md
     // §1.3, §1.5): true quando a legenda é a frase que o sistema entendeu do SURDO (②.5), não a
-    // resposta do atendente (⑦) — troca o rótulo acima do texto E mostra o par de botões
-    // Confirmar/Corrigir abaixo da legenda.
+    // resposta do atendente (⑦) — troca o rótulo acima do texto e mostra o botão "Corrigir"
+    // pequeno, ao lado do "Confirmar" (que já vem por [botaoPrincipal]/[onBotaoPrincipal]).
     confirmacaoDoSurdo: Boolean = false,
-    onConfirmarReconhecimento: () -> Unit = {},
     onCorrigirReconhecimento: () -> Unit = {},
 ) {
   // Congela o Unity com o app em background — ele desenha a 30 fps mesmo sem ninguém olhando.
@@ -112,10 +116,26 @@ fun AvatarScreen(
 
         Legenda(texto = legenda, confirmacaoDoSurdo = confirmacaoDoSurdo)
 
+        botaoPrincipal?.let {
+          BotaoPrincipalGrande(
+              botao = it,
+              onAcao = onBotaoPrincipal,
+              modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
+              tag = "botao_principal_avatar",
+          )
+        }
+        // ②.5: "Corrigir" é um botão pequeno à parte do principal "Confirmar" (§1.3 do plano) —
+        // mesmo padrão de "Cancelar atendimento" na tela principal, fora do modelo de botão único.
         if (confirmacaoDoSurdo) {
-          ConfirmacaoRow(
-              onConfirmar = onConfirmarReconhecimento,
-              onCorrigir = onCorrigirReconhecimento,
+          CapturePill(
+              modifier =
+                  Modifier.fillMaxWidth().padding(horizontal = 16.dp).padding(bottom = 12.dp)
+                      .testTag("avatar_corrigir_button"),
+              icon = Icons.Filled.Refresh,
+              label = stringResource(R.string.avatar_confirmacao_corrigir),
+              contentDescription = stringResource(R.string.avatar_confirmacao_corrigir),
+              enabled = true,
+              onClick = onCorrigirReconhecimento,
           )
         }
       }
@@ -244,36 +264,6 @@ private fun Legenda(texto: String?, confirmacaoDoSurdo: Boolean) {
         fontWeight = FontWeight.SemiBold,
         // Frase longa não pode empurrar o avatar para fora da tela nem ser cortada.
         modifier = Modifier.heightIn(max = 160.dp).verticalScroll(rememberScrollState()),
-    )
-  }
-}
-
-/**
- * Botões de confirmação (docs/confirmacao-e-modo-economia-plano.md §1.3) — só aparecem durante
- * ②.5 CONFIRMANDO_RECONHECIMENTO, junto da legenda "Você sinalizou". "Confirmar" fala a frase pro
- * atendente e segue o atendimento; "Corrigir" descarta e reabre a captura de sinais.
- */
-@Composable
-private fun ConfirmacaoRow(onConfirmar: () -> Unit, onCorrigir: () -> Unit) {
-  Row(
-      modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp).padding(bottom = 16.dp),
-      horizontalArrangement = Arrangement.spacedBy(10.dp),
-  ) {
-    CapturePill(
-        modifier = Modifier.weight(1f).testTag("avatar_corrigir_button"),
-        icon = Icons.Filled.Refresh,
-        label = stringResource(R.string.avatar_confirmacao_corrigir),
-        contentDescription = stringResource(R.string.avatar_confirmacao_corrigir),
-        enabled = true,
-        onClick = onCorrigir,
-    )
-    CapturePill(
-        modifier = Modifier.weight(1f).testTag("avatar_confirmar_button"),
-        icon = Icons.Filled.Check,
-        label = stringResource(R.string.avatar_confirmacao_confirmar),
-        contentDescription = stringResource(R.string.avatar_confirmacao_confirmar),
-        enabled = true,
-        onClick = onConfirmar,
     )
   }
 }

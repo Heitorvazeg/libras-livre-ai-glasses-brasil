@@ -112,6 +112,24 @@ class VLibrasGlosaTranslatorTest {
   }
 
   @Test
+  fun `servidor que aceita e nao responde estoura o teto e devolve null a tempo`() = runBlocking {
+    // 9.1: antes eram 30 s de conexão + 30 s de leitura presos no ⑦.
+    val mudo = ServerSocket(0)
+    val aceitos = java.util.concurrent.CopyOnWriteArrayList<java.net.Socket>()
+    thread(isDaemon = true) { runCatching { while (true) aceitos.add(mudo.accept()) } }
+    try {
+      val t = VLibrasGlosaTranslator(cacheVazio(), "http://127.0.0.1:" + mudo.localPort + "/translate", tetoMs = 300)
+      val inicio = System.nanoTime()
+      assertNull(t.traduzir("ninguem responde"))
+      val ms = (System.nanoTime() - inicio) / 1_000_000
+      assertTrue("levou $ms ms", ms < 1_000)
+    } finally {
+      mudo.close()
+      aceitos.forEach { runCatching { it.close() } }
+    }
+  }
+
+  @Test
   fun `segunda chamada vem do cache, sem tocar a rede`() = runBlocking {
     comServidor(200, "BANCO&DINHEIRO ESQUINA") { s ->
       val t = VLibrasGlosaTranslator(cacheVazio(), s.url)

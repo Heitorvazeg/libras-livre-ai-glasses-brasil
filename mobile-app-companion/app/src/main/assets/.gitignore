@@ -1,5 +1,7 @@
-# Modelos/assets pesados do Libras Livre — todos baixáveis, NÃO versionados.
-# Baixe tudo de uma vez com:  ../../../../download-assets.sh
+# Regra do projeto (2026-09-13): modelos INTERNOS (treinados por nós) são versionados no git;
+# modelos EXTERNOS (de terceiros, baixáveis) ficam fora e vêm do script abaixo.
+#
+# Externos — baixe tudo de uma vez com:  ../../../../download-assets.sh
 # (a partir de mobile-app-companion/:  ./download-assets.sh)
 # Detalhes e origens: ../java/com/.../libras/README.md
 
@@ -26,11 +28,13 @@ embedding_model.onnx
 # treinados via wake-word-model/treinar.sh (ver docs/wake-word-treino-plano.md).
 # Pequenos (~550KB total) e não regeneráveis sem re-treino — versionados direto no git.
 
-# Modelo de contextualização glosa->PT (Libras Livre) — 46 MB, regenerável.
-# Gere com: cd ../contextualization-model && python exportacao/para_tflite.py --experimento v2
-# e copie para cá junto de glosa_ids.json / destokenizar.json (que SÃO versionados: são
-# contrato com o modelo — ver docs/contextualizacao-implementacao.md §10, §11).
-*.tflite
+# Modelos internos .tflite — VERSIONADOS (nada a ignorar aqui):
+#   modelo_contextualizacao.tflite (45 MiB) + glosa_ids.json + destokenizar.json, amarrados
+#   por modelo_contextualizacao.proveniencia.json e checados por
+#   ModeloContextualizacaoProvenienciaTest (docs/contextualizacao-implementacao.md §10, §11).
+#   Ao reexportar: copie os três e atualize o carimbo no mesmo commit.
+#   A variante -fp16 (88 MiB) NÃO é usada pelo app e não entra — fica em
+#   contextualization-model/artefatos/.
 
 # Player VLibras (avatar 3D) — 13,5 MB de build Unity WebGL, baixado do repositório
 # oficial spbgovbr-vlibras/vlibras-player-webjs (LGPLv3). index.html É versionado: é cola

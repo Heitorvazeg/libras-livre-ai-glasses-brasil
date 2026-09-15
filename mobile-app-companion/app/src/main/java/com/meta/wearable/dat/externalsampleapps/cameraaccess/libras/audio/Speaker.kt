@@ -1,14 +1,8 @@
 /*
- * Libras Livre — síntese de voz para falar o sinal reconhecido/a frase da sessão.
+ * Libras Livre — fachada da voz usada pelo DialogOrchestrator.
  *
- * A "última milha" do fluxo: sinal reconhecido pela API -> voz, para quem não
- * conhece Libras entender. Pequeno de propósito; a contextualização sinal->frase
- * (juntar palavras numa frase natural) é trabalho futuro, fora deste andaime.
- *
- * Casca fina sobre TtsEngine.kt (docs/orquestracao-dialogo-audio-plano.md §4 item 10, §6.6) — só
- * delega. Existe pra o DialogOrchestrator continuar chamando `speaker.speakAndAwait(...)` sem
- * conhecer qual motor está por baixo (Android nativo vs. Piper local); trocar de motor é só trocar
- * o TtsEngine passado no construtor, sem tocar no orquestrador.
+ * Casca fina sobre TtsEngine.kt: o orquestrador chama `speaker.speakAndAwait(...)` sem conhecer o
+ * motor por baixo. No app, o motor é a TtsEmCadeia (Piper com o TTS do Android como reserva).
  */
 package com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.audio
 
@@ -16,12 +10,12 @@ import android.content.Context
 
 class Speaker(context: Context, private val engine: TtsEngine = AndroidTextToSpeechEngine(context)) {
 
-  /**
-   * Fala [text] e suspende até terminar (nunca lança) — usado pelo DialogOrchestrator pra
-   * sequenciar a transição ③→④ sem `delay()` arbitrário (ver
-   * docs/orquestracao-dialogo-audio-plano.md §6.2).
-   */
-  suspend fun speakAndAwait(text: String) = engine.speakAndAwait(text)
+  /** Fala [text] e suspende até terminar; false se nenhum motor conseguiu falar. */
+  suspend fun speakAndAwait(text: String, onInicioAudio: () -> Unit = {}): Boolean =
+      engine.speakAndAwait(text, onInicioAudio)
+
+  /** Carrega a voz e prepara [frases] sem tocar (6.4). */
+  suspend fun aquecer(frases: List<String>): Boolean = engine.aquecer(frases)
 
   fun stop() = engine.stop()
 

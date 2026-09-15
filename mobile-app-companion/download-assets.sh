@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 #
-# download-assets.sh — baixa os modelos/assets pesados do Libras Livre para
-# app/src/main/assets/. Nenhum deles é versionado no git (ver assets/.gitignore);
-# rode este script uma vez antes de buildar o app.
+# download-assets.sh — baixa os modelos/assets EXTERNOS (de terceiros) do Libras Livre
+# para app/src/main/assets/. Eles não são versionados no git (ver assets/.gitignore);
+# rode este script uma vez antes de buildar o app. Os modelos INTERNOS (treinados por
+# nós) já vêm com o clone.
 #
 # Idempotente: pula o que já existe. Force um re-download apagando o arquivo/pasta
 # alvo, ou rode com FORCE=1 ./download-assets.sh
@@ -14,13 +15,10 @@
 #   Wake   — openWakeWord (fixos)           melspectrogram.onnx, embedding_model.onnx
 #   Avatar — VLibras player (Unity WebGL)   vlibras/vlibras.js + vlibras/target/*
 #
-# NÃO baixados aqui (ver mobile-app-companion/README.md §2.3):
-#   - modelo_contextualizacao.tflite — gerado por
-#     contextualization-model/exportacao/para_tflite.py --experimento v2
-#
-# wakeword/libras_livre_{iniciar,encerrar}.onnx[.data]: classificadores custom pt-BR,
-# versionados direto no git (pequenos, não regeneráveis sem re-treino) — não precisam
-# de download, já vêm com o checkout.
+# Internos, versionados no git — NÃO baixados aqui (ver mobile-app-companion/README.md §2.3):
+#   - modelo_contextualizacao.tflite + glosa_ids.json + destokenizar.json
+#     (+ modelo_contextualizacao.proveniencia.json)
+#   - wakeword/libras_livre_{iniciar,encerrar}.onnx[.data]
 
 set -euo pipefail
 
@@ -120,10 +118,15 @@ else
     log "Avatar: buildando o wrapper vlibras.js"
     # Sem `set -e` aqui: um webpack que falha nao pode abortar o script inteiro e levar junto os
     # assets que ja baixaram — o avatar cai na legenda, o resto do app funciona.
-    if (cd "$SRC" && npm install --silent --no-audit --no-fund >/dev/null 2>&1 && npx webpack >/dev/null 2>&1); then
+    # A saida vai para um log (e nao para /dev/null): quieto quando da certo, mas quem ve a falha
+    # precisa do motivo para consertar.
+    BUILD_LOG="$TMP/vlibras-build.log"
+    if (cd "$SRC" && npm install --no-audit --no-fund && npx webpack) >"$BUILD_LOG" 2>&1; then
       cp "$SRC/build/vlibras.js" "$ASSETS/vlibras/vlibras.js"
     else
       printf '\033[1;33m ! \033[0m build do vlibras.js falhou — o avatar nao sobe (o resto segue).\n'
+      printf '     Ultimas linhas do npm/webpack:\n'
+      tail -n 25 "$BUILD_LOG" | sed 's/^/       /'
     fi
   else
     printf '\033[1;33m ! \033[0m npm ausente: vlibras.js NAO foi gerado — o avatar nao sobe.\n'

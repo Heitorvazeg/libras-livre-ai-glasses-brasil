@@ -85,6 +85,20 @@ class AvatarPlayer(
 
   private var webView: WebView? = null
   private var glosaPendente: String? = null
+
+  // 6.3: carregado e ESCONDIDO, o Unity fica pausado — ele desenha a 30 fps mesmo sem ninguém olhando,
+  // e isso disputava CPU com a captura. Quem mostra a tela avisa aqui.
+  @Volatile private var pausado = false
+
+  /**
+   * A tela do avatar está aberta. Escondida com o Unity pronto e parado, pausa; aberta, retoma.
+   * Chamar na main.
+   */
+  var visivel: Boolean = false
+    set(value) {
+      field = value
+      if (value) resume() else pausarSeOcioso()
+    }
   private val mainHandler = Handler(Looper.getMainLooper())
   private val cargaTimeout = Runnable {
     Log.e(TAG, "Unity não ficou pronto em ${CARGA_TIMEOUT_MS}ms — avatar indisponível")
@@ -170,6 +184,8 @@ class AvatarPlayer(
    */
   fun play(glosa: String) {
     if (glosa.isBlank()) return
+    // 6.3: o Unity pode estar pausado desde que ficou pronto escondido.
+    resume()
     when (state) {
       AvatarState.OCIOSO -> {
         prepare()
@@ -193,6 +209,17 @@ class AvatarPlayer(
   }
 
   /**
+   * Interrompe a animação em curso e descarta uma glosa pendente — "Pular" e tetos do ⑦
+   * (docs/prontidao-demo/09-avatar.md §9.1). O Unity continua carregado para a próxima resposta.
+   */
+  fun parar() {
+    glosaPendente = null
+    val wv = webView ?: return
+    wv.evaluateJavascript("window.avatarStop && window.avatarStop();", null)
+    if (state == AvatarState.ANIMANDO) state = AvatarState.PRONTO
+  }
+
+  /**
    * App em background: congela sem descarregar. Voltar custa ~nada.
    *
    * NÃO chama `avatarStop`: parar a animação aqui mataria o `gloss:end` no meio do caminho, e
@@ -204,14 +231,33 @@ class AvatarPlayer(
     webView?.let {
       it.onPause()
       it.pauseTimers()
+      pausado = true
     }
   }
 
   fun resume() {
+    if (!pausado) return
     webView?.let {
       it.resumeTimers()
       it.onResume()
     }
+    pausado = false
+  }
+
+  // Pronto (não carregando nem animando) e com a tela fechada: pausa.
+  private fun pausarSeOcioso() {
+    if (!visivel && state == AvatarState.PRONTO && glosaPendente == null) pause()
+  }
+
+  /**
+   * Derruba o processo do renderer da WebView, para testar a recuperação (docs/prontidao-demo/09 §9.5).
+   * É a forma suportada de disparar o onRenderProcessGone; `adb shell kill` não alcança esse processo
+   * sem root. Só existe para o menu de debug.
+   */
+  fun simularQueda() {
+    val wv = webView ?: return
+    resume()
+    wv.loadUrl("chrome://crash")
   }
 
   /**
@@ -227,6 +273,7 @@ class AvatarPlayer(
     if (webView == null && state == AvatarState.OCIOSO) return
     Log.i(TAG, "release() — destruindo a WebView (estado anterior: $state)")
     descartarView()
+    pausado = false
     state = AvatarState.OCIOSO
   }
 
@@ -246,6 +293,7 @@ class AvatarPlayer(
     }
     webView = null
     glosaPendente = null
+    pausado = false
   }
 
   private inner class Bridge {
@@ -256,6 +304,7 @@ class AvatarPlayer(
         mainHandler.removeCallbacks(cargaTimeout)
         state = AvatarState.PRONTO
         glosaPendente?.let { glosaPendente = null; enviar(it) }
+        pausarSeOcioso()
       }
     }
 
@@ -264,6 +313,7 @@ class AvatarPlayer(
       webView?.post {
         if (state == AvatarState.ANIMANDO) state = AvatarState.PRONTO
         onGlossEnd()
+        pausarSeOcioso()
       }
     }
 

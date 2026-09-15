@@ -68,6 +68,11 @@ class HevcDecoder {
   @Volatile private var receivedKeyframe = false
   @Volatile private var outputSurface: Surface? = null
 
+  // Libras Livre: vezes em que a fila de entrada encheu e o decoder desativou até o próximo
+  // keyframe — métrica do painel (docs/prontidao-demo/03 §3.8).
+  @Volatile var vezesFilaCheia = 0
+    private set
+
   fun start(width: Int, height: Int, surface: Surface) {
     outputSurface = surface
     mediaFormat =
@@ -192,6 +197,7 @@ class HevcDecoder {
     }
     if (incomingDataQueue.remainingCapacity() == 0) {
       Log.w(TAG, "Decoder queue full")
+      vezesFilaCheia++
       active = false
       return
     }

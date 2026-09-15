@@ -38,6 +38,9 @@ object LandmarkNormalizer {
   // pulso_esq, pulso_dir, quadril_esq, quadril_dir.
   private val POSE_SUBSET = intArrayOf(0, 2, 5, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 23, 24)
 
+  /** A ordem da pose no vetor de 57 pontos, para conferir contra o sidecar do classificador (2.6). */
+  val ORDEM_POSE: List<Int> = POSE_SUBSET.toList()
+
   // ombro_esq / ombro_dir — índices dentro dos 33 pontos do MediaPipe Pose (não do subset
   // acima), usados só pra origem/escala (normalizacao.ref_a/ref_b no config.yaml).
   private const val REF_OMBRO_ESQ = 11
@@ -54,7 +57,11 @@ object LandmarkNormalizer {
   const val N_POSE = 15
   const val N_MAO = 21
   const val N_PONTOS = N_POSE + 2 * N_MAO // 57
-  const val N_CANAIS = 2 // x, y — sem z (ver header)
+  // x, y, z (docs/prontidao-demo/02-classificador.md §2.1): a configuração de entrega do ST-GCN usa
+  // --com-z. O z segue a fórmula de extract.py:frame_normalizado — (z·w − média do z·w dos ombros)
+  // dividido pela MESMA escala em x,y. A recentragem do z das mãos no punho está no grafo, não aqui.
+  // Quem só precisa de x,y (detector, imputador na checagem de ausência) lê os canais 0 e 1.
+  const val N_CANAIS = 3
 
   /** Offset, dentro do vetor de 57 pontos, de onde cada bloco começa. */
   const val OFFSET_MAO_ESQ = N_POSE
@@ -87,48 +94,38 @@ object LandmarkNormalizer {
     val by = ombroDir[1] * h
     val origemX = (ax + bx) / 2f
     val origemY = (ay + by) / 2f
+    // extract.py: z em pixels usa a LARGURA (z·w), como o MediaPipe define a escala do z.
+    val origemZ = (ombroEsq[2] * w + ombroDir[2] * w) / 2f
     val dx = ax - bx
     val dy = ay - by
     val escala = sqrt(dx * dx + dy * dy)
     if (escala < ESCALA_MINIMA) return null
 
+    val origem = Origem(w, h, origemX, origemY, origemZ, escala)
     val pontos = Array(N_PONTOS) { FloatArray(N_CANAIS) }
     for (i in POSE_SUBSET.indices) {
-      normalizarPonto(pontos[i], pose[POSE_SUBSET[i]], w, h, origemX, origemY, escala)
+      normalizarPonto(pontos[i], pose[POSE_SUBSET[i]], origem)
     }
-    preencherMao(pontos, OFFSET_MAO_ESQ, frame.leftHand, w, h, origemX, origemY, escala)
-    preencherMao(pontos, OFFSET_MAO_DIR, frame.rightHand, w, h, origemX, origemY, escala)
+    preencherMao(pontos, OFFSET_MAO_ESQ, frame.leftHand, origem)
+    preencherMao(pontos, OFFSET_MAO_DIR, frame.rightHand, origem)
     return pontos
   }
 
-  private fun preencherMao(
-      destino: Array<FloatArray>,
-      offset: Int,
-      mao: List<FloatArray>?,
-      w: Float,
-      h: Float,
-      origemX: Float,
-      origemY: Float,
-      escala: Float,
-  ) {
-    // Mão ausente: os pontos já nascem [0f, 0f] em Array(N_PONTOS) { FloatArray(N_CANAIS) } —
+  private class Origem(val w: Float, val h: Float, val x: Float, val y: Float, val z: Float, val escala: Float)
+
+  private fun preencherMao(destino: Array<FloatArray>, offset: Int, mao: List<FloatArray>?, origem: Origem) {
+    // Mão ausente: os pontos já nascem [0f, 0f, 0f] em Array(N_PONTOS) { FloatArray(N_CANAIS) } —
     // "ausência = origem", mesma convenção de extract.py (bloco de zeros, ver header).
     mao ?: return
     for (i in mao.indices) {
-      normalizarPonto(destino[offset + i], mao[i], w, h, origemX, origemY, escala)
+      normalizarPonto(destino[offset + i], mao[i], origem)
     }
   }
 
-  private fun normalizarPonto(
-      destino: FloatArray,
-      lm: FloatArray, // [x, y, ...] normalizado (0..1) do MediaPipe
-      w: Float,
-      h: Float,
-      origemX: Float,
-      origemY: Float,
-      escala: Float,
-  ) {
-    destino[0] = (lm[0] * w - origemX) / escala
-    destino[1] = (lm[1] * h - origemY) / escala
+  // lm: [x, y, z, ...] normalizado do MediaPipe (x,y em 0..1; z na escala da largura).
+  private fun normalizarPonto(destino: FloatArray, lm: FloatArray, o: Origem) {
+    destino[0] = (lm[0] * o.w - o.x) / o.escala
+    destino[1] = (lm[1] * o.h - o.y) / o.escala
+    destino[2] = (lm[2] * o.w - o.z) / o.escala
   }
 }

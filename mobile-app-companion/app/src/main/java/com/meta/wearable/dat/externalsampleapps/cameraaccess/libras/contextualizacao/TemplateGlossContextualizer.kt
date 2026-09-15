@@ -118,6 +118,12 @@ class TemplateGlossContextualizer : GlossContextualizer {
       }
 
       var objetos = g.mapNotNull { OBJETOS[it] }.toMutableList()
+      // Roteiro da demo (docs/prontidao-demo/02 §2.9): querer/vontade + banheiro é ir ao banheiro,
+      // não "quero o banheiro". Regra só do app: o template.py da trilha ainda não a tem.
+      if (verbo == "querer" || verbo == "vontade") {
+        val i = objetos.indexOf("o banheiro")
+        if (i >= 0) objetos[i] = "ir ao banheiro"
+      }
       if ("ruim" in g && estado != "ruim") objetos.add("ruim")
       if (verbo != null && REGENCIA.containsKey(verbo) && objetos.isNotEmpty()) {
         objetos = (listOf(reger(REGENCIA.getValue(verbo), objetos[0])) + objetos.drop(1))

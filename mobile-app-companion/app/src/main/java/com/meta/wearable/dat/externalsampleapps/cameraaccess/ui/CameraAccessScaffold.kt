@@ -138,7 +138,10 @@ fun CameraAccessScaffold(
               sheetState = bottomSheetState,
               modifier = Modifier.fillMaxSize(),
           ) {
-            MockDeviceKitScreen(modifier = Modifier.fillMaxSize())
+            androidx.compose.foundation.layout.Column(modifier = Modifier.fillMaxSize()) {
+              SecaoConfiguracoesDemo()
+              MockDeviceKitScreen(modifier = Modifier.weight(1f))
+            }
           }
         }
       }

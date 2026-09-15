@@ -26,10 +26,10 @@ enum class DialogState {
 
   /**
    * ②.5 [NOVO — docs/confirmacao-e-modo-economia-plano.md §1] Mostra a frase reconhecida pro
-   * SURDO (mesmo avatar do ⑦, mais a legenda) e espera uma janela curta por um sinal novo — que
-   * é tratado como "não é isso, de novo" e reabre CAPTURANDO_SINAIS. Silêncio pela janela
-   * inteira = confirmação implícita, e a frase segue pro atendente (③). Wake word pausada, como
-   * ③⑥⑦.
+   * SURDO (mesmo avatar do ⑦, mais a legenda) e espera o botão do operador: "Confirmar" fala pro
+   * atendente e segue o ciclo; "Corrigir" descarta e reabre CAPTURANDO_SINAIS. Um timeout de
+   * segurança confirma sozinho se nenhum dos dois for apertado. Câmera desligada, wake word
+   * pausada, como ③⑥⑦.
    */
   CONFIRMANDO_RECONHECIMENTO,
 

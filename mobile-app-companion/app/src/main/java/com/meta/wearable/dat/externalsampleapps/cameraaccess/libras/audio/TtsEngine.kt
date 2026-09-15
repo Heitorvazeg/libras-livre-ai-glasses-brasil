@@ -8,18 +8,29 @@
 
 // TtsEngine - Motor de síntese de voz, trocável (interface)
 //
-// Ver docs/orquestracao-dialogo-audio-plano.md §4 item 10, §6.6, §8 item 4. Speaker.kt (fachada
-// usada pelo DialogOrchestrator) delega pra um TtsEngine, permitindo trocar o motor sem tocar no
-// orquestrador (que só conhece Speaker.speakAndAwait). Implementações (cada uma no seu arquivo,
-// como WakeWordDetector/SttEngine):
-//   - AndroidTextToSpeechEngine.kt — impl-base usando a API nativa do Android (fallback).
+// Speaker.kt (fachada usada pelo DialogOrchestrator) delega pra um TtsEngine. Implementações:
 //   - PiperSherpaOnnxTtsEngine.kt — motor real, local (Piper via sherpa-onnx).
+//   - AndroidTextToSpeechEngine.kt — TTS nativo do Android, reserva.
+//   - TtsEmCadeia.kt — Piper com o nativo como reserva (docs/prontidao-demo/05 §5.5).
 
 package com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.audio
 
 interface TtsEngine {
-  /** Fala [text] e suspende até terminar (erro incluso — nunca lança). Chamável da main thread. */
-  suspend fun speakAndAwait(text: String)
+  /**
+   * Fala [text] e suspende até terminar. Nunca lança: devolve false quando não conseguiu falar
+   * (motor que não carregou, erro na síntese), para quem chama poder trocar de motor em vez de
+   * ficar mudo em silêncio (5.5). Chamável da main thread.
+   *
+   * [onInicioAudio] é chamado uma vez, quando o primeiro trecho de áudio é entregue à saída — é a
+   * etapa "frase -> primeiro áudio" do painel (docs/prontidao-demo/06 §6.5).
+   */
+  suspend fun speakAndAwait(text: String, onInicioAudio: () -> Unit = {}): Boolean
+
+  /**
+   * Carrega o motor e prepara [frases] sem tocar (aquecimento, 6.4). Devolve false se o motor não
+   * carregou. Padrão: nada a preparar.
+   */
+  suspend fun aquecer(frases: List<String>): Boolean = true
 
   /** Interrompe a fala em andamento, se houver. */
   fun stop()

@@ -44,6 +44,28 @@ class TemplateGlossContextualizerTest {
     }
   }
 
+  /**
+   * O roteiro da demo (docs/prontidao-demo/02 §2.9): a frase exata que o app fala em cada sequência.
+   * A regra do banheiro é só do app (o template.py não a tem), por isso fica fora da lista de
+   * paridade acima.
+   */
+  @Test
+  fun `roteiro da demo sai com as frases exatas`() {
+    val roteiro =
+        listOf(
+            listOf("filho", "vacina", "vontade") to "O meu filho quer a vacina.",
+            listOf("cinco") to "Cinco.",
+            listOf("filho", "medo") to "O meu filho está com medo.",
+            listOf("banheiro", "vontade") to "Quero ir ao banheiro.",
+        )
+    for ((glosas, esperado) in roteiro) {
+      assertEquals("glosas=$glosas", esperado, TemplateGlossContextualizer.montar(glosas))
+    }
+    // Terceira pessoa e o verbo querer seguem a mesma regra.
+    assertEquals("O meu filho quer ir ao banheiro.", TemplateGlossContextualizer.montar(listOf("filho", "banheiro", "vontade")))
+    assertEquals("Eu quero ir ao banheiro.", TemplateGlossContextualizer.montar(listOf("eu", "querer", "banheiro")))
+  }
+
   @Test
   fun `negacao nunca some da saida`() {
     // A regra dura do §8.1: o template existe também para ser o fallback seguro, então ele
