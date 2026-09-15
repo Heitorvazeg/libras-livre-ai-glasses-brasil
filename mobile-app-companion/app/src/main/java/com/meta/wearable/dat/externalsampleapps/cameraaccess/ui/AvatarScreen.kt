@@ -72,6 +72,10 @@ fun AvatarScreen(
     onPausar: () -> Unit,
     onRetomar: () -> Unit,
     modifier: Modifier = Modifier,
+    // Libras Livre — confirmação de reconhecimento (docs/confirmacao-e-modo-economia-plano.md
+    // §1.5): true quando a legenda é a frase que o sistema entendeu do SURDO (②.5), não a
+    // resposta do atendente (⑦) — só troca o rótulo acima do texto.
+    confirmacaoDoSurdo: Boolean = false,
 ) {
   // Congela o Unity com o app em background — ele desenha a 30 fps mesmo sem ninguém olhando.
   val lifecycleOwner = LocalLifecycleOwner.current
@@ -101,7 +105,7 @@ fun AvatarScreen(
           AvatarStatus(estado = estado, onTentarDeNovo = onTentarDeNovo)
         }
 
-        Legenda(texto = legenda)
+        Legenda(texto = legenda, confirmacaoDoSurdo = confirmacaoDoSurdo)
       }
 
       CircleButton(
@@ -200,7 +204,7 @@ private fun AvatarStatus(estado: AvatarState, onTentarDeNovo: () -> Unit) {
  * degradado sem precisar trocar o layout no pior momento.
  */
 @Composable
-private fun Legenda(texto: String?) {
+private fun Legenda(texto: String?, confirmacaoDoSurdo: Boolean) {
   if (texto.isNullOrBlank()) return
   Column(
       modifier =
@@ -213,7 +217,11 @@ private fun Legenda(texto: String?) {
       verticalArrangement = Arrangement.spacedBy(6.dp),
   ) {
     Text(
-        text = stringResource(R.string.avatar_caption_label),
+        text =
+            stringResource(
+                if (confirmacaoDoSurdo) R.string.avatar_caption_label_confirmacao
+                else R.string.avatar_caption_label
+            ),
         color = Color.White.copy(alpha = 0.6f),
         fontSize = 12.sp,
     )

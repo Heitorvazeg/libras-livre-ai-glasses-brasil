@@ -64,7 +64,11 @@
     <string name="avatar_failed" description="Shown when the VLibras player could not start; the caption below is the fallback">O avatar não pôde ser carregado. A resposta está escrita abaixo.</string>
     <string name="avatar_retry" description="Button that retries loading the VLibras player">Tentar de novo</string>
     <string name="avatar_caption_label" description="Label above the written form of what the hearing person said">O atendente disse</string>
+    <string name="avatar_caption_label_confirmacao" description="Libras Livre: label above the written form of what the deaf person signed, shown during the confirmation window (docs/confirmacao-e-modo-economia-plano.md §1) instead of avatar_caption_label">Você sinalizou</string>
     <string name="avatar_waiting" description="Shown on the avatar screen while no answer has been signed yet">Aguardando a resposta do atendente…</string>
+
+    <!-- Libras Livre: modo economia de bateria (docs/confirmacao-e-modo-economia-plano.md §2) -->
+    <string name="battery_low_banner" description="Persistent banner shown once the DAT reports low/critical glasses battery — sign capture is disabled for the rest of the visit">Bateria baixa: câmera desligada, atendimento só por voz</string>
 
     <!-- Update required -->
     <string name="update_firmware_button_title" description="Open firmware update">Update firmware</string>

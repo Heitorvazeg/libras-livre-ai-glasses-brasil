@@ -24,6 +24,15 @@ enum class DialogState {
   /** ② Sessão aberta — LandmarkPipeline acumulando sinais até "Libras Livre, encerrar". */
   CAPTURANDO_SINAIS,
 
+  /**
+   * ②.5 [NOVO — docs/confirmacao-e-modo-economia-plano.md §1] Mostra a frase reconhecida pro
+   * SURDO (mesmo avatar do ⑦, mais a legenda) e espera uma janela curta por um sinal novo — que
+   * é tratado como "não é isso, de novo" e reabre CAPTURANDO_SINAIS. Silêncio pela janela
+   * inteira = confirmação implícita, e a frase segue pro atendente (③). Wake word pausada, como
+   * ③⑥⑦.
+   */
+  CONFIRMANDO_RECONHECIMENTO,
+
   /** ③ Falando (TTS) a frase reconhecida na sessão. Wake word pausada. */
   FALANDO,
 

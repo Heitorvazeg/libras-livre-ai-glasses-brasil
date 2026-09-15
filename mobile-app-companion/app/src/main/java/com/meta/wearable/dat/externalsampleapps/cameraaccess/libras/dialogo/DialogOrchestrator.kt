@@ -24,6 +24,17 @@
 // sessão lógica de captura), via os callbacks ensureCameraActive/deactivateCamera injetados pelo
 // CameraViewModel (que é quem sabe startSession/startStreaming/stopStreaming) — mesma lógica de
 // "nenhum componente decide sozinho", aplicada agora também ao hardware da câmera.
+//
+// [NOVO — docs/confirmacao-e-modo-economia-plano.md] Dois pontos do feedback da banca de
+// 2026-09-15, os dois reaproveitando peças que já existiam em vez de construir caminho novo:
+//  - ②.5 CONFIRMANDO_RECONHECIMENTO: mostra pro SURDO (via playAvatar, o mesmo do ⑦) a frase que
+//    o sistema entendeu antes de falar pro atendente, com uma janela curta pra correção por
+//    sinal novo (ver endSignSession/confirmarReconhecimento e o branch de
+//    onSignRecognized/onSignRecognitionFailed nesse estado).
+//  - onBatteryLow(): reage aos eventos de bateria baixa/crítica do DAT (BATTERY_LOW/
+//    BATTERY_CRITICAL, disparados pelo CameraViewModel a partir de session.errors/
+//    stream.errorStream) desligando a câmera e pulando ②/②.5/③ pro resto do atendimento — só o
+//    sentido atendente→surdo (fala/avatar) continua.
 
 package com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.dialogo
 
@@ -98,15 +109,36 @@ class DialogOrchestrator(
     // Livre, encerrar" tivesse sido ouvido (§7 Fase 7). NÃO se aplica aos estados de espera
     // (①④) — lá só a wake word real ou o botão de fallback disparam a transição.
     private const val IDLE_TIMEOUT_MS = 60_000L
+
+    // [NOVO] Janela de correção em ②.5 CONFIRMANDO_RECONHECIMENTO, depois que o avatar termina
+    // de mostrar a frase reconhecida pro surdo — docs/confirmacao-e-modo-economia-plano.md §1.3.
+    // Bem mais curta que IDLE_TIMEOUT_MS de propósito: aqui não é uma sessão de sinalização
+    // inteira, é só uma pausa de "tem certeza?". Palpite, não medido — calibrar com pessoas
+    // surdas reais (ver plano, §1.6).
+    private const val CONFIRMATION_WINDOW_MS = 6_000L
+
+    // [NOVO] Anunciada pro atendente quando onBatteryLow() liga o modo economia — ele é quem
+    // ouve (está de óculos), e é ele quem vai precisar explicar pra pessoa surda que o
+    // reconhecimento de sinais parou de funcionar por ora.
+    private const val MENSAGEM_MODO_ECONOMIA =
+        "Bateria dos óculos baixa. A câmera foi desligada. A conversa continua só por voz."
   }
 
   private val _state = MutableStateFlow(DialogState.AGUARDANDO_SINAL)
   val state: StateFlow<DialogState> = _state.asStateFlow()
 
+  // [NOVO] Modo economia de bateria (docs/confirmacao-e-modo-economia-plano.md §2) — ligado uma
+  // vez por onBatteryLow() e nunca desligado sozinho (o DAT não expõe um evento de "bateria
+  // recuperada", só os dois limiares de baixa/crítica). Exposto pra UI mostrar um aviso
+  // persistente, já que a mudança de modo não é óbvia olhando só o DialogState.
+  private val _economiaBateria = MutableStateFlow(false)
+  val economiaBateria: StateFlow<Boolean> = _economiaBateria.asStateFlow()
+
   private var wakeWordDetector: WakeWordDetector? = null
 
-  // Timer de inatividade das sessões ativas (② e ⑤) — um só campo porque as duas são mutuamente
-  // exclusivas no state machine (nunca as duas ativas ao mesmo tempo). Ver IDLE_TIMEOUT_MS.
+  // Timer de inatividade/janela de confirmação (②, ②.5 e ⑤) — um só campo porque os três são
+  // mutuamente exclusivos no state machine (nunca dois ativos ao mesmo tempo). Ver
+  // IDLE_TIMEOUT_MS/CONFIRMATION_WINDOW_MS.
   private var idleTimeoutJob: Job? = null
 
   // Glosas reconhecidas na sessão em curso — uma por boundary (ver
@@ -136,10 +168,17 @@ class DialogOrchestrator(
   /** Chamado pelo [WakeWordDetector] ativo (motor real ou botão) quando uma frase é ouvida. */
   fun onWakeWord(word: WakeWord) {
     when (_state.value) {
-      DialogState.AGUARDANDO_SINAL -> if (word == WakeWord.INICIAR) beginSignSession()
+      DialogState.AGUARDANDO_SINAL ->
+          if (word == WakeWord.INICIAR) {
+            // [NOVO] Modo economia: pula ②/②.5/③ inteiros — sem câmera não há sinal pra
+            // capturar, então "iniciar" aqui passa a significar a mesma coisa que em ④ (escutar
+            // o atendente), não abrir uma sessão de sinais que nunca vai coletar nada.
+            if (_economiaBateria.value) beginListening() else beginSignSession()
+          }
       DialogState.CAPTURANDO_SINAIS -> if (word == WakeWord.ENCERRAR) endSignSession()
       DialogState.AGUARDANDO_RESPOSTA -> if (word == WakeWord.INICIAR) beginListening()
       DialogState.ESCUTANDO_ATENDENTE -> if (word == WakeWord.ENCERRAR) endListening()
+      DialogState.CONFIRMANDO_RECONHECIMENTO,
       DialogState.FALANDO,
       DialogState.TRANSCREVENDO,
       DialogState.GERANDO_AVATAR ->
@@ -149,23 +188,44 @@ class DialogOrchestrator(
 
   /**
    * Chamado pelo LandmarkPipeline a cada sinal reconhecido dentro da sessão em curso — um por
-   * boundary do SignBoundaryDetector, não mais uma vez por sessão inteira (§5.3). Só acumula;
-   * quem decide quando falar é [endSignSession].
+   * boundary do SignBoundaryDetector, não mais uma vez por sessão inteira (§5.3). Em
+   * CAPTURANDO_SINAIS só acumula; quem decide quando falar é [endSignSession]. Em
+   * CONFIRMANDO_RECONHECIMENTO (②.5, docs/confirmacao-e-modo-economia-plano.md §1.3) um sinal
+   * novo significa "não é isso" — descarta a frase mostrada e reabre a captura com este sinal já
+   * como o primeiro da tentativa seguinte.
    */
   fun onSignRecognized(text: String) {
+    if (_state.value == DialogState.CONFIRMANDO_RECONHECIMENTO) {
+      Log.i(TAG, "Correção durante a confirmação — sinal novo vira início da próxima tentativa")
+      palavrasReconhecidas.clear()
+      if (text.isNotBlank()) palavrasReconhecidas.add(text)
+      setState(DialogState.CAPTURANDO_SINAIS)
+      resetIdleTimeout(DialogState.CAPTURANDO_SINAIS) { endSignSession() }
+      return
+    }
     if (text.isNotBlank()) palavrasReconhecidas.add(text)
     // Conta como atividade — reinicia o timeout de 1 min de inatividade (§7 Fase 7).
     resetIdleTimeout(DialogState.CAPTURANDO_SINAIS) { endSignSession() }
   }
 
   /**
-   * Chamado pelo LandmarkPipeline quando um segmento não é reconhecido. Um sinal perdido não
-   * aborta a sessão inteira — só não entra na frase final; a sessão segue capturando o
-   * próximo sinal normalmente (LandmarkPipeline já reinicia o buffer sozinho por boundary). Não
-   * mexe na câmera: ela continua ligada o tempo todo dentro de uma sessão de sinais, só
-   * [endSignSession] a desliga.
+   * Chamado pelo LandmarkPipeline quando um segmento não é reconhecido. Em CAPTURANDO_SINAIS um
+   * sinal perdido não aborta a sessão inteira — só não entra na frase final; a sessão segue
+   * capturando o próximo sinal normalmente (LandmarkPipeline já reinicia o buffer sozinho por
+   * boundary). Em CONFIRMANDO_RECONHECIMENTO conta como pedido de correção do mesmo jeito que
+   * [onSignRecognized] — a pessoa tentou sinalizar de novo, só não deu pra classificar; reabre
+   * CAPTURANDO_SINAIS do zero (sem um texto pra usar como primeiro sinal). Nenhum dos dois casos
+   * mexe na câmera: ela continua ligada o tempo todo dentro de uma sessão de sinais OU da
+   * confirmação que a sucede, só [endSignSession]/[confirmarReconhecimento] a desligam.
    */
   fun onSignRecognitionFailed() {
+    if (_state.value == DialogState.CONFIRMANDO_RECONHECIMENTO) {
+      Log.i(TAG, "Tentativa de correção não reconhecida — reabre CAPTURANDO_SINAIS do zero")
+      palavrasReconhecidas.clear()
+      setState(DialogState.CAPTURANDO_SINAIS)
+      resetIdleTimeout(DialogState.CAPTURANDO_SINAIS) { endSignSession() }
+      return
+    }
     Log.w(TAG, "Um segmento da sessão não foi reconhecido — seguindo o resto da sessão")
     // Um gesto foi tentado (só não reconhecido) — ainda conta como atividade pro timeout de 1 min
     // (§7 Fase 7): a pessoa está sinalizando, só não com sucesso.
@@ -178,6 +238,12 @@ class DialogOrchestrator(
 
   private fun beginSignSession() {
     if (startingSignSession) return
+    // Guarda defensiva: onWakeWord já desvia pra beginListening() em modo economia, mas
+    // beginSignSession() não devia depender só disso pra nunca ligar a câmera nesse modo.
+    if (_economiaBateria.value) {
+      Log.i(TAG, "Modo economia ativo — ignorando 'iniciar' de sinalização (só voz)")
+      return
+    }
     startingSignSession = true
     scope.launch {
       try {
@@ -202,26 +268,64 @@ class DialogOrchestrator(
     // Pode ser chamado pela wake word real, pelo botão de fallback, ou pelo próprio timeout de
     // inatividade (§7 Fase 7) — cancela o timer nos três casos (idempotente se já disparou).
     cancelIdleTimeout()
-    // Pausa a wake word já aqui, no instante em que "encerrar" foi ouvido — mesmo que ainda
-    // falte esperar a classificação de um sinal em aberto (abaixo).
-    setState(DialogState.FALANDO)
+    // [NOVO] Pausa a wake word já aqui, mas em CONFIRMANDO_RECONHECIMENTO agora, não em FALANDO —
+    // ainda falta mostrar a frase pro SURDO confirmar antes de falar pro atendente (§1 do plano
+    // de confirmação). A câmera continua ligada: a sessão de confirmação a reabre logo abaixo.
+    setState(DialogState.CONFIRMANDO_RECONHECIMENTO)
     scope.launch {
       // Suspende até LandmarkPipeline terminar: força classificar um segmento em aberto, se
       // houver, e espera qualquer classificação já em voo — só depois disso a lista de
       // palavras está completa (§5.3).
       landmarkPipeline.endSession()
-      // A câmera não é mais necessária dali em diante no ciclo (fala, escuta e transcrição são só
-      // áudio) — desliga só agora, depois que endSession() processou o que faltava (ela pode
-      // depender dos últimos frames capturados); a próxima "iniciar" (beginSignSession) religa
-      // sob demanda.
-      deactivateCamera()
       val glosas = palavrasReconhecidas.toList()
       palavrasReconhecidas.clear()
-      if (glosas.isNotEmpty()) {
-        val resultado = contextualizer.contextualize(glosas)
-        Log.i(TAG, "glosas=$glosas -> \"${resultado.texto}\" (${resultado.origem})")
-        if (resultado.texto.isNotBlank()) speaker.speakAndAwait(resultado.texto)
+      if (glosas.isEmpty()) {
+        // Nada reconhecido — não há o que confirmar nem falar. Desliga a câmera e segue como
+        // antes.
+        deactivateCamera()
+        setState(DialogState.AGUARDANDO_RESPOSTA)
+        return@launch
       }
+      val resultado = contextualizer.contextualize(glosas)
+      Log.i(TAG, "glosas=$glosas -> \"${resultado.texto}\" (${resultado.origem})")
+      if (resultado.texto.isBlank()) {
+        deactivateCamera()
+        setState(DialogState.AGUARDANDO_RESPOSTA)
+        return@launch
+      }
+      // Mostra pro SURDO o que foi entendido, reaproveitando o mesmo avatar do ⑦ — ANTES de
+      // falar pro atendente (docs/confirmacao-e-modo-economia-plano.md §1.2). playAvatar() já
+      // cai pra legenda sozinho (onAvatarUnavailable) se o avatar não subir; aqui isso não muda
+      // o fluxo, só o caminho degradado é visual.
+      if (!playAvatar(resultado.texto)) onAvatarUnavailable(resultado.texto)
+      // playAvatar() suspende (até 45 s, AVATAR_TIMEOUT_MS do CameraViewModel) — onBatteryLow()
+      // pode ter mudado o estado por baixo enquanto isso. Sem este guard, reabriríamos a captura
+      // (landmarkPipeline.startSession()) depois que o modo economia já desligou a câmera.
+      if (_state.value != DialogState.CONFIRMANDO_RECONHECIMENTO) return@launch
+      // Reabre a captura para a janela de correção (§1.3) — DEPOIS que o avatar já terminou de
+      // animar, não durante: limita o tempo em que MediaPipe e o Unity do avatar coexistem
+      // (vlibras-webview-plano.md §4.2) à janela de confirmação, não à animação inteira.
+      landmarkPipeline.startSession()
+      resetIdleTimeout(DialogState.CONFIRMANDO_RECONHECIMENTO) {
+        confirmarReconhecimento(resultado.texto)
+      }
+    }
+  }
+
+  /**
+   * Fim da janela de confirmação (§1.3) sem nenhuma correção: a pessoa surda não sinalizou de
+   * novo, então a frase mostrada está confirmada e segue pro atendente. Chamado só pelo timeout
+   * de [CONFIRMATION_WINDOW_MS] — uma correção real nunca chega aqui, porque
+   * [onSignRecognized]/[onSignRecognitionFailed] já tiram o estado de CONFIRMANDO_RECONHECIMENTO
+   * antes que este timeout dispare (ver [resetIdleTimeout]: só age se o estado não mudou).
+   */
+  private fun confirmarReconhecimento(texto: String) {
+    scope.launch {
+      // Fecha a sessão de confirmação (idle — nenhum segmento em aberto, closeSession() é barato
+      // aqui) antes de desligar a câmera, mesmo padrão do fim de ②.
+      landmarkPipeline.endSession()
+      deactivateCamera()
+      speaker.speakAndAwait(texto)
       setState(DialogState.AGUARDANDO_RESPOSTA)
     }
   }
@@ -280,6 +384,39 @@ class DialogOrchestrator(
     audioSessionManager.releaseListening()
     // Permite tentar de novo com "Libras Livre, iniciar" sem reabrir a sessão de sinais inteira.
     setState(DialogState.AGUARDANDO_RESPOSTA)
+  }
+
+  /**
+   * [NOVO] Chamado pelo CameraViewModel quando o DAT reporta `DeviceSessionError.BATTERY_CRITICAL`
+   * (sessão) ou `StreamError.BATTERY_LOW` (stream) — docs/confirmacao-e-modo-economia-plano.md
+   * §2. Liga o modo economia de vez pro resto do atendimento (o SDK não expõe um evento de
+   * "bateria recuperada" pra desligar sozinho): desliga a câmera agora se ela estava em uso, e a
+   * partir daqui "Libras Livre, iniciar" em ① passa a abrir escuta do atendente (④) em vez de
+   * sessão de sinais (②) — ver o branch de AGUARDANDO_SINAL em [onWakeWord]. Idempotente: um
+   * segundo evento de bateria não repete o anúncio nem reprocessa nada.
+   */
+  fun onBatteryLow() {
+    if (_economiaBateria.value) return
+    _economiaBateria.value = true
+    Log.w(TAG, "Bateria baixa/crítica nos óculos — modo economia ligado (câmera desligada dali em diante)")
+    val comCameraAberta =
+        _state.value == DialogState.CAPTURANDO_SINAIS ||
+            _state.value == DialogState.CONFIRMANDO_RECONHECIMENTO
+    if (comCameraAberta) {
+      // Bateria crítica é urgente — não tenta preservar o que já foi capturado nesta sessão,
+      // só encerra. resetIdleTimeout ainda não disparou; cancela pra não competir com esta
+      // transição.
+      cancelIdleTimeout()
+      palavrasReconhecidas.clear()
+      setState(DialogState.AGUARDANDO_RESPOSTA)
+    }
+    scope.launch {
+      if (comCameraAberta) {
+        landmarkPipeline.endSession()
+        deactivateCamera()
+      }
+      speaker.speakAndAwait(MENSAGEM_MODO_ECONOMIA)
+    }
   }
 
   /**

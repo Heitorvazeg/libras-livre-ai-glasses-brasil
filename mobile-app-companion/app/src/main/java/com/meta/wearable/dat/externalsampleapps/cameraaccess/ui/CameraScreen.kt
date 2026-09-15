@@ -204,6 +204,7 @@ fun CameraScreen(
           onTentarDeNovo = cameraViewModel::abrirAvatar,
           onPausar = cameraViewModel::pausarAvatar,
           onRetomar = cameraViewModel::retomarAvatar,
+          confirmacaoDoSurdo = ui.avatarConfirmacaoDoSurdo,
       )
     }
 
@@ -479,6 +480,13 @@ private fun BottomBar(
           onClick = onUpdateFirmware,
       )
     } else {
+      // Libras Livre: modo economia de bateria (docs/confirmacao-e-modo-economia-plano.md §2) —
+      // banner persistente, não um snackbar (que já dispara uma vez via wearablesViewModel a
+      // partir do próprio evento de erro do DAT): quem opera precisa lembrar que a captura de
+      // sinais ficou desligada pelo resto do atendimento, não só no instante em que ligou.
+      if (ui.bateriaBaixa) {
+        BateriaBaixaBanner(modifier = Modifier.testTag("bateria_baixa_banner"))
+      }
       // Libras Livre: botões de fallback da wake word — orquestram a sessão de diálogo (só
       // quando o stream está ao vivo). Ver libras/WakeWordDetector.kt.
       DialogControlRow(
@@ -849,6 +857,38 @@ private fun LibrasBanner(
         )
       }
     }
+  }
+}
+
+/**
+ * Libras Livre — modo economia de bateria (docs/confirmacao-e-modo-economia-plano.md §2).
+ * Persistente enquanto `ui.bateriaBaixa` for true: não desliga sozinho, porque o DAT não expõe
+ * um evento de "bateria recuperada" — só os dois limiares de baixa/crítica.
+ */
+@Composable
+private fun BateriaBaixaBanner(modifier: Modifier = Modifier) {
+  Row(
+      modifier =
+          modifier
+              .fillMaxWidth()
+              .clip(RoundedCornerShape(12.dp))
+              .background(Color.Black.copy(alpha = 0.6f))
+              .padding(horizontal = 16.dp, vertical = 10.dp),
+      horizontalArrangement = Arrangement.spacedBy(10.dp),
+      verticalAlignment = Alignment.CenterVertically,
+  ) {
+    Icon(
+        imageVector = Icons.Filled.Warning,
+        contentDescription = null,
+        tint = AppColor.Yellow,
+        modifier = Modifier.size(18.dp),
+    )
+    Text(
+        text = stringResource(R.string.battery_low_banner),
+        color = Color.White,
+        fontSize = 13.sp,
+        fontWeight = FontWeight.Medium,
+    )
   }
 }
 

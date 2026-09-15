@@ -35,6 +35,7 @@ import com.meta.wearable.dat.camera.Stream
 import com.meta.wearable.dat.camera.addCamera
 import com.meta.wearable.dat.camera.types.PhotoData
 import com.meta.wearable.dat.camera.types.StreamConfiguration
+import com.meta.wearable.dat.camera.types.StreamError
 import com.meta.wearable.dat.camera.types.StreamState
 import com.meta.wearable.dat.camera.types.VideoFrame
 import com.meta.wearable.dat.camera.types.VideoQuality
@@ -42,6 +43,7 @@ import com.meta.wearable.dat.core.Wearables
 import com.meta.wearable.dat.core.selectors.DeviceSelector
 import com.meta.wearable.dat.core.session.DeviceSession
 import com.meta.wearable.dat.core.session.DeviceSessionState
+import com.meta.wearable.dat.core.types.DeviceSessionError
 import com.meta.wearable.dat.core.types.Permission
 import com.meta.wearable.dat.core.types.PermissionStatus
 import com.meta.wearable.dat.externalsampleapps.cameraaccess.R
@@ -279,6 +281,11 @@ class CameraViewModel(
     viewModelScope.launch {
       dialogOrchestrator.state.collect { state -> _uiState.update { it.copy(dialogState = state) } }
     }
+    viewModelScope.launch {
+      dialogOrchestrator.economiaBateria.collect { ligado ->
+        _uiState.update { it.copy(bateriaBaixa = ligado) }
+      }
+    }
   }
 
   /**
@@ -290,10 +297,22 @@ class CameraViewModel(
    * conversa: melhor uma legenda tardia que um atendimento congelado.
    */
   private suspend fun playAvatar(text: String): Boolean {
+    // Libras Livre: quem chama isto em ②.5 (docs/confirmacao-e-modo-economia-plano.md §1) é o
+    // mesmo texto reconhecido do SURDO, não a resposta do atendente — o estado do orquestrador
+    // já reflete isso no momento da chamada (DialogOrchestrator sempre faz setState() ANTES de
+    // invocar playAvatar), então basta olhar pra ele pra escolher o rótulo certo da legenda.
+    val confirmandoReconhecimento =
+        dialogOrchestrator.state.value == DialogState.CONFIRMANDO_RECONHECIMENTO
     // Abre a tela ANTES de traduzir, e com a legenda já preenchida: a pessoa surda vê o que foi
     // dito enquanto a glosa vem da rede, e os dois caminhos de falha (sem rede, player caído)
     // encontram a tela aberta mostrando o texto em vez de devolverem preto.
-    _uiState.update { it.copy(avatarVisivel = true, avatarLegenda = text) }
+    _uiState.update {
+      it.copy(
+          avatarVisivel = true,
+          avatarLegenda = text,
+          avatarConfirmacaoDoSurdo = confirmandoReconhecimento,
+      )
+    }
 
     if (avatarPlayer.state == AvatarState.FALHOU) return false
     val glosa = glosaTranslator.traduzir(text) ?: return false
@@ -395,6 +414,11 @@ class CameraViewModel(
         // DAT_APP_ON_THE_GLASSES_UPDATE_REQUIRED, which the SDK delivers as a one-shot event.
         Log.e(TAG, "Session error: ${error.description}")
         wearablesViewModel.setRecentError(error.getLocalizedDescription(getApplication()))
+        // Libras Livre — modo economia de bateria (docs/confirmacao-e-modo-economia-plano.md
+        // §2). BATTERY_CRITICAL confirmado por inspeção do mwdat-core-0.9.0.aar real (§2.4 do
+        // plano) — é um enum, comparável com ==, mesmo idioma já usado pelo sample oficial
+        // (DisplayViewModel.kt:492 do SDK) para DAT_APP_ON_THE_GLASSES_UPDATE_REQUIRED.
+        if (error == DeviceSessionError.BATTERY_CRITICAL) dialogOrchestrator.onBatteryLow()
       }
     }
   }
@@ -533,6 +557,10 @@ class CameraViewModel(
       stream.errorStream.collect { error ->
         Log.e(TAG, "Stream error: ${error.description}")
         wearablesViewModel.setRecentError(error.getLocalizedDescription(getApplication()))
+        // Libras Livre — modo economia de bateria (docs/confirmacao-e-modo-economia-plano.md
+        // §2). BATTERY_LOW confirmado por inspeção do mwdat-camera-0.9.0.aar real (§2.4 do
+        // plano).
+        if (error == StreamError.BATTERY_LOW) dialogOrchestrator.onBatteryLow()
       }
     }
   }
