@@ -133,3 +133,43 @@ e `extras_externos.ler` confere o hash de cada um antes do treino. O hash do
 pacote continua conferido quando o pacote está presente. O backup registra a
 forma de entrada em `entrada-extras.json` (`origem_pacote`). Receita, grupo de
 pessoas, repetições e regra de decisão não mudaram.
+
+## Resultado — 15/09/2026
+
+**Candidata:** `experimentos-privados/final-s20260917-extras-v1/`, checkpoint
+`ff438d79…`, commit `d65a05d`, backbone `7a6e997c…`, 120 épocas, semente 20260917,
+`--extras-repeticoes 5`, sem `--aug-dominio`. Extras entraram pela pasta extraída
+(`entrada-extras.json`: `forma = pasta_extraida`), manifesto `f222a3c7…`, 42 clipes
+das 7 pessoas previstas, 4 excluídas. Preflight (incluindo os testes dos extras) e
+selftest OK. Tesla T4 / torch 2.10.0+cu128, mesmo ambiente da linha de base.
+
+Nos 28 clipes de avaliação:
+
+| checkpoint | acerto | V03 (V-LIBRASIL) | TUFS, T048, T050 (MALTA) | classes sem exemplo externo | confiança mediana nos erros |
+|---|---:|---:|---:|---:|---:|
+| linha de base `c7851d8a` | 14/28 | 5/10 | 9/18 | 1/3 | 0,95 |
+| etapa 3 `ff438d79` | **19/28** | **10/10** | 9/18 | 2/3 | 0,86 |
+
+Ganhou 7 clipes e perdeu 2. **Pela regra fixada (≥ 18/28), a candidata passa.**
+Isso autoriza a verificação de regressão no MINDS; não aprova entrega nem troca o
+modelo do app.
+
+### Leitura do resultado
+
+- **O ganho vem inteiro de V03.** V03 foi de 5/10 para 10/10: amarelo, barulho,
+  medo, ruim e sapo passaram a acertar. V01 e V02, do mesmo corpus, estavam no
+  treino. É provável que o modelo tenha aprendido o estilo de gravação e execução
+  do V-LIBRASIL, e não uma robustez geral a outros domínios.
+- **MALTA não melhorou no saldo:** 9/18 nos dois. Ganhou `ruim` e `aproveitar`
+  (TUFS), perdeu `filho` e `vacina` (TUFS). T048 continuou errando `banheiro`,
+  `cinco` e `conhecer`, agora para `acontecer` em vez de `america`.
+- `america` deixou de ser o destino de erro dominante: nenhuma previsão errada
+  para `america` nos 28 clipes, contra 6 na linha de base.
+- Limites do protocolo continuam valendo: 28 clipes, uma semente, V03 exposto ao
+  pré-treino/seleção e já examinado nos diagnósticos.
+
+### Próximo passo previsto pelo protocolo
+
+Verificar regressão no próprio MINDS (LOSO) antes de qualquer adoção. Hoje os
+extras só são aceitos com `--final`; a verificação LOSO com extras precisa de
+suporte novo no `treinar.py`.
