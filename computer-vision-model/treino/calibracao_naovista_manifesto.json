@@ -1,0 +1,590 @@
+{
+  "descricao": "Conjunto de calibração/avaliação com pessoas nunca usadas no treino de classificação (LOSO nem --final): V-LIBRASIL V01-V03 + MALTA (pessoas variam por classe). Cobre as 20 classes do MINDS. V03 nunca foi vista em NENHUMA etapa (reservada até do pré-treino contrastivo); as demais pessoas foram vistas no pré-treino contrastivo (não-supervisionado), nunca no treino/validação de classificação.",
+  "gerado_em": "2026-09-14",
+  "n_clipes": 50,
+  "n_pessoas": 10,
+  "pessoas": [
+    "T002",
+    "T042",
+    "T044",
+    "T045",
+    "T048",
+    "T050",
+    "TUFS",
+    "V01",
+    "V02",
+    "V03"
+  ],
+  "classes_cobertas": [
+    "acontecer",
+    "aluno",
+    "amarelo",
+    "america",
+    "aproveitar",
+    "bala",
+    "banco",
+    "banheiro",
+    "barulho",
+    "cinco",
+    "conhecer",
+    "espelho",
+    "esquina",
+    "filho",
+    "maca",
+    "medo",
+    "ruim",
+    "sapo",
+    "vacina",
+    "vontade"
+  ],
+  "pessoas_por_classe": {
+    "acontecer": [
+      "V01",
+      "V02",
+      "V03"
+    ],
+    "aluno": [
+      "TUFS"
+    ],
+    "amarelo": [
+      "V01",
+      "V02",
+      "V03"
+    ],
+    "america": [
+      "T002",
+      "T044",
+      "T048"
+    ],
+    "aproveitar": [
+      "TUFS"
+    ],
+    "bala": [
+      "T042",
+      "T050"
+    ],
+    "banco": [
+      "TUFS"
+    ],
+    "banheiro": [
+      "V01",
+      "V02",
+      "V03"
+    ],
+    "barulho": [
+      "V01",
+      "V02",
+      "V03"
+    ],
+    "cinco": [
+      "T002",
+      "T045",
+      "T048"
+    ],
+    "conhecer": [
+      "T002",
+      "T042",
+      "T048"
+    ],
+    "espelho": [
+      "V01",
+      "V02",
+      "V03"
+    ],
+    "esquina": [
+      "T002",
+      "TUFS"
+    ],
+    "filho": [
+      "V01",
+      "V02",
+      "V03"
+    ],
+    "maca": [
+      "V01",
+      "V02",
+      "V03"
+    ],
+    "medo": [
+      "V01",
+      "V02",
+      "V03"
+    ],
+    "ruim": [
+      "V01",
+      "V02",
+      "V03"
+    ],
+    "sapo": [
+      "V01",
+      "V02",
+      "V03"
+    ],
+    "vacina": [
+      "T002",
+      "TUFS"
+    ],
+    "vontade": [
+      "T002",
+      "TUFS"
+    ]
+  },
+  "limites": [
+    "1-3 repetições por pessoa/classe (MINDS LOSO usa 5) — não tem poder estatístico para métricas por classe, só para checagem grosseira.",
+    "Corpus diferente do MINDS (câmera, enquadramento, população de sinalizantes) — mede generalização entre domínios, não a distribuição que o app vai encontrar de fato.",
+    "Todas as pessoas exceto V03 foram vistas no pré-treino contrastivo (sem rótulo) — exposição mais fraca que o vazamento do pool LOSO, mas não é 100% independente do pipeline inteiro.",
+    "Ainda não há modelo_final.pt — este manifesto só localiza e verifica os clipes; rodar inferência e gerar logits fica para quando o checkpoint existir e o schema de calibração do Astra estiver pronto."
+  ],
+  "itens": [
+    {
+      "classe": "acontecer",
+      "pessoa": "V01",
+      "corpus": "vlibrasil",
+      "arquivo": "PoC/data/landmarks/pessoaV01_sinal-acontecer_rep01.npy",
+      "sha256": "5a7738305d806efe8c5d78be4a96b6581eeb78aa046b573f9c6102d1ee821a62",
+      "proveniencia": null,
+      "observacao": "sem sidecar .proveniencia.json nesta pasta; hash calculado diretamente pelo agente em 2026-09-14"
+    },
+    {
+      "classe": "acontecer",
+      "pessoa": "V02",
+      "corpus": "vlibrasil",
+      "arquivo": "PoC/data/landmarks/pessoaV02_sinal-acontecer_rep01.npy",
+      "sha256": "07a22934c80b3a3ac57d2c211878b856a97d04b19d3be2015d84a628ef0627ad",
+      "proveniencia": null,
+      "observacao": "sem sidecar .proveniencia.json nesta pasta; hash calculado diretamente pelo agente em 2026-09-14"
+    },
+    {
+      "classe": "acontecer",
+      "pessoa": "V03",
+      "corpus": "vlibrasil",
+      "arquivo": "PoC/data/landmarks/pessoaV03_sinal-acontecer_rep01.npy",
+      "sha256": "96958f9cae1997936e459d373deea07d9932a090500e444e761f699b4bbe16c6",
+      "proveniencia": null,
+      "observacao": "sem sidecar .proveniencia.json nesta pasta; hash calculado diretamente pelo agente em 2026-09-14"
+    },
+    {
+      "classe": "aluno",
+      "pessoa": "TUFS",
+      "corpus": "malta",
+      "arquivo": "PoC/data/landmarks-malta/pessoaTUFS_sinal-aluno_rep01.npy",
+      "sha256": "28fa66c94a9a1b140d70975bc8f9bebb872f3e31524898a6878bf2a3eaeba93f",
+      "proveniencia": "Malta-Lab/ISLR_LIBRAS",
+      "observacao": null
+    },
+    {
+      "classe": "amarelo",
+      "pessoa": "V01",
+      "corpus": "vlibrasil",
+      "arquivo": "PoC/data/landmarks/pessoaV01_sinal-amarelo_rep01.npy",
+      "sha256": "9681ccfe70bf2df52d1d4133ec4ab6bf3cfcaa34ff0be2f868c34df1b4224677",
+      "proveniencia": null,
+      "observacao": "sem sidecar .proveniencia.json nesta pasta; hash calculado diretamente pelo agente em 2026-09-14"
+    },
+    {
+      "classe": "amarelo",
+      "pessoa": "V02",
+      "corpus": "vlibrasil",
+      "arquivo": "PoC/data/landmarks/pessoaV02_sinal-amarelo_rep01.npy",
+      "sha256": "8bab1af371871788dd5ccd89ecbf96b3c1b49c0c0e3221bc445b0beb90371e12",
+      "proveniencia": null,
+      "observacao": "sem sidecar .proveniencia.json nesta pasta; hash calculado diretamente pelo agente em 2026-09-14"
+    },
+    {
+      "classe": "amarelo",
+      "pessoa": "V03",
+      "corpus": "vlibrasil",
+      "arquivo": "PoC/data/landmarks/pessoaV03_sinal-amarelo_rep01.npy",
+      "sha256": "0ef38c3ad8ab6c00b14038bb5d98482d937d5d3e8f12a574de7e71480fa2e665",
+      "proveniencia": null,
+      "observacao": "sem sidecar .proveniencia.json nesta pasta; hash calculado diretamente pelo agente em 2026-09-14"
+    },
+    {
+      "classe": "america",
+      "pessoa": "T002",
+      "corpus": "malta",
+      "arquivo": "PoC/data/landmarks-malta/pessoaT002_sinal-america_rep01.npy",
+      "sha256": "a2a8c8a9ffa119ee59f1d2622360d0ffea71df091a276390c44c0fbb9d524319",
+      "proveniencia": "Malta-Lab/ISLR_LIBRAS",
+      "observacao": null
+    },
+    {
+      "classe": "america",
+      "pessoa": "T044",
+      "corpus": "malta",
+      "arquivo": "PoC/data/landmarks-malta/pessoaT044_sinal-america_rep01.npy",
+      "sha256": "e9c2daacf435b61645de08f33a887121f999dc936791aa422836c4200bddc163",
+      "proveniencia": "Malta-Lab/ISLR_LIBRAS",
+      "observacao": null
+    },
+    {
+      "classe": "america",
+      "pessoa": "T048",
+      "corpus": "malta",
+      "arquivo": "PoC/data/landmarks-malta/pessoaT048_sinal-america_rep01.npy",
+      "sha256": "f9cec24f89e25e9059e847553f3881231da55e5d9339bf8f9a2e4fc0011073e7",
+      "proveniencia": "Malta-Lab/ISLR_LIBRAS",
+      "observacao": null
+    },
+    {
+      "classe": "aproveitar",
+      "pessoa": "TUFS",
+      "corpus": "malta",
+      "arquivo": "PoC/data/landmarks-malta/pessoaTUFS_sinal-aproveitar_rep01.npy",
+      "sha256": "752ca1342751f77d76b745118fec59b3f57ce381248c995afb741df60d4ee98f",
+      "proveniencia": "Malta-Lab/ISLR_LIBRAS",
+      "observacao": null
+    },
+    {
+      "classe": "bala",
+      "pessoa": "T042",
+      "corpus": "malta",
+      "arquivo": "PoC/data/landmarks-malta/pessoaT042_sinal-bala_rep01.npy",
+      "sha256": "9cbb8c57df3a84eb4924431b7fbda509e445e48a157e69fe59ce587c4b7e621d",
+      "proveniencia": "Malta-Lab/ISLR_LIBRAS",
+      "observacao": null
+    },
+    {
+      "classe": "bala",
+      "pessoa": "T050",
+      "corpus": "malta",
+      "arquivo": "PoC/data/landmarks-malta/pessoaT050_sinal-bala_rep01.npy",
+      "sha256": "1ac4411cc575eb3f424782526e754dfc92335dac11f0d161add7f6f571395b92",
+      "proveniencia": "Malta-Lab/ISLR_LIBRAS",
+      "observacao": null
+    },
+    {
+      "classe": "banco",
+      "pessoa": "TUFS",
+      "corpus": "malta",
+      "arquivo": "PoC/data/landmarks-malta/pessoaTUFS_sinal-banco_rep01.npy",
+      "sha256": "59353389e4a4f37de277c122776ce492743bfa96fd683efc193c436bdb691d1f",
+      "proveniencia": "Malta-Lab/ISLR_LIBRAS",
+      "observacao": null
+    },
+    {
+      "classe": "banheiro",
+      "pessoa": "V01",
+      "corpus": "vlibrasil",
+      "arquivo": "PoC/data/landmarks/pessoaV01_sinal-banheiro_rep01.npy",
+      "sha256": "e9d1e6bb7428085bce9fc532c8240a19dc93890a5e1936f34afffcc1d0a8e4ab",
+      "proveniencia": null,
+      "observacao": "sem sidecar .proveniencia.json nesta pasta; hash calculado diretamente pelo agente em 2026-09-14"
+    },
+    {
+      "classe": "banheiro",
+      "pessoa": "V02",
+      "corpus": "vlibrasil",
+      "arquivo": "PoC/data/landmarks/pessoaV02_sinal-banheiro_rep01.npy",
+      "sha256": "0007a8ccb4714e3063684919b8e4b966e95fc07129ab10348722310b51de9775",
+      "proveniencia": null,
+      "observacao": "sem sidecar .proveniencia.json nesta pasta; hash calculado diretamente pelo agente em 2026-09-14"
+    },
+    {
+      "classe": "banheiro",
+      "pessoa": "V03",
+      "corpus": "vlibrasil",
+      "arquivo": "PoC/data/landmarks/pessoaV03_sinal-banheiro_rep01.npy",
+      "sha256": "aecb8c927a0feb4c6058422d4706d7e928d22c0d08c870d8ea4701d892c0b745",
+      "proveniencia": null,
+      "observacao": "sem sidecar .proveniencia.json nesta pasta; hash calculado diretamente pelo agente em 2026-09-14"
+    },
+    {
+      "classe": "barulho",
+      "pessoa": "V01",
+      "corpus": "vlibrasil",
+      "arquivo": "PoC/data/landmarks/pessoaV01_sinal-barulho_rep01.npy",
+      "sha256": "ad44e885853ac56e53fae3aacbc294cd11572a5a055e543c19a08982bd8600fc",
+      "proveniencia": null,
+      "observacao": "sem sidecar .proveniencia.json nesta pasta; hash calculado diretamente pelo agente em 2026-09-14"
+    },
+    {
+      "classe": "barulho",
+      "pessoa": "V02",
+      "corpus": "vlibrasil",
+      "arquivo": "PoC/data/landmarks/pessoaV02_sinal-barulho_rep01.npy",
+      "sha256": "a4c781aacde9a912a500f72873b533be16d27ac6de35d690fa530ed3d7d65d4f",
+      "proveniencia": null,
+      "observacao": "sem sidecar .proveniencia.json nesta pasta; hash calculado diretamente pelo agente em 2026-09-14"
+    },
+    {
+      "classe": "barulho",
+      "pessoa": "V03",
+      "corpus": "vlibrasil",
+      "arquivo": "PoC/data/landmarks/pessoaV03_sinal-barulho_rep01.npy",
+      "sha256": "819cfc105d293630e7773c2abba5179a6d16376252a075a0afe643f82b1edc93",
+      "proveniencia": null,
+      "observacao": "sem sidecar .proveniencia.json nesta pasta; hash calculado diretamente pelo agente em 2026-09-14"
+    },
+    {
+      "classe": "cinco",
+      "pessoa": "T002",
+      "corpus": "malta",
+      "arquivo": "PoC/data/landmarks-malta/pessoaT002_sinal-cinco_rep01.npy",
+      "sha256": "ba7ee3a08a3e56de4e0195c2649707a538a04e5c7d6e90c6c6a409e77e11586e",
+      "proveniencia": "Malta-Lab/ISLR_LIBRAS",
+      "observacao": null
+    },
+    {
+      "classe": "cinco",
+      "pessoa": "T045",
+      "corpus": "malta",
+      "arquivo": "PoC/data/landmarks-malta/pessoaT045_sinal-cinco_rep01.npy",
+      "sha256": "05890a8a6fdf88337d7ec9e1337ebd0009cfec9db0b3d6fbc3b8d99614923042",
+      "proveniencia": "Malta-Lab/ISLR_LIBRAS",
+      "observacao": null
+    },
+    {
+      "classe": "cinco",
+      "pessoa": "T048",
+      "corpus": "malta",
+      "arquivo": "PoC/data/landmarks-malta/pessoaT048_sinal-cinco_rep01.npy",
+      "sha256": "b75f8048948a0f7d76edf1f9ba7746150c7d3eea61a587c56f80256d4089dfb0",
+      "proveniencia": "Malta-Lab/ISLR_LIBRAS",
+      "observacao": null
+    },
+    {
+      "classe": "conhecer",
+      "pessoa": "T002",
+      "corpus": "malta",
+      "arquivo": "PoC/data/landmarks-malta/pessoaT002_sinal-conhecer_rep01.npy",
+      "sha256": "68b54b0eb9f6da9ba37877e79cffc1fa92f621d6d0de2beb856996aa771370cd",
+      "proveniencia": "Malta-Lab/ISLR_LIBRAS",
+      "observacao": null
+    },
+    {
+      "classe": "conhecer",
+      "pessoa": "T042",
+      "corpus": "malta",
+      "arquivo": "PoC/data/landmarks-malta/pessoaT042_sinal-conhecer_rep01.npy",
+      "sha256": "8b62a088b8f9b2a6139e191a292348cf64c7f73b587768cdd74ce64d1245fe0c",
+      "proveniencia": "Malta-Lab/ISLR_LIBRAS",
+      "observacao": null
+    },
+    {
+      "classe": "conhecer",
+      "pessoa": "T048",
+      "corpus": "malta",
+      "arquivo": "PoC/data/landmarks-malta/pessoaT048_sinal-conhecer_rep01.npy",
+      "sha256": "591d502064280f5ae09f4de662d4a0d5374f71f223fae3d854185b98ebe85fac",
+      "proveniencia": "Malta-Lab/ISLR_LIBRAS",
+      "observacao": null
+    },
+    {
+      "classe": "espelho",
+      "pessoa": "V01",
+      "corpus": "vlibrasil",
+      "arquivo": "PoC/data/landmarks/pessoaV01_sinal-espelho_rep01.npy",
+      "sha256": "81af19cb5c9c82d94b99feef5f7bfe0fc1050514f5a8ae6d42b2af18911fa5e0",
+      "proveniencia": null,
+      "observacao": "sem sidecar .proveniencia.json nesta pasta; hash calculado diretamente pelo agente em 2026-09-14"
+    },
+    {
+      "classe": "espelho",
+      "pessoa": "V02",
+      "corpus": "vlibrasil",
+      "arquivo": "PoC/data/landmarks/pessoaV02_sinal-espelho_rep01.npy",
+      "sha256": "ae43e1f4807fa9468420ea632fffaba17a48c1a103c870468ba4d59081ae2b34",
+      "proveniencia": null,
+      "observacao": "sem sidecar .proveniencia.json nesta pasta; hash calculado diretamente pelo agente em 2026-09-14"
+    },
+    {
+      "classe": "espelho",
+      "pessoa": "V03",
+      "corpus": "vlibrasil",
+      "arquivo": "PoC/data/landmarks/pessoaV03_sinal-espelho_rep01.npy",
+      "sha256": "0ebfee9b2e86fead18f8420bcc5a06a53e3e6a37bca0d10394918af2ed72127c",
+      "proveniencia": null,
+      "observacao": "sem sidecar .proveniencia.json nesta pasta; hash calculado diretamente pelo agente em 2026-09-14"
+    },
+    {
+      "classe": "esquina",
+      "pessoa": "T002",
+      "corpus": "malta",
+      "arquivo": "PoC/data/landmarks-malta/pessoaT002_sinal-esquina_rep01.npy",
+      "sha256": "f986b15bac948da79e1d84901a88be96f7e9b793a99b20525006481c31f28b79",
+      "proveniencia": "Malta-Lab/ISLR_LIBRAS",
+      "observacao": null
+    },
+    {
+      "classe": "esquina",
+      "pessoa": "TUFS",
+      "corpus": "malta",
+      "arquivo": "PoC/data/landmarks-malta/pessoaTUFS_sinal-esquina_rep01.npy",
+      "sha256": "f5cacba55d87696e9770b09be0b9eddce8c7e9b1764bd092454a8d9cb6365e68",
+      "proveniencia": "Malta-Lab/ISLR_LIBRAS",
+      "observacao": null
+    },
+    {
+      "classe": "filho",
+      "pessoa": "V01",
+      "corpus": "vlibrasil",
+      "arquivo": "PoC/data/landmarks/pessoaV01_sinal-filho_rep01.npy",
+      "sha256": "872481e6e258c7889f80ee8b91ed8527842648691dd7d6f73562983fff27183f",
+      "proveniencia": null,
+      "observacao": "sem sidecar .proveniencia.json nesta pasta; hash calculado diretamente pelo agente em 2026-09-14"
+    },
+    {
+      "classe": "filho",
+      "pessoa": "V02",
+      "corpus": "vlibrasil",
+      "arquivo": "PoC/data/landmarks/pessoaV02_sinal-filho_rep01.npy",
+      "sha256": "80bd09bb4402c555ab35f6831ed7ceaf4dcde60691c482ddb41a6e2b5b06693e",
+      "proveniencia": null,
+      "observacao": "sem sidecar .proveniencia.json nesta pasta; hash calculado diretamente pelo agente em 2026-09-14"
+    },
+    {
+      "classe": "filho",
+      "pessoa": "V03",
+      "corpus": "vlibrasil",
+      "arquivo": "PoC/data/landmarks/pessoaV03_sinal-filho_rep01.npy",
+      "sha256": "66df7293aa8ed635b4104c33e5405addf19579c86e741a49ef52ce2df185c7b0",
+      "proveniencia": null,
+      "observacao": "sem sidecar .proveniencia.json nesta pasta; hash calculado diretamente pelo agente em 2026-09-14"
+    },
+    {
+      "classe": "maca",
+      "pessoa": "V01",
+      "corpus": "vlibrasil",
+      "arquivo": "PoC/data/landmarks/pessoaV01_sinal-maca_rep01.npy",
+      "sha256": "02ed8f566f636eaf79c0ce4546b083b6bf2bad2f17136d6c9a73d976ad652f08",
+      "proveniencia": null,
+      "observacao": "sem sidecar .proveniencia.json nesta pasta; hash calculado diretamente pelo agente em 2026-09-14"
+    },
+    {
+      "classe": "maca",
+      "pessoa": "V02",
+      "corpus": "vlibrasil",
+      "arquivo": "PoC/data/landmarks/pessoaV02_sinal-maca_rep01.npy",
+      "sha256": "b10dcf4dc40d23648ddac02d207203fd26623ee1c8b2fe82ab8d7c038e2c3c3d",
+      "proveniencia": null,
+      "observacao": "sem sidecar .proveniencia.json nesta pasta; hash calculado diretamente pelo agente em 2026-09-14"
+    },
+    {
+      "classe": "maca",
+      "pessoa": "V03",
+      "corpus": "vlibrasil",
+      "arquivo": "PoC/data/landmarks/pessoaV03_sinal-maca_rep01.npy",
+      "sha256": "f0aba1853aa645e2810758780ae91e6363f447c154533cebfc98cf3e46800b3a",
+      "proveniencia": null,
+      "observacao": "sem sidecar .proveniencia.json nesta pasta; hash calculado diretamente pelo agente em 2026-09-14"
+    },
+    {
+      "classe": "medo",
+      "pessoa": "V01",
+      "corpus": "vlibrasil",
+      "arquivo": "PoC/data/landmarks/pessoaV01_sinal-medo_rep01.npy",
+      "sha256": "8665fcbae10fb53dd7553d75f6960d4b0e3c6bc505d66c0ad4aba44d8c45daf6",
+      "proveniencia": null,
+      "observacao": "sem sidecar .proveniencia.json nesta pasta; hash calculado diretamente pelo agente em 2026-09-14"
+    },
+    {
+      "classe": "medo",
+      "pessoa": "V02",
+      "corpus": "vlibrasil",
+      "arquivo": "PoC/data/landmarks/pessoaV02_sinal-medo_rep01.npy",
+      "sha256": "0e6861e5c3988531538754a2d88a6356b78d49efaad61bd4c292b7131282ec52",
+      "proveniencia": null,
+      "observacao": "sem sidecar .proveniencia.json nesta pasta; hash calculado diretamente pelo agente em 2026-09-14"
+    },
+    {
+      "classe": "medo",
+      "pessoa": "V03",
+      "corpus": "vlibrasil",
+      "arquivo": "PoC/data/landmarks/pessoaV03_sinal-medo_rep01.npy",
+      "sha256": "32c204cccab7fb05d5ff19f500add90ad5a1b3e87e33ef72be721207dc5276af",
+      "proveniencia": null,
+      "observacao": "sem sidecar .proveniencia.json nesta pasta; hash calculado diretamente pelo agente em 2026-09-14"
+    },
+    {
+      "classe": "ruim",
+      "pessoa": "V01",
+      "corpus": "vlibrasil",
+      "arquivo": "PoC/data/landmarks/pessoaV01_sinal-ruim_rep01.npy",
+      "sha256": "6d066fbe0556cea42ae8406e994e96e9d7f9b0a67001c5bd020719822c9ac63a",
+      "proveniencia": null,
+      "observacao": "sem sidecar .proveniencia.json nesta pasta; hash calculado diretamente pelo agente em 2026-09-14"
+    },
+    {
+      "classe": "ruim",
+      "pessoa": "V02",
+      "corpus": "vlibrasil",
+      "arquivo": "PoC/data/landmarks/pessoaV02_sinal-ruim_rep01.npy",
+      "sha256": "42cc3f41d63a4ccb9b1f65bef6d95152d60c1c892f57e89d9d97549093f158e6",
+      "proveniencia": null,
+      "observacao": "sem sidecar .proveniencia.json nesta pasta; hash calculado diretamente pelo agente em 2026-09-14"
+    },
+    {
+      "classe": "ruim",
+      "pessoa": "V03",
+      "corpus": "vlibrasil",
+      "arquivo": "PoC/data/landmarks/pessoaV03_sinal-ruim_rep01.npy",
+      "sha256": "c903c9f43f7a57805e0f37079707e2f4cf13bb2a6be5b0d71f2dab38320e86d0",
+      "proveniencia": null,
+      "observacao": "sem sidecar .proveniencia.json nesta pasta; hash calculado diretamente pelo agente em 2026-09-14"
+    },
+    {
+      "classe": "sapo",
+      "pessoa": "V01",
+      "corpus": "vlibrasil",
+      "arquivo": "PoC/data/landmarks/pessoaV01_sinal-sapo_rep01.npy",
+      "sha256": "648b33f780781a8e5c9dee53386dca027754b09a358c8e7012ea95cbd0f2325e",
+      "proveniencia": null,
+      "observacao": "sem sidecar .proveniencia.json nesta pasta; hash calculado diretamente pelo agente em 2026-09-14"
+    },
+    {
+      "classe": "sapo",
+      "pessoa": "V02",
+      "corpus": "vlibrasil",
+      "arquivo": "PoC/data/landmarks/pessoaV02_sinal-sapo_rep01.npy",
+      "sha256": "1dd354b75d04994876d8b55260dc985f28bacacd36618b2b9f2627c8c4d1878b",
+      "proveniencia": null,
+      "observacao": "sem sidecar .proveniencia.json nesta pasta; hash calculado diretamente pelo agente em 2026-09-14"
+    },
+    {
+      "classe": "sapo",
+      "pessoa": "V03",
+      "corpus": "vlibrasil",
+      "arquivo": "PoC/data/landmarks/pessoaV03_sinal-sapo_rep01.npy",
+      "sha256": "e0d8b751d4e9c6e82602f2220027194ba62dccfaecf225c1cb5e92ecd710d47c",
+      "proveniencia": null,
+      "observacao": "sem sidecar .proveniencia.json nesta pasta; hash calculado diretamente pelo agente em 2026-09-14"
+    },
+    {
+      "classe": "vacina",
+      "pessoa": "T002",
+      "corpus": "malta",
+      "arquivo": "PoC/data/landmarks-malta/pessoaT002_sinal-vacina_rep01.npy",
+      "sha256": "a27cdb2c1b34c7bc5bf0f9932df8cfb513bff051e89430ba4441f8aefdb97405",
+      "proveniencia": "Malta-Lab/ISLR_LIBRAS",
+      "observacao": null
+    },
+    {
+      "classe": "vacina",
+      "pessoa": "TUFS",
+      "corpus": "malta",
+      "arquivo": "PoC/data/landmarks-malta/pessoaTUFS_sinal-vacina_rep01.npy",
+      "sha256": "07172227055508eb795b9dc81c9cd93fada06b2edf0ccef70659fd0993b9df8a",
+      "proveniencia": "Malta-Lab/ISLR_LIBRAS",
+      "observacao": null
+    },
+    {
+      "classe": "vontade",
+      "pessoa": "T002",
+      "corpus": "malta",
+      "arquivo": "PoC/data/landmarks-malta/pessoaT002_sinal-vontade_rep01.npy",
+      "sha256": "11f337e510e2c01950915ddb59eba0a6a4c03229fc08c16820a52830ecfa072a",
+      "proveniencia": "Malta-Lab/ISLR_LIBRAS",
+      "observacao": null
+    },
+    {
+      "classe": "vontade",
+      "pessoa": "TUFS",
+      "corpus": "malta",
+      "arquivo": "PoC/data/landmarks-malta/pessoaTUFS_sinal-vontade_rep01.npy",
+      "sha256": "47a211314b51bcf7e8d4669b7a7db4c9bc6ac95df8b0df05c6e0aa34d195ca5e",
+      "proveniencia": "Malta-Lab/ISLR_LIBRAS",
+      "observacao": null
+    }
+  ]
+}

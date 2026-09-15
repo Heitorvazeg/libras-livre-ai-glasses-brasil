@@ -1,0 +1,21 @@
+# Ambiente ISOLADO só para exportar.py com backend ai-edge (conversão TFLite
+# real via litert-torch, não o backend=simulado que os testes usam quando o
+# pacote está ausente). NÃO instalar no venv de treino (PoC/.venv311): o
+# litert-torch trava torch<2.14, incompatível com o torch usado lá para
+# treinar/pré-treinar — por isso o conversor ficava com backend=simulado
+# mesmo com mediapipe/torch instalados. Ver treino/README.md §Exportação.
+#
+# Uso:
+#   python3 -m venv .venv-export
+#   .venv-export/bin/pip install -r requirements-export.txt
+#   .venv-export/bin/python3 exportar.py --checkpoint <ckpt> --saida <destino.tflite>
+#
+# Verificado em 2026-09-14: exportar.py --smoke --arquitetura gcn converteu com
+# backend=ai-edge (2,0 MB), paridade PyTorch<->TFLite max_dif=8.20e-08,
+# 0/8 discordâncias top-1. Confere o mesmo combo que a trilha do app já usava
+# (torch 2.13 + litert-torch 0.9.4 + torchvision 0.28, registrado em 13/09).
+torch>=2.4,<2.14
+torchvision<0.29
+litert-torch
+ai-edge-litert
+numpy

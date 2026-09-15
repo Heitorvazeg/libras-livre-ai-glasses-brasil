@@ -9,6 +9,13 @@ no final. **94 testes passaram**, com dados sintéticos e conversão simulada.
 Ver [parecer atualizado e limites](revisao-calibracao-3e81c3f-2026-09-14.md).
 Infraestrutura corrigida **não significa calibração real do final concluída**.
 
+**Conjunto de pessoas não vistas montado:** 50 clipes já extraídos, 10 pessoas
+(V-LIBRASIL V01-V03 + MALTA), cobrindo as 20 classes do MINDS, nenhuma delas
+usada em LOSO nem em `--final`. Sem gravação ou reextração nova. Ver
+[composição e limites](calibracao-naovista-2026-09-14.md). Falta o
+`modelo_final.pt` e o schema de calibração (em reescrita) para virar
+calibração de verdade — isto é só o conjunto, não um resultado.
+
 **Frente FILHO definitivamente encerrada por decisão do usuário:**
 [inspeção descritiva](investigacao-filho-2026-09-14.md) concluída, causa inconclusiva.
 Sem retomada prevista ou novas tarefas nesta frente; o risco conhecido continua
@@ -209,6 +216,40 @@ raras/ruidosas em relação ao sinal das 32×2 âncoras reais, diluindo o gradie
 pré-treino consolidada é **V-LIBRASIL+MALTA (sem WLASL, sem negativos extras) + ST-GCN
 `--ossos --com-z --z-recentrado`** — a mesma que já vinha rendendo 96,6% desde a primeira run
 desta sessão.
+
+### Item 3 / P3 — reamostragem por tempo real — investigação encerrada em 2026-09-14
+
+**A hipótese original não se sustenta.** `gcn.para_sequencia` reamostra por índice normalizado
+(`np.linspace(0,1,t)`), o que é matematicamente equivalente a reamostrar por tempo normalizado
+quando o clipe tem espaçamento uniforme entre frames — fps nativo diferente entre corpora não
+implica, por si só, distorção (achado D revisado, [`validacao-visao-app-2026-09-14.md`](validacao-visao-app-2026-09-14.md)).
+O risco real remanescente apontado na revisão era outro: frames descartados por pose instável
+no meio de um clipe (`extrair_video`, `PoC/src/extract.py`) quebrariam esse espaçamento uniforme,
+e nenhum índice/timestamp desses descartes sobrevive no `.npy` — só a contagem final.
+
+**Medição direta feita hoje, não-destrutiva** (reusa `extrair_video`/`load_config` de
+`extract.py`, sem escrever nenhum `.npy`; script em
+`/tmp/.../scratchpad/medir_irregularidade_captura.py`, semente 20260914, 20 vídeos por corpus
+amostrados dos brutos ainda em disco — `PoC/data/raw`, `raw-pretreino`, `raw-malta`):
+
+| corpus | n | fps mediana | fps min–max | % descarte mediana | % descarte máx. |
+|---|---|---|---|---|---|
+| MINDS (M*) | 20 | 30,2 | 30,2–30,4 | 0,0% | 0,0% |
+| V-LIBRASIL (V*) | 20 | 30,0 | 30,0–60,0 | 0,0% | 0,0% |
+| MALTA (T*) | 20 | 12,0 | 12,0–30,0 | 0,0% | 0,0% |
+
+Isso **confirma com evidência primária reproduzível** o fps por corpus da nota de 12/09 (que o
+Astra não tinha localizado como evidência primária) — a nota fica correta nos números, errada na
+hipótese de distorção. E mostra **0% de descarte em 60/60 clipes amostrados**: nenhum sinal de
+espaçamento não-uniforme nas três fontes de treino, nas condições controladas de gravação
+institucional (sinalizante único, enquadrado, sem oclusão).
+
+**Decisão:** não implementar reamostragem por tempo real nem reformar corpora — não há
+distorção demonstrada para corrigir. Amostra de 60 clipes não prova 0% no corpus inteiro
+(MALTA tem 9.398 vídeos), então isto é "sem evidência de problema", não "prova de ausência";
+uma amostra maior é barata de rodar se algo mudar essa leitura. Captura irregular em condições
+reais (câmera dos óculos, mão, movimento) é um risco diferente, já rastreado à parte na tabela
+de contrato do app (seção 3 de `validacao-visao-app-2026-09-14.md`), fora do escopo de P3.
 
 ---
 
