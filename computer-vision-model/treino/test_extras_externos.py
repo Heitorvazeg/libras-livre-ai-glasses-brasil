@@ -206,16 +206,12 @@ class TestTreinoFinal(Base):
         self.assertEqual(meta["pessoas"], ["M01", "M02", "M03"])
         self.assertNotIn("extras_manifesto", meta["args"])
 
-    def test_cli_exige_os_tres_juntos_e_final(self):
+    def test_cli_exige_os_tres_juntos(self):
         for extra in (("--extras-manifesto", str(self.man)),
                       ("--extras-manifesto", str(self.man), "--extras-raiz", str(self.raiz),
                        "--extras-repeticoes", "0")):
             with self.assertRaises(SystemExit):
                 self.executar(self.argv(*extra))
-        sem_final = [a for a in self.argv() if a not in ("--final", "--politica-final", "ultima")]
-        with self.assertRaises(SystemExit):
-            self.executar(sem_final + ["--extras-manifesto", str(self.man), "--extras-raiz",
-                                       str(self.raiz), "--extras-repeticoes", "2"])
 
     def test_cli_recusa_misturar_etapas_e_fontes(self):
         for extra in (("--aug-dominio",), ("--fontes", "todas")):
@@ -224,6 +220,78 @@ class TestTreinoFinal(Base):
                     self.executar(self.argv("--extras-manifesto", str(self.man), "--extras-raiz",
                         str(self.raiz), "--extras-repeticoes", "5", *extra))
                 carregar.assert_not_called()
+
+
+class TestLoso(Base):
+    def argv(self, saida="loso", *extra):
+        return ["treinar.py", "--arquitetura", "gcn", "--ossos", "--com-z", "--z-recentrado",
+                "--landmarks", str(self.lm), "--epocas", "1", "--batch", "4", "--workers", "0",
+                "--threads", "2", "--dispositivo", "cpu", "--agendador", "cosseno", "--folds", "1",
+                "--saida", str(self.base / saida), "--semente", "73", *extra]
+
+    def extras(self, repeticoes="3"):
+        return ("--extras-manifesto", str(self.man), "--extras-raiz", str(self.raiz),
+                "--extras-repeticoes", repeticoes)
+
+    def executar(self, argv):
+        with patch.object(sys, "argv", argv), contextlib.redirect_stdout(io.StringIO()), \
+                contextlib.redirect_stderr(io.StringIO()):
+            tr.main()
+
+    def espiar(self, argv):
+        tamanhos, original = [], tr._loader
+
+        def registrar(clipes, *a, **k):
+            tamanhos.append(sorted({c.pessoa for c in clipes}) + [len(clipes)])
+            return original(clipes, *a, **k)
+
+        with patch.object(tr, "_loader", side_effect=registrar):
+            self.executar(argv)
+        return tamanhos
+
+    def rodada(self, saida):
+        return json.loads(next((self.base / saida / "rodadas").glob("*.json")).read_text())
+
+    def test_extras_so_no_treino_de_cada_rodada(self):
+        chamadas = self.espiar(self.argv("loso", *self.extras()))
+        # rodada 1 com 3 pessoas MINDS: teste M01, validação M02, treino M03 (4 clipes) + 2 externos × 3
+        self.assertEqual(chamadas[0], ["M03", "T002", "V01", 4 + 2 * 3])
+        self.assertEqual(chamadas[1], ["M02", 4])
+        self.assertEqual(chamadas[2], ["M01", 4])
+        r = self.rodada("loso")
+        self.assertEqual(r["extras"]["repeticoes"], 3)
+        self.assertEqual(r["extras"]["manifesto_sha256"], sha(self.man))
+        self.assertTrue((self.base / "loso" / "relatorio.md").is_file())
+
+    def test_sem_extras_rodada_nao_registra_extras(self):
+        chamadas = self.espiar(self.argv("ref"))
+        self.assertEqual(chamadas[0], ["M03", 4])
+        self.assertNotIn("extras", self.rodada("ref"))
+
+    def test_retomada_confere_extras(self):
+        self.executar(self.argv("loso", *self.extras()))
+        with patch.object(tr, "treinar_rodada", side_effect=AssertionError("deveria reaproveitar")):
+            self.executar(self.argv("loso", *self.extras()))
+        for outra in (self.argv("loso", *self.extras("2")), self.argv("loso")):
+            with self.subTest(argv=outra[-2:]), self.assertRaises(SystemExit):
+                self.executar(outra)
+        self.executar(self.argv("ref"))
+        with self.assertRaises(SystemExit):
+            self.executar(self.argv("ref", *self.extras()))
+
+    def test_extras_manifesto_alterado_recusado_na_retomada(self):
+        self.executar(self.argv("loso", *self.extras()))
+        r_path = next((self.base / "loso" / "rodadas").glob("*.json"))
+        r = json.loads(r_path.read_text())
+        r["extras"]["manifesto_sha256"] = "0" * 64
+        r_path.write_text(json.dumps(r))
+        with self.assertRaisesRegex(SystemExit, "outros extras"):
+            self.executar(self.argv("loso", *self.extras()))
+
+    def test_extras_recusa_salvar_evidencias(self):
+        with patch.object(tr.dd, "carregar") as carregar, self.assertRaises(SystemExit):
+            self.executar(self.argv("loso", *self.extras(), "--salvar-evidencias"))
+        carregar.assert_not_called()
 
 
 if __name__ == "__main__":

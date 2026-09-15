@@ -499,8 +499,8 @@ def main() -> None:
                     help="augmentação de domínio no treino: corte do repouso inicial/final e "
                          "amplitude da trajetória dos braços (docs/etapa2-augmentacao-dominio-protocolo-2026-09-15.md)")
     ap.add_argument("--extras-manifesto", type=Path, default=argparse.SUPPRESS,
-                    help="só com --final: manifesto finalidade=treino_externo (extras_externos.py) "
-                         "com clipes de fora do MINDS")
+                    help="manifesto finalidade=treino_externo (extras_externos.py) com clipes de fora "
+                         "do MINDS; no --final entram no ajuste, no LOSO só no treino de cada rodada")
     ap.add_argument("--extras-raiz", type=Path, default=argparse.SUPPRESS,
                     help="diretório onde os caminhos do manifesto de extras são resolvidos")
     ap.add_argument("--extras-repeticoes", type=int, default=argparse.SUPPRESS,
@@ -550,8 +550,10 @@ def main() -> None:
     if hasattr(args, "inventario_final") and (not args.final or args.fontes != "minds"):
         ap.error("--inventario-final exige --final --fontes minds")
     extras = [k for k in ("extras_manifesto", "extras_raiz", "extras_repeticoes") if hasattr(args, k)]
-    if extras and (len(extras) != 3 or not args.final):
-        ap.error("--extras-manifesto, --extras-raiz e --extras-repeticoes vão juntos e só com --final")
+    if extras and len(extras) != 3:
+        ap.error("--extras-manifesto, --extras-raiz e --extras-repeticoes vão juntos")
+    if extras and args.salvar_evidencias:
+        ap.error("--extras-* não é suportado com --salvar-evidencias: as evidências LOSO assumem só MINDS")
     if extras and args.extras_repeticoes < 1:
         ap.error("--extras-repeticoes precisa ser positivo")
     if extras and (args.fontes != "minds" or getattr(args, "aug_dominio", False)):
@@ -649,6 +651,17 @@ def main() -> None:
         print(f"[treino] checkpoint salvo em {destino}")
         return
 
+    externos_loso, resumo_extras_loso = [], None
+    if hasattr(args, "extras_manifesto"):
+        import extras_externos as ee
+        externos_loso, _, resumo_extras_loso = ee.carregar(
+            args.extras_manifesto, args.extras_raiz, rotulos=rotulos, pessoas_minds=dd.pessoas(clipes),
+            com_z=args.com_z, z_recentrado=args.z_recentrado, imputar=not args.sem_imputacao)
+        resumo_extras_loso["repeticoes"] = args.extras_repeticoes
+        print(f"[treino] extras externos no treino de cada rodada: {len(externos_loso)} clipes × "
+              f"{args.extras_repeticoes} | pessoas {', '.join(resumo_extras_loso['pessoas'])}")
+    extras_por_rodada = externos_loso * getattr(args, "extras_repeticoes", 0)
+
     particoes = dd.particoes(clipes)
     if args.folds:
         particoes = particoes[: args.folds]
@@ -689,7 +702,9 @@ def main() -> None:
             # reprodutibilidade completo, descrevendo uma configuração que nunca
             # rodou. É o pior modo de falha possível: número plausível e falso.
             iguais = {k: v for k, v in r.get("args", {}).items() if k not in IGNORAR_NA_RETOMADA}
-            atuais = {k: v for k, v in vars(args).items() if k not in IGNORAR_NA_RETOMADA}
+            # Mesma forma do que foi gravado em JSON (Path vira texto), senão nunca bate.
+            atuais = json.loads(json.dumps(
+                {k: v for k, v in vars(args).items() if k not in IGNORAR_NA_RETOMADA}, default=str))
             if contexto is not None:
                 # Caminhos foram substituídos por hashes no preflight acima.
                 for k in ("landmarks", "inicializar"):
@@ -704,10 +719,14 @@ def main() -> None:
                 raise SystemExit(
                     f"[treino] ✗ {arquivo} é de OUTRA configuração (gravado vs atual): "
                     f"{difs}. Use um --saida diferente ou apague {parciais}.")
+            if r.get("extras") != resumo_extras_loso:
+                raise SystemExit(
+                    f"[treino] ✗ {arquivo} foi gravado com outros extras externos "
+                    f"({r.get('extras')!r} vs {resumo_extras_loso!r}). Use um --saida diferente.")
             print(f"[treino] rodada {i}/{len(particoes)} — {part.teste} já feita "
                   f"({r['acuracia']:.1%}), reaproveitando")
         else:
-            treino = [c for c in clipes if c.pessoa in part.treino]
+            treino = [c for c in clipes if c.pessoa in part.treino] + extras_por_rodada
             validacao = [c for c in clipes if c.pessoa == part.validacao]
             teste = [c for c in clipes if c.pessoa == part.teste]
             print(f"\n[treino] rodada {i}/{len(particoes)} — teste={part.teste} "
@@ -722,6 +741,8 @@ def main() -> None:
                  "acuracia": acc, "melhor_epoca": melhor + 1,
                  "predicoes": preds, "verdadeiros": reais,
                  "rotulos": rotulos, "args": vars(args)}
+            if resumo_extras_loso is not None:
+                r["extras"] = resumo_extras_loso
             if contexto is not None:
                 ev.salvar_fold(arquivo, modelo_fold, r, saidas, contexto, particao, cfg)
             else:
@@ -734,7 +755,8 @@ def main() -> None:
     segundos = time.perf_counter() - inicio
     cm = matriz_confusao(todos_preds, todos_reais, len(rotulos))
     print(f"\n[treino] ACURÁCIA signer-independent média = {np.mean(accs):.1%}")
-    n_treino = len(particoes[0].treino) * (len(clipes) // max(len(dd.pessoas(clipes)), 1))
+    n_treino = (len(particoes[0].treino) * (len(clipes) // max(len(dd.pessoas(clipes)), 1))
+                + len(extras_por_rodada))
     passos = max(n_treino // args.batch, 1) * args.epocas
     escrever_relatorio(saida / "relatorio.md", rotulos, accs, nomes, cm, args, segundos, avisos,
                        passos)
