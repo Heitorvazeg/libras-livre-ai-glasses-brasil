@@ -18,6 +18,37 @@ import torch
 import calibracao as cb
 
 
+def escrever_bundle(tmp, nome, rotulos, logits, alvos, checkpoint_bytes=None):
+    """Bundle completo sintético; pesos são bytes opacos salvo teste de export."""
+    marcador = Path(tmp) / "rodadas" / nome
+    ckpt, caminho = cb.ev.artefatos_fold(marcador)
+    caminho.parent.mkdir(parents=True, exist_ok=True)
+    pessoa = "V" + Path(nome).stem
+    args = {"final": False, "epocas": 120}
+    contexto = {"schema": 1, "args": args, "config": {"pose_indices": {"nariz": 0}},
+                "dados_sha256": "a" * 64, "codigo_sha256": "b" * 64}
+    ids = [f"pessoa{pessoa}_sinal-{rotulos[a]}_rep{i:03d}.npy" for i, a in enumerate(alvos)]
+    teste_id = f"pessoaT{pessoa}_sinal-{rotulos[0]}_rep01.npy"
+    part = {"metodo": "loso", "pessoas": {"treino": ["Tr"], "validacao": [pessoa], "teste": ["T" + pessoa]},
+            "ids": {"treino": [f"pessoaTr_sinal-{rotulos[0]}_rep01.npy"],
+                    "validacao": ids, "teste": [teste_id]}}
+    teste_logits = [[1.] + [0.] * (len(rotulos) - 1)]
+    d = {"schema": 1, "rotulos": rotulos, "particao": part, "contexto": contexto,
+         "melhor_epoca": 1,
+         "validacao": {"ids": ids, "logits": logits.tolist(), "predicoes": logits.argmax(1).tolist(),
+                       "verdadeiros": alvos.tolist()},
+         "teste": {"ids": [teste_id], "logits": teste_logits, "predicoes": [0], "verdadeiros": [0]}}
+    cb.ev.escrever_json(caminho, d)
+    ckpt.write_bytes(checkpoint_bytes if checkpoint_bytes is not None else ("sintetico " + nome).encode())
+    reg = {"args": args, "rotulos": rotulos, "melhor_epoca": 1,
+           "predicoes": [0], "verdadeiros": [0], "acuracia": 1.,
+           "evidencias": {"schema": 1, "contexto_sha256": cb.ev.mm.pv.hash_json(contexto), "particao": part,
+               "checkpoint": {"arquivo": ckpt.relative_to(marcador.parent).as_posix(), "sha256": cb.ev.mm.pv.hash_arquivo(ckpt)},
+               "saidas": {"arquivo": caminho.relative_to(marcador.parent).as_posix(), "sha256": cb.ev.mm.pv.hash_arquivo(caminho)}}}
+    cb.ev.escrever_json(marcador, reg)
+    return caminho
+
+
 def _logits_controlados(rng, n, c, confianca_certo, confianca_errado, taxa_erro):
     """Logits onde a classe certa recebe `confianca_certo`, exceto numa fração
     `taxa_erro` das amostras, onde outra classe recebe `confianca_errado` e a
@@ -117,16 +148,7 @@ class TestLimiar(unittest.TestCase):
 
 class TestPoolECli(unittest.TestCase):
     def _escrever_evidencias(self, tmp, nome, rotulos, logits, alvos):
-        caminho = Path(tmp) / nome
-        ids = [f"pessoaX_sinal-{rotulos[a]}_rep01.npy" for a in alvos]
-        caminho.write_text(json.dumps({
-            "schema": 1, "rotulos": rotulos,
-            "validacao": {"ids": ids, "logits": logits.tolist(),
-                         "predicoes": logits.argmax(axis=1).tolist(),
-                         "verdadeiros": alvos.tolist()},
-            "teste": {"ids": [], "logits": [], "predicoes": [], "verdadeiros": []},
-        }), encoding="utf-8")
-        return caminho
+        return escrever_bundle(tmp, nome, rotulos, logits, alvos)
 
     def test_pool_concatena_dois_folds(self):
         rng = np.random.default_rng(5)

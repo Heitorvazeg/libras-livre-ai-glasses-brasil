@@ -14,6 +14,7 @@ from unittest.mock import patch
 
 import torch
 import yaml
+import numpy as np
 
 import exportar as ex
 
@@ -74,6 +75,8 @@ class TestContrato(unittest.TestCase):
         self.assertEqual([p["nome"] for p in c["layout_landmarks"]["pose_ordenada"]],
                          list(CFG["pose_indices"]))
         self.assertEqual(r["args"]["checkpoint"], str(self.ckpt))
+        self.assertNotIn("calibracao", r)
+        self.assertNotIn("calibracao", r["args"])
         self.assertEqual(c["temporal"]["frames"], 96)
         self.assertFalse(c["temporal"]["reamostragem_embutida"])
 
@@ -139,6 +142,68 @@ class TestContrato(unittest.TestCase):
         self.salvar({"pontos": CFG["pose_indices"], "limite_escala": 5.0})
         with self.assertRaisesRegex(SystemExit, "limite_escala"):
             self.cli()
+
+    def preparar_calibracao(self):
+        import calibracao as cb
+        from test_calibracao import escrever_bundle
+        self.salvar({"pontos": CFG["pose_indices"]})
+        z = np.array([[4., 0., 0.], [0., 4., 0.], [1., 0., 0.], [0., 1., 0.]])
+        y = np.array([0, 1, 1, 0])
+        evidencia = escrever_bundle(self.base, "fold.json", ["a", "b", "c"], z, y,
+                                     checkpoint_bytes=self.ckpt.read_bytes())
+        bloco = cb.calibrar([evidencia])
+        path = self.base / "calibracao.json"
+        path.write_text(json.dumps(bloco))
+        return path, bloco
+
+    def test_calibracao_mesmo_checkpoint_e_fontes_conferidas(self):
+        path, bloco = self.preparar_calibracao()
+        r = self.cli(["--calibracao", str(path)])
+        self.assertEqual(r["calibracao"], bloco)
+        self.assertEqual(r["origem"]["sha256"], bloco["checkpoint_sha256"])
+        self.assertFalse(r["calibracao"]["aprovado_entrega"])
+
+    def test_calibracao_invalida_recusada_antes_converter(self):
+        path, bloco = self.preparar_calibracao()
+        alteracoes = [{"temperatura": t} for t in (-1., 0., float("nan"), float("inf"), True, 1e-100, 1e100)]
+        alteracoes += [{"checkpoint_sha256": "outro"}, {"rotulos": ["b", "a", "c"]},
+                       {"schema": 1}, {"escopo": "pool_loso_analise"},
+                       {"meta_nao_atingida": True, "limiar_sugerido": None},
+                       {"limiar_sugerido": 0.}]
+        for a in alteracoes:
+            path.write_text(json.dumps(bloco | a))
+            with self.subTest(a=a), self.assertRaisesRegex(SystemExit, "calibração recusada"):
+                self.cli(["--calibracao", str(path)])
+            self.assertFalse(self.saida.exists())
+            self.assertFalse(self.saida.with_suffix(".json").exists())
+
+        # Fonte removida também falha ANTES do conversor e preserva saídas antigas.
+        path.write_text(json.dumps(bloco))
+        Path(bloco["caminhos_fontes"][0]["evidencias"]).unlink()
+        self.saida.write_bytes(b"modelo anterior")
+        sidecar = self.saida.with_suffix(".json")
+        sidecar.write_bytes(b"sidecar anterior")
+        with self.assertRaisesRegex(SystemExit, "calibração recusada"):
+            self.cli(["--calibracao", str(path)])
+        self.assertEqual(self.saida.read_bytes(), b"modelo anterior")
+        self.assertEqual(sidecar.read_bytes(), b"sidecar anterior")
+
+    def test_calibracao_outro_checkpoint_mesmos_rotulos_recusada(self):
+        path, _ = self.preparar_calibracao()
+        self.salvar({"pontos": CFG["pose_indices"], "outro_checkpoint": True})
+        with self.assertRaisesRegex(SystemExit, "checkpoint"):
+            self.cli(["--calibracao", str(path)])
+        self.assertFalse(self.saida.exists())
+
+    def test_sidecar_direto_recusa_calibracao_invalida_sem_sobrescrever(self):
+        path, bloco = self.preparar_calibracao()
+        r = self.cli(["--calibracao", str(path)])
+        sidecar = self.saida.with_suffix(".json")
+        original = sidecar.read_bytes()
+        with self.assertRaisesRegex(SystemExit, "calibração recusada"):
+            ex.escrever_sidecar(self.saida, r["rotulos"], r["origem"], r["modo"],
+                                r["paridade_pytorch"], r["args"], bloco | {"temperatura": float("nan")})
+        self.assertEqual(sidecar.read_bytes(), original)
 
 
 def executar():

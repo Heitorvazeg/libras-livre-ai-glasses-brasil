@@ -1,5 +1,40 @@
 # Revisão do commit de calibração 3e81c3f
 
+## Atualização posterior — correções de engenharia
+
+Os achados abaixo descrevem **o commit revisado**, não o código corrigido.
+Após autorização para avançar nesta frente, foram implementados:
+
+- validação de temperatura positiva, finita e na faixa normal float32; JSON
+  estrito na leitura e escrita, alvos inteiros/faixa e estabilidade do softmax;
+- `limiar_sugerido=null` quando não há política viável, com recusa de exportação;
+- leitura do bundle LOSO completo (marcador, evidências e checkpoint), conferência
+  de hashes, contexto, partições, IDs e ordem dos rótulos; rejeição de duplicatas;
+- schema 2 com identidades e limites explícitos: pool multi-checkpoint é apenas
+  análise; exportação experimental exige um único fold e o **mesmo checkpoint**;
+- reabertura das fontes e conferência da política antes de converter e antes de
+  escrever o sidecar. Sem `--calibracao`, não é adicionado bloco de calibração.
+
+**94 testes passaram em 19,085 s**, incluindo 12 novas regressões numéricas/de
+identidade e quatro novos testes de integração do export. Dados sintéticos e
+conversor simulado; não é nova paridade TFLite real. Diagnósticos dos cinco
+arquivos Python alterados sem erros; `git diff --check` sem problemas.
+O cenário de fonte removida também recusou antes da conversão, preservando
+modelo e sidecar preexistentes.
+
+O leitor também conferiu o bundle histórico M01: 100 logits de validação × 20
+classes, checkpoint `ac98482b8e5a18e3fc9756456ab4c4169cb76cf7e67fdc9b70ccbd8c02992cc0`.
+Foi **somente leitura/verificação**, sem ajustar T ou reescrever hashes históricos.
+Não foi repetido o selftest completo nesta correção.
+
+**Continua sem aprovação para entrega:** métricas do mesmo conjunto de ajuste
+não são avaliação independente; a validação LOSO já selecionou a época. Não há
+transferência de T para o final, calibração real nova, mudança automática do
+limiar do app ou validação Android. Fontes precisam permanecer acessíveis nos
+caminhos registrados para exportar. Ver [contrato atual](../computer-vision-model/treino/README.md#calibração-experimental-de-confiança).
+
+## Registro histórico da revisão
+
 **14/09/2026 — revisão solicitada antes de commitar a investigação FILHO.**
 Base examinada: `3e81c3fc68852e64c2a9a6649fd6f7f5fc3c8db5`.
 Não houve correção do código de calibração nesta revisão, treino real, nova

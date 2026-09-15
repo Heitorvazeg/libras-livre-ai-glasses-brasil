@@ -513,10 +513,9 @@ def escrever_sidecar(destino: Path, rotulos: list[str], origem: dict, modo: str,
     artefato que não sabe a ordem das classes que prevê faz o app acertar o índice
     e falar a palavra errada.
 
-    `calibracao`, quando fornecido, vem de `calibracao.calibrar()` (ver
-    calibracao.py) — bloco pronto, este módulo não recalcula nem valida os
-    números, só embute. Ausente por padrão: sem `--calibracao`, o sidecar sai
-    idêntico ao de antes desta flag existir.
+    Calibração opcional exige fontes conferidas e o mesmo checkpoint LOSO;
+    pool/legado/estado sem limiar são recusados. Não aprova entrega nem aplica
+    automaticamente o limiar no app. Sem a flag, mantém o contrato anterior.
     """
     sidecar = destino.with_suffix(".json")
     contrato = _contrato(modo, args, origem.get("cabeca"))
@@ -524,8 +523,8 @@ def escrever_sidecar(destino: Path, rotulos: list[str], origem: dict, modo: str,
             or paridade["dtype_entrada"] != contrato["dtype"]
             or paridade["shape_saida"] != [1, len(rotulos)]):
         raise SystemExit("contrato do sidecar diverge da interface do TFLite; exportação recusada")
-    if calibracao is not None and calibracao.get("rotulos") != rotulos:
-        raise SystemExit("calibração foi ajustada com outra ordem de rótulos; exportação recusada")
+    if calibracao is not None:
+        conferir_calibracao(calibracao, origem, rotulos)
     corpo = {
         "schema": 1, "modelo": destino.name, "sha256": pv.hash_arquivo(destino),
         "rotulos": rotulos, "modo": modo, "contrato_entrada": contrato,
@@ -534,11 +533,20 @@ def escrever_sidecar(destino: Path, rotulos: list[str], origem: dict, modo: str,
     }
     if calibracao is not None:
         corpo["calibracao"] = calibracao
-    sidecar.write_text(json.dumps(corpo, ensure_ascii=False, indent=2, default=str),
+    sidecar.write_text(json.dumps(corpo, ensure_ascii=False, indent=2, default=str, allow_nan=False),
                        encoding="utf-8")
     (destino.parent / f"{destino.stem}.labels.txt").write_text(
         "\n".join(rotulos) + "\n", encoding="utf-8")
     return sidecar
+
+
+def conferir_calibracao(bloco, origem, rotulos):
+    # Import local: export sem calibração não passa pelo leitor de evidências.
+    import calibracao as cb
+    try:
+        cb.validar_exportacao(bloco, origem.get("sha256"), rotulos)
+    except (ValueError, TypeError) as exc:
+        raise SystemExit(f"calibração recusada: {exc}") from exc
 
 
 def _contrato(modo: str, args: dict, cabeca: dict | None = None) -> dict:
@@ -613,19 +621,24 @@ def main() -> None:
                          "com --checkpoint a arquitetura vem do próprio arquivo")
     ap.add_argument("--smoke", action="store_true",
                     help="pesos aleatórios: valida o toolchain, não gera entrega")
-    ap.add_argument("--calibracao", type=Path,
-                    help="JSON de calibracao.py (temperatura/limiar ajustados em "
-                         "validação); ausente: sidecar sai sem bloco de calibração, "
-                         "como antes dessa flag existir")
+    ap.add_argument(
+        "--calibracao", type=Path, default=argparse.SUPPRESS,
+        help="JSON schema 2 experimental de um único fold LOSO, com "
+             "fontes disponíveis e mesmo checkpoint; pool/final recusados",
+    )
     args = ap.parse_args()
 
     if not args.smoke and args.checkpoint is None:
         raise SystemExit("informe --checkpoint (ou --smoke para validar o toolchain)")
     calibracao = None
-    if args.calibracao is not None:
-        calibracao = json.loads(args.calibracao.read_text(encoding="utf-8"))
-        if calibracao.get("schema") != 1 or "temperatura" not in calibracao:
-            raise SystemExit(f"{args.calibracao}: não parece um JSON de calibracao.py")
+    if hasattr(args, "calibracao"):
+        import calibracao as cb
+        if args.smoke:
+            raise SystemExit("--calibracao não pode ser usada com --smoke")
+        try:
+            calibracao = cb.ler_json(args.calibracao)
+        except (ValueError, OSError) as exc:
+            raise SystemExit(f"calibração recusada: {exc}") from exc
     if args.smoke and args.checkpoint is not None:
         raise SystemExit("--smoke e --checkpoint são mutuamente exclusivos")
     if args.modo == "landmarks" and (args.frames < rp.FRAMES_POR_CANAL
@@ -644,6 +657,10 @@ def main() -> None:
     args.layout = resolver_layout(origem, args.pontos)
     args.arquitetura = origem.get("arquitetura", "resnet")
     args.pontos = args.layout["pontos"]
+    if calibracao is not None:
+        # Antes de criar/converter o TFLite. Repetir no sidecar protege chamadas
+        # diretas e mudanças dos arquivos de evidências durante a conversão.
+        conferir_calibracao(calibracao, origem, rotulos)
     exemplo = entrada_exemplo(args.modo, args.frames, args.pontos,
                               args.layout["dimensoes"])
     print(f"[export] modo={args.modo} entrada={tuple(exemplo.shape)} "

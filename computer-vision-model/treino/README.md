@@ -236,6 +236,42 @@ Metadados identificam seleção/época e ausência de avaliação independente.
 **O treino real final ainda não foi executado; 96,6% LOSO não é sua acurácia medida.**
 Guardas em [test_politica_final.py](test_politica_final.py).
 
+### Calibração experimental de confiança
+
+[calibracao.py](calibracao.py) recebe `--evidencias` (repetível), `--acc-minima`
+(padrão 0,90) e `--saida` nova. Exige cada bundle completo descrito acima:
+evidências, checkpoint e marcador de rodada. Confere hashes, contexto histórico,
+partições, IDs/pessoas e rótulos; concatena **somente validação**. Não desserializa
+pesos para ler logits. Duplicatas e contextos diferentes são recusados.
+
+O JSON produzido usa **schema 2**, com hashes das fontes, checkpoint, contexto e
+partição; caminhos absolutos para reabrir as fontes; temperatura; limiar e
+métricas do ajuste. Temperatura deve ser positiva, finita e representável como
+float32 normal. Alvos fracionários/booleanos, dados vazios ou não finitos são
+recusados. Sem limiar que atinja a meta, `limiar_sugerido=null` e
+`meta_nao_atingida=true`: limiar 1 não significa rejeição total.
+
+- Um fold: `escopo=checkpoint_loso`, vinculado aos bytes desse checkpoint.
+- Vários folds: `escopo=pool_loso_analise`, **não exportável** para outro modelo.
+- Sempre `avaliacao_independente=false`, `aprovado_entrega=false` e
+   `metricas_medidas_em=mesmos_dados_do_ajuste`. A validação já selecionou a época;
+   ECE/cobertura/acurácia aqui não aprovam o final nem a demo.
+
+[exportar.py](exportar.py) aceita `--calibracao` somente para schema 2 de um único
+fold com limiar viável, mesmo checkpoint e mesma ordem de rótulos. Reabre fontes,
+confere identidades e recalcula a política para T fornecido antes da conversão e
+da escrita do sidecar; não reajusta T. Fontes precisam estar acessíveis nos
+caminhos registrados. JSON legado deve ser preservado como histórico; uma nova
+análise exige saída nova, não troca manual de hashes ou schema.
+
+Sem a flag, o export não adiciona calibração. O limiar sugerido **não é aplicado
+automaticamente no app**. Não transferir o pool para o checkpoint final treinado
+com todas as pessoas MINDS: calibração/teste do final exigem dados novos e
+protocolo separado. Nenhuma calibração real nova foi executada nesta correção.
+Regressões sintéticas em [test_calibracao.py](test_calibracao.py),
+[test_calibracao_guardas.py](test_calibracao_guardas.py) e
+[test_export_contrato.py](test_export_contrato.py), este com conversor simulado.
+
 ### Pré-treino
 
 ```bash

@@ -2,11 +2,12 @@
 
 ## Situação vigente — retomada do escopo P1–P4
 
-**Revisão posterior do commit de calibração `3e81c3f`:** infraestrutura adicionada,
-mas **não aprovada para entrega**. Há falhas reproduzidas de validação numérica,
-rejeição total e vinculação ao modelo; os 78 testes existentes passaram sem
-cobrir esses casos. Ver [parecer e limites](revisao-calibracao-3e81c3f-2026-09-14.md).
-Isso não significa calibração real do final concluída.
+**Correções da calibração implementadas:** temperatura/JSON inválidos, falso
+“rejeita tudo”, alvos fracionários e evidências duplicadas são recusados. Schema 2
+vincula fontes e checkpoint; pool LOSO é somente análise e não pode ser exportado
+no final. **94 testes passaram**, com dados sintéticos e conversão simulada.
+Ver [parecer atualizado e limites](revisao-calibracao-3e81c3f-2026-09-14.md).
+Infraestrutura corrigida **não significa calibração real do final concluída**.
 
 **Foco solicitado em seguida: investigar FILHO.** A [inspeção descritiva](investigacao-filho-2026-09-14.md)
 dos vídeos/landmarks foi executada sem treino ou reextração. Material privado de
