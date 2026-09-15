@@ -104,8 +104,23 @@ capturar honestamente, mesmo quando desagrada.
 ## 4. Estado depois desta etapa
 
 - `.tflite` real existe, exportado e com paridade PyTorch↔TFLite conferida.
-  Ainda não testado em Android (sem SDK/emulador rodado nesta etapa) nem com
-  vídeo real da câmera dos óculos.
+  Ainda não testado com vídeo real da câmera dos óculos.
+- **Atualização 15/09 — executado no Android (emulador).** Fixture privado gerado
+  com `scripts/fixture_paridade_classificador.py --checkpoint` em
+  `experimentos-privados/paridade-real-final-s20260917-v1/`. O `.tflite` do fixture
+  é byte a byte o da exportação (`616d1e1c…`, checkpoint `c7851d8a…`). Emulador
+  Android 16 (API 36, x86_64, KVM), testes com
+  `-PlibrasLivre.classificadorFixtures=<fixture>` e
+  `-PlibrasLivre.permitirAssetsFaltando=true` (modelos de voz/wake word não
+  baixados; não usados por estes testes):
+  - `ClassificadorSmokeTest` (instrumentado): **4/4** — carrega pelo sidecar e
+    classifica; recusa sidecar adulterado; o `.tflite` reproduz os logits do
+    PyTorch sobre a entrada do app; o caminho inteiro do app reproduz o PyTorch e
+    o top-1 do caminho de treino.
+  - `ParidadeCaminhoAppTest` (JVM): **1/1** — normalização, imputação e
+    reamostragem pelo tempo do app reproduzem o Python.
+  Entradas sintéticas (3 sequências): prova paridade numérica do app com o
+  modelo real, não acurácia nem o extrator Tasks rodando em vídeo.
 - Calibração de entrega **continua sem existir** — nem a LOSO (nunca foi
   esse o objetivo) nem esta externa (não atingiu o protocolo). O sidecar
   exportado não carrega `calibracao`; o app, se usasse este `.tflite` hoje,

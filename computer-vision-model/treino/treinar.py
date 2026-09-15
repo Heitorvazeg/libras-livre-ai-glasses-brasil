@@ -498,6 +498,13 @@ def main() -> None:
     ap.add_argument("--aug-dominio", action="store_true", default=argparse.SUPPRESS,
                     help="augmentação de domínio no treino: corte do repouso inicial/final e "
                          "amplitude da trajetória dos braços (docs/etapa2-augmentacao-dominio-protocolo-2026-09-15.md)")
+    ap.add_argument("--extras-manifesto", type=Path, default=argparse.SUPPRESS,
+                    help="só com --final: manifesto finalidade=treino_externo (extras_externos.py) "
+                         "com clipes de fora do MINDS")
+    ap.add_argument("--extras-raiz", type=Path, default=argparse.SUPPRESS,
+                    help="diretório onde os caminhos do manifesto de extras são resolvidos")
+    ap.add_argument("--extras-repeticoes", type=int, default=argparse.SUPPRESS,
+                    help="quantas vezes cada clipe externo entra por época")
     ap.add_argument("--epocas", type=int, default=30)
     ap.add_argument("--lr", type=float, default=1e-4)
     ap.add_argument("--wd", type=float, default=1e-4)
@@ -542,6 +549,13 @@ def main() -> None:
         ap.error("--politica-final só pode ser usado com --final")
     if hasattr(args, "inventario_final") and (not args.final or args.fontes != "minds"):
         ap.error("--inventario-final exige --final --fontes minds")
+    extras = [k for k in ("extras_manifesto", "extras_raiz", "extras_repeticoes") if hasattr(args, k)]
+    if extras and (len(extras) != 3 or not args.final):
+        ap.error("--extras-manifesto, --extras-raiz e --extras-repeticoes vão juntos e só com --final")
+    if extras and args.extras_repeticoes < 1:
+        ap.error("--extras-repeticoes precisa ser positivo")
+    if extras and (args.fontes != "minds" or getattr(args, "aug_dominio", False)):
+        ap.error("Etapa 3 exige --fontes minds e não combina extras com --aug-dominio")
     if args.saida is None:
         args.saida = f"resultados-{args.arquitetura}"
     if args.final:
@@ -598,8 +612,25 @@ def main() -> None:
         print("[treino] modo final: todas as pessoas, última época; sem avaliação independente")
         todas = dd.pessoas(clipes)
         treino = clipes
+        inventario = mm.inventario_final(lm_dir, clipes)
+        resumo_extras = None
+        if hasattr(args, "extras_manifesto"):
+            import extras_externos as ee
+            externos, amostras_ext, resumo_extras = ee.carregar(
+                args.extras_manifesto, args.extras_raiz, rotulos=rotulos, pessoas_minds=todas,
+                com_z=args.com_z, z_recentrado=args.z_recentrado, imputar=not args.sem_imputacao)
+            treino = clipes + externos * args.extras_repeticoes
+            # Os externos entram no inventário do ajuste: a calibração externa recusa
+            # manifestos que reutilizem essas pessoas ou esses bytes.
+            inventario["amostras"] = inventario["amostras"] + amostras_ext
+            inventario["manifesto_corpus_sha256"] = mm.pv.hash_json(inventario["amostras"])
+            resumo_extras["repeticoes"] = args.extras_repeticoes
+            inventario["extras"] = resumo_extras
+            todas = sorted(set(todas) | set(resumo_extras["pessoas"]))
+            print(f"[treino] extras externos: {len(externos)} clipes × {args.extras_repeticoes} "
+                  f"| pessoas {', '.join(resumo_extras['pessoas'])}")
         procedencia = mm.proveniencia_execucao(
-            cfg, mm.inventario_final(lm_dir, clipes),
+            cfg, inventario,
             {"metodo": "final_sem_holdout", "treino_pessoas": todas,
              "validacao_pessoas": [], "teste": [],
              "validacao_sobrepoe_treino": False, "avaliacao_independente": False,
@@ -609,7 +640,7 @@ def main() -> None:
             treino, [], [], rotulos, permutacao, args, dispositivo)
         destino = saida / "modelo_final.pt"
         mm.salvar(modelo_final, destino, rotulos,
-                  {"fontes": args.fontes, "pessoas": todas, "args": vars(args),
+                  {"fontes": args.fontes, "pessoas": todas, "extras": resumo_extras, "args": vars(args),
                    "epoca_salva": epoca_final + 1, "politica_selecao": "ultima",
                    "avaliacao_independente": False, "backbone_sha256": backbone_sha,
                    "proveniencia": procedencia,

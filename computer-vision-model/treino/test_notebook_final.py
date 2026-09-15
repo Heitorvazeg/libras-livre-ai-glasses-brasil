@@ -33,18 +33,49 @@ class TestNotebookFinal(unittest.TestCase):
                             ("--workers", "2"), ("--fontes", "minds")):
             self.assertEqual(literais[literais.index(flag)+1], valor)
         for flag in ("--movimento", "--sem-imputacao", "--adjacencia-adaptativa", "--salvar-evidencias",
-                     "--aug-dominio"):
+                     "--aug-dominio", "--extras-manifesto", "--extras-raiz", "--extras-repeticoes"):
             self.assertNotIn(flag, literais)
         fonte = "\n".join(self.fontes)
         self.assertIn('AUG_DOMINIO = os.environ.get("LIBRAS_AUG_DOMINIO", "0") == "1"', fonte)
         self.assertIn('if AUG_DOMINIO:\n    FINAL_ARGS.append("--aug-dominio")', fonte)
         self.assertIn('get("aug_dominio", False)) != AUG_DOMINIO', fonte)
+        self.assertIn('EXTRAS_EXTERNOS = os.environ.get("LIBRAS_EXTRAS_EXTERNOS", "0") == "1"', fonte)
+        self.assertIn('if AUG_DOMINIO and EXTRAS_EXTERNOS:', fonte)
+        self.assertIn('"--extras-repeticoes", "5"', fonte)
+        self.assertIn('extras_externos.ler(MANIFESTO_EXTRAS, RAIZ_EXTRAS)', fonte)
+        self.assertIn('executar("test_extras_externos.py", [], "preflight.log")', fonte)
+        self.assertIn('extras_externos.gerar(TREINO / "calibracao_naovista_manifesto.json")', fonte)
+        self.assertIn('registrar("entrada-extras.json"', fonte)
+        self.assertIn('get("repeticoes") != (5 if EXTRAS_EXTERNOS else None)', fonte)
+        self.assertIn('set(PESSOAS_EXTRAS)', fonte)
         self.assertIn('os.environ.get("LIBRAS_COMMIT_FINAL", "")', fonte)
         self.assertIn('"checkout", "--detach", COMMIT_APROVADO', fonte)
         self.assertIn("entrada_final.preparar_minds", fonte)
         self.assertIn("manifesto_referencia=INVENTARIO_CAMINHO", fonte)
         self.assertIn('executar("test_politica_final.py"', fonte)
         self.assertNotIn('"merge"', fonte)
+
+    def test_argumentos_das_variantes_sem_rodar_treino(self):
+        arvore = next(a for a in self.arvores if any(isinstance(n, ast.Assign)
+            and any(isinstance(t, ast.Name) and t.id == "FINAL_ARGS" for t in n.targets)
+            for n in a.body))
+        blocos = [n for n in arvore.body if (
+            isinstance(n, ast.Assign) and any(isinstance(t, ast.Name) and t.id == "FINAL_ARGS"
+                                             for t in n.targets)) or (
+            isinstance(n, ast.If) and isinstance(n.test, ast.Name)
+            and n.test.id in ("AUG_DOMINIO", "EXTRAS_EXTERNOS")
+            and any(isinstance(t, ast.Name) and t.id == "FINAL_ARGS" for t in ast.walk(n)))]
+        self.assertEqual(len(blocos), 3)
+        for aug, extras in ((False, False), (True, False), (False, True)):
+            contexto = {k: Path("/fixture") for k in ("MINDS", "INVENTARIO_CAMINHO", "BACKBONE",
+                "SAIDA_FINAL", "MANIFESTO_EXTRAS", "RAIZ_EXTRAS")}
+            contexto.update(AUG_DOMINIO=aug, EXTRAS_EXTERNOS=extras)
+            exec(compile(ast.Module(body=blocos, type_ignores=[]), "<args-final>", "exec"), contexto)
+            args = contexto["FINAL_ARGS"]
+            self.assertEqual("--aug-dominio" in args, aug)
+            self.assertEqual("--extras-manifesto" in args, extras)
+            if extras:
+                self.assertEqual(args[args.index("--extras-repeticoes") + 1], "5")
 
     def _descobrir_minds(self, raiz, *, explicita=None, kaggle=True):
         # Executar somente o bloco de descoberta extraído do código real.

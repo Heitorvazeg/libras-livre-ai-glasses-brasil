@@ -76,3 +76,25 @@ sorteios da augmentação existente. Sem a flag, o treino fica idêntico ao atua
   pessoas. Se a candidata passar, uma rodada LOSO fica como verificação antes de
   virar receita.
 - As pessoas externas são proxy, não a câmera dos óculos.
+
+## Resultado — 15/09/2026
+
+**Candidata:** `experimentos-privados/final-s20260917-augdom-v1/`, checkpoint
+`266fc75f…`, commit `290da77`, backbone `7a6e997c…`, `--aug-dominio` no comando,
+120 épocas, Tesla T4 / torch 2.10.0+cu128 (mesmo ambiente da linha de base),
+selftest e preflight OK.
+
+| checkpoint | avaliação (28) | treino externo (42) |
+|---|---:|---:|
+| linha de base `c7851d8a` | 14 (50,0%) | 20 (47,6%) |
+| candidata `266fc75f` | 12 (42,9%) — ganhou 1, perdeu 3 | 20 (47,6%) — ganhou 2, perdeu 2 |
+
+Mudanças no grupo de avaliação: `sapo` (V03) passou a acertar; `banco`,
+`espelho` e `filho` (TUFS) passaram a errar; `aluno` (TUFS) continuou errado.
+
+**Decisão pela regra fixada:** a candidata não acertou 4 clipes a mais nos 28
+(saldo −2) e empatou nos 42. **Sem evidência de ganho. `--aug-dominio` não é
+adotada.** A flag continua no código, desligada por padrão, sem efeito na
+receita aprovada. Nenhum hiperparâmetro da augmentação foi ajustado depois do
+resultado. A etapa 2 fecha aqui; a próxima é a etapa 3 (treino com parte dos
+clipes externos).
