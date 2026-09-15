@@ -21,8 +21,20 @@ notebook e mesma GPU** (Kaggle, Tesla T4), rodadas em paralelo:
 As LOSO antigas (96,6% e afins) **não** servem de referência: foram geradas com
 outros backbones, commits e ambientes.
 
-Diferença conhecida: a rodada com extras recebe mais atualizações de peso por
-época (600 + 210 amostras contra 600 no treino de cada rodada).
+Diferenças conhecidas entre os braços, além dos próprios extras:
+
+- a rodada com extras recebe mais atualizações de peso por época (600 + 210
+  amostras contra 600 no treino de cada rodada);
+- os extras entram no fim da lista de treino, então a augmentação de cada clipe
+  MINDS é a mesma nos dois braços (sorteio por índice). Mas a **ordem e a
+  composição dos lotes mudam também para os clipes MINDS**, porque a permutação
+  do carregador depende do tamanho da lista, e o resto descartado no fim de cada
+  época também muda. O ST-GCN usa BatchNorm, sensível à composição do lote. É
+  inerente a acrescentar dados; fica registrado como fonte de variação que não
+  é causada só pelo conteúdo dos extras.
+
+(Itens acima registrados antes de qualquer resultado, após a revisão
+independente da implementação.)
 
 ## Critério de regressão (fixado agora)
 
