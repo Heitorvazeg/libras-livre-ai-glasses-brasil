@@ -77,6 +77,66 @@ class TestNotebookFinal(unittest.TestCase):
             if extras:
                 self.assertEqual(args[args.index("--extras-repeticoes") + 1], "5")
 
+    def test_extras_aceitam_pacote_ou_pasta_extraida(self):
+        import contextlib, hashlib, io, pathlib, shutil, tarfile, types
+        import numpy as np
+        import extras_externos as ee
+        bloco = next(n for arvore in self.arvores for n in arvore.body
+                     if isinstance(n, ast.If) and isinstance(n.test, ast.Name)
+                     and n.test.id == "EXTRAS_EXTERNOS" and "rglob" in ast.unparse(n))
+        with tempfile.TemporaryDirectory() as t:
+            base = Path(t)
+            origem = base / "origem"
+            itens = []
+            for k, (pessoa, classe, corpus) in enumerate((("V01", "classe0", "vlibrasil"),
+                                                         ("T002", "classe1", "malta"))):
+                rel = f"PoC/data/x/pessoa{pessoa}_sinal-{classe}_rep01.npy"
+                arq = origem / rel
+                arq.parent.mkdir(parents=True, exist_ok=True)
+                np.save(arq, np.full((5, 57, 3), 0.1 * (k + 1), np.float32))
+                itens.append({"classe": classe, "pessoa": pessoa, "corpus": corpus, "arquivo": rel,
+                              "sha256": hashlib.sha256(arq.read_bytes()).hexdigest()})
+            pai = base / "pai.json"
+            pai.write_text(json.dumps({"itens": itens, "divisao_pessoas": {
+                "fixada_em": "2026-09-15", "avaliacao": {"pessoas": ["V03"]},
+                "treino_externo": {"pessoas": ["T002", "V01"]}}}))
+            manifesto = base / "extras.json"
+            manifesto.write_text(json.dumps(ee.gerar(pai)))
+            pacote = base / "extras-treino-externo.tar.gz"
+            with tarfile.open(pacote, "w:gz") as tar:
+                for it in itens:
+                    tar.add(origem / it["arquivo"], arcname=it["arquivo"])
+            hash_de = lambda p: hashlib.sha256(Path(p).read_bytes()).hexdigest()
+
+            def rodar(nome, preparar):
+                entrada = base / nome / "input"
+                entrada.mkdir(parents=True)
+                preparar(entrada)
+                ctx = {"EXTRAS_EXTERNOS": True, "RAIZ_INPUT": entrada, "DESTINO": base / nome / "destino",
+                       "MANIFESTO_EXTRAS": manifesto, "HASH_PACOTE_EXTRAS": hash_de(pacote),
+                       "entrada": types.SimpleNamespace(pv=types.SimpleNamespace(hash_arquivo=hash_de)),
+                       "pathlib": pathlib, "tempfile": tempfile, "tarfile": tarfile, "json": json}
+                with contextlib.redirect_stdout(io.StringIO()):
+                    exec(compile(ast.Module(body=[bloco], type_ignores=[]), "<extras>", "exec"), ctx)
+                return ctx
+
+            ctx = rodar("pacote", lambda d: shutil.copy(pacote, d / pacote.name))
+            self.assertEqual((ctx["PESSOAS_EXTRAS"], ctx["ORIGEM_EXTRAS"]["forma"]), (["T002", "V01"], "pacote"))
+            ctx = rodar("pasta", lambda d: shutil.copytree(origem, d / "extras-treino-externo"))
+            self.assertEqual((ctx["PESSOAS_EXTRAS"], ctx["ORIGEM_EXTRAS"]["forma"]), (["T002", "V01"], "pasta_extraida"))
+            ee.ler(manifesto, ctx["RAIZ_EXTRAS"])
+            for nome, preparar in (("nenhum", lambda d: None),
+                                   ("ambos", lambda d: (shutil.copy(pacote, d / pacote.name),
+                                                        shutil.copytree(origem, d / "extraida")))):
+                with self.assertRaises(RuntimeError):
+                    rodar(nome, preparar)
+
+            def adulterar(d):
+                shutil.copytree(origem, d / "extraida")
+                np.save(d / "extraida" / itens[0]["arquivo"], np.ones((5, 57, 3), np.float32))
+            with self.assertRaises(ValueError):
+                rodar("adulterado", adulterar)
+
     def _descobrir_minds(self, raiz, *, explicita=None, kaggle=True):
         # Executar somente o bloco de descoberta extraído do código real.
         # Não importar dependências do treino nem executar a célula inteira.

@@ -119,3 +119,17 @@ Isso verifica integridade, não autorização de redistribuição nem validaçã
   a execução em CUDA nem demonstram ganho de acurácia da candidata.
 - Esta validação inclui as alterações locais das células 8 e 10. Elas também
   precisam entrar no snapshot publicado; não basta publicar apenas o CLI.
+
+## Ajuste de entrada no Kaggle — 15/09/2026
+
+Ao criar o dataset privado `walissonfagundes/extras-treino-externo`, o Kaggle
+descompactou o `extras-treino-externo.tar.gz` (também dentro de um `.zip`, em
+cascata) e publicou só os 42 `.npy`. O notebook de `2671c47` exigia o arquivo
+`.tar.gz` e pararia antes do treino; nenhuma run chegou a ser enviada.
+
+O notebook passou a aceitar **o pacote ou a pasta extraída, nunca os dois**. Na
+pasta extraída, copia só os 42 arquivos do manifesto para a área de trabalho,
+e `extras_externos.ler` confere o hash de cada um antes do treino. O hash do
+pacote continua conferido quando o pacote está presente. O backup registra a
+forma de entrada em `entrada-extras.json` (`origem_pacote`). Receita, grupo de
+pessoas, repetições e regra de decisão não mudaram.
