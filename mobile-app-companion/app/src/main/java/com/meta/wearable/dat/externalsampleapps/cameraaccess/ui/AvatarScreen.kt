@@ -21,6 +21,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
@@ -30,6 +31,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.CircularProgressIndicator
@@ -73,9 +75,12 @@ fun AvatarScreen(
     onRetomar: () -> Unit,
     modifier: Modifier = Modifier,
     // Libras Livre — confirmação de reconhecimento (docs/confirmacao-e-modo-economia-plano.md
-    // §1.5): true quando a legenda é a frase que o sistema entendeu do SURDO (②.5), não a
-    // resposta do atendente (⑦) — só troca o rótulo acima do texto.
+    // §1.3, §1.5): true quando a legenda é a frase que o sistema entendeu do SURDO (②.5), não a
+    // resposta do atendente (⑦) — troca o rótulo acima do texto E mostra o par de botões
+    // Confirmar/Corrigir abaixo da legenda.
     confirmacaoDoSurdo: Boolean = false,
+    onConfirmarReconhecimento: () -> Unit = {},
+    onCorrigirReconhecimento: () -> Unit = {},
 ) {
   // Congela o Unity com o app em background — ele desenha a 30 fps mesmo sem ninguém olhando.
   val lifecycleOwner = LocalLifecycleOwner.current
@@ -106,6 +111,13 @@ fun AvatarScreen(
         }
 
         Legenda(texto = legenda, confirmacaoDoSurdo = confirmacaoDoSurdo)
+
+        if (confirmacaoDoSurdo) {
+          ConfirmacaoRow(
+              onConfirmar = onConfirmarReconhecimento,
+              onCorrigir = onCorrigirReconhecimento,
+          )
+        }
       }
 
       CircleButton(
@@ -232,6 +244,36 @@ private fun Legenda(texto: String?, confirmacaoDoSurdo: Boolean) {
         fontWeight = FontWeight.SemiBold,
         // Frase longa não pode empurrar o avatar para fora da tela nem ser cortada.
         modifier = Modifier.heightIn(max = 160.dp).verticalScroll(rememberScrollState()),
+    )
+  }
+}
+
+/**
+ * Botões de confirmação (docs/confirmacao-e-modo-economia-plano.md §1.3) — só aparecem durante
+ * ②.5 CONFIRMANDO_RECONHECIMENTO, junto da legenda "Você sinalizou". "Confirmar" fala a frase pro
+ * atendente e segue o atendimento; "Corrigir" descarta e reabre a captura de sinais.
+ */
+@Composable
+private fun ConfirmacaoRow(onConfirmar: () -> Unit, onCorrigir: () -> Unit) {
+  Row(
+      modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp).padding(bottom = 16.dp),
+      horizontalArrangement = Arrangement.spacedBy(10.dp),
+  ) {
+    CapturePill(
+        modifier = Modifier.weight(1f).testTag("avatar_corrigir_button"),
+        icon = Icons.Filled.Refresh,
+        label = stringResource(R.string.avatar_confirmacao_corrigir),
+        contentDescription = stringResource(R.string.avatar_confirmacao_corrigir),
+        enabled = true,
+        onClick = onCorrigir,
+    )
+    CapturePill(
+        modifier = Modifier.weight(1f).testTag("avatar_confirmar_button"),
+        icon = Icons.Filled.Check,
+        label = stringResource(R.string.avatar_confirmacao_confirmar),
+        contentDescription = stringResource(R.string.avatar_confirmacao_confirmar),
+        enabled = true,
+        onClick = onConfirmar,
     )
   }
 }

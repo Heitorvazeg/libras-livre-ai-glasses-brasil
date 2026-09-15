@@ -37,28 +37,42 @@ anima, mostra a legenda). **Não existe avatar novo**: é a mesma função, cham
 ponto do fluxo. A tela (`AvatarScreen`) também não muda — ela já reage só a `avatarState` /
 `avatarLegenda` / `avatarVisivel`, sem saber em que estado do diálogo está.
 
-### 1.3 Decisão: como a pessoa confirma ou corrige, sem teclado nem botão
+### 1.3 Decisão: botão, não sinal de correção — revisado em 2026-09-15
 
-A pessoa surda não tem dispositivo próprio (premissa de `libras-livre-arquitetura.md` §1). A
-única entrada que ela tem é sinalizar de novo. Duas rotas foram consideradas:
+**Versão original desta seção (substituída, registrada por transparência):** a primeira
+implementação não dependia de botão nenhum — mantinha a sessão de captura aberta por uma janela
+curta depois do avatar mostrar a frase, e tratava *qualquer* sinal detectado nessa janela como
+"não é isso, de novo" (o gatilho era o boundary detector, não o conteúdo da classificação, já
+que o classificador em produção ainda é o `PlaceholderSignClassifier` — ver
+`libras/reconhecimento/SignClassifier.kt`). Funcionava, mas era mais mecanismo do que o
+problema pedia.
 
-| Rota | Por que não (sozinha) |
-|---|---|
-| Sinal `sim`/`não` dedicado | `sim`/`não` são candidatos de vocabulário (`vocabulario-mvp-proposta.md`:64), mas o classificador em produção hoje é `PlaceholderSignClassifier` — não reconhece palavra nenhuma de verdade ainda (`libras/reconhecimento/SignClassifier.kt`). Depender do CONTEÚDO do sinal pra decidir confirmação não é testável nem funcional com o classificador atual. |
-| Só timeout (auto-confirma) | Não é confirmação real — a banca pediu "confirme ou corrija", não só "veja". |
+**Revisão (pedido do time, 2026-09-15):** simplificar pra dois botões — "Confirmar" e
+"Corrigir" — na própria `AvatarScreen`, junto da legenda "Você sinalizou". O operador (atendente,
+que segura o celular) aperta um dos dois depois de mostrar a tela pra pessoa surda e ela
+confirmar com um aceno/gesto que não precisa ser um sinal reconhecível pelo sistema.
+"Confirmar" fala a frase pro atendente e segue o ciclo; "Corrigir" descarta e reabre a captura
+de sinais do zero.
 
-**Decisão adotada — não depende do classificador saber o que foi sinalizado, só de saber que
-ALGO foi sinalizado:** depois de mostrar a frase reconhecida, abre-se uma janela curta em que a
-sessão de captura continua aberta. Qualquer sinal detectado nessa janela — reconhecido ou não —
-é tratado como "não é isso, vou de novo": descarta a frase mostrada e reabre
-`CAPTURANDO_SINAIS`, com o sinal que acabou de disparar a correção já entrando como o primeiro
-da nova tentativa (quando foi classificado com sucesso) ou como pedido de recomeço do zero
-(quando falhou). **Silêncio pela janela inteira = confirmação implícita**, e a frase segue pro
-atendente. Isto funciona hoje, mesmo com o classificador placeholder — o gatilho é o boundary
-detector (que já roda de verdade), não o conteúdo da classificação. Quando o `.tflite` real
-entrar (`sign-boundary-detector-plano.md`) e `sim`/`não` estiverem no vocabulário, dá pra trocar
-o "qualquer sinal = correção" por uma leitura real de `sim`/`não`, sem mudar a máquina de
-estados — só o que `onSignRecognized` faz com o texto durante a confirmação.
+**O que isso troca, e por quê:**
+
+- **A câmera não precisa mais ficar ligada durante a confirmação.** Sem sinal pra detectar, não
+  há razão pra manter `LandmarkPipeline`/MediaPipe rodando — `endSignSession()` agora desliga a
+  câmera **assim que entra** em ②.5, não só quando a confirmação termina. Isso também **fecha o
+  risco de coexistência MediaPipe+Unity** que a versão anterior desta seção registrava (§1.6
+  antiga) — não existe mais, porque a câmera simplesmente não liga nesse estado.
+- **Não depende mais do classificador reconhecer nada.** A versão anterior já não dependia do
+  classificador saber *o que* foi sinalizado, só que *algo* foi — mas ainda dependia da câmera e
+  do boundary detector estarem rodando. Com botão, nem isso: funciona igual antes ou depois do
+  `.tflite` real entrar.
+- **`CONFIRMATION_WINDOW_MS` (a constante de 6 s) foi removida.** Em vez de um timer dedicado e
+  curto, `confirmarReconhecimento()`/`corrigirReconhecimento()` reaproveitam o
+  `IDLE_TIMEOUT_MS` (60 s) que ②/⑤ já usam como timeout de segurança: se ninguém apertar nenhum
+  dos dois botões, o app confirma sozinho depois de 1 minuto — mesmo papel que o timeout já
+  cumpre nos outros dois estados ativos, pra ②.5 nunca travar o atendimento se o operador largar
+  a tela. Isso é uma decisão nova desta revisão, não parte do pedido original — ver §1.6.
+- **`corrigirReconhecimento()` reaproveita `beginSignSession()`** (religa a câmera, reseta o
+  timeout, reabre `LandmarkPipeline`) em vez de duplicar essa lógica.
 
 ### 1.4 Máquina de estados — novo estado ②.5
 
@@ -69,15 +83,13 @@ estados — só o que `onSignRecognized` faz com o texto durante a confirmação
 ② CAPTURANDO SINAIS            ← inalterado
         │ "Libras Livre, encerrar" (ou timeout de 1 min)
         ▼
-②.5 CONFIRMANDO RECONHECIMENTO  ← NOVO
+②.5 CONFIRMANDO RECONHECIMENTO  ← NOVO — câmera já desligada ao entrar aqui
         │  Mostra pro SURDO o que foi entendido: mesmo playAvatar() do ⑦, com a legenda em
-        │  texto. A sessão de sinais continua aberta (câmera ligada) durante uma janela curta
-        │  (CONFIRMATION_WINDOW_MS) depois que o avatar termina de sinalizar.
+        │  texto. Dois botões na tela: "Confirmar" e "Corrigir".
         │
-        │  ── sinalizou de novo dentro da janela ──▶ volta pra ② com o sinal novo já
-        │                                             acumulado (ou zerado, se não reconhecido)
+        │  ── botão "Corrigir" ──▶ volta pra ②, religando a câmera (beginSignSession())
         │
-        │ silêncio pela janela inteira = confirmado
+        │ botão "Confirmar", OU timeout de 1 min sem nenhum dos dois = confirmado
         ▼
 ③ FALANDO (TTS → atendente)     ← como antes, só que agora depois da confirmação
         ▼
@@ -89,7 +101,7 @@ Não renumerei ①-⑦ nos comentários existentes do código pra não gerar um 
 estado é referenciado como "②.5" nos comentários novos.
 
 `CONFIRMANDO_RECONHECIMENTO` **não** entra em `WAKE_WORD_ACTIVE_STATES` — mesmo padrão de
-③⑥⑦: é uma fase automática, não um estado de espera por wake word.
+③⑥⑦: as duas wake words não têm ação nesse estado, só os dois botões.
 
 ### 1.5 Onde a rotulagem muda (pequeno, mas importa pra clareza)
 
@@ -97,26 +109,25 @@ A legenda do `AvatarScreen` tinha o rótulo fixo "O atendente disse" — certo p
 ②.5. `CameraViewModel.playAvatar()` agora decide o rótulo olhando
 `dialogOrchestrator.state.value` no momento da chamada (que já reflete o estado correto, porque
 `DialogOrchestrator` sempre chama `setState()` antes de invocar `playAvatar`): "Você sinalizou"
-em ②.5, "O atendente disse" em ⑦.
+em ②.5, "O atendente disse" em ⑦. O mesmo booleano (`confirmacaoDoSurdo`) também decide se os
+botões "Confirmar"/"Corrigir" aparecem — só em ②.5.
 
 ### 1.6 Riscos e o que fica pendente de validação em hardware real
 
-- **MediaPipe e o avatar (Unity) passam a coexistir por até a duração da janela de
-  confirmação** (`CONFIRMATION_WINDOW_MS`, alguns segundos) — a invariante "MediaPipe e Unity
-  nunca coexistem", registrada em `vlibras-webview-plano.md` §4.2, deixa de valer aqui, do mesmo
-  jeito que já deixava de valer durante o pré-carregamento do avatar em ②-⑥. A câmera só volta a
-  ligar depois que o avatar já terminou de animar (não durante), o que limita a janela de
-  coexistência ao tempo da confirmação, não ao da animação inteira. **Precisa medir memória em
-  aparelho real** antes de considerar isso resolvido — mesma pendência que o resto do avatar já
-  tinha.
-- **A correção descarta o sinal usado pra pedir correção.** A pessoa precisa sinalizar de novo
-  o sinal que disparou a correção quando ele não foi classificado; quando foi, ele já entra como
-  primeiro sinal da nova tentativa (ver §1.3). Simplificação deliberada — sem isso, precisaria
-  reaproveitar estado interno do `SignBoundaryDetector` entre sessões, o que não existe hoje.
-- **`CONFIRMATION_WINDOW_MS` é um palpite (6 s), não medido.** Curto demais frustra quem
-  precisa de mais tempo pra reagir; longo demais atrasa todo atendimento sem sinal errado. Só
-  teste com pessoas surdas reais decide o valor certo — está isolado numa constante só, fácil
-  de ajustar.
+- **Modo economia (§2) e "Corrigir" interagem — resolvido, mas vale registrar.** Se a bateria
+  ficar crítica enquanto a pessoa está em ②.5 e o operador aperta "Corrigir", não há como religar
+  a câmera. `corrigirReconhecimento()` checa `economiaBateria` e cai pra
+  `confirmarReconhecimento()` como melhor esforço (fala o que já foi reconhecido em vez de deixar
+  o botão sem efeito) — ver §2.3.
+- **O timeout de segurança de 1 min (§1.3) é uma adição desta revisão, não um pedido explícito.**
+  Sem ele, um operador que largasse a tela de confirmação travaria o atendimento indefinidamente
+  — o mesmo problema que o timeout de ②/⑤ já existe pra evitar. Se o time preferir sem
+  timeout aqui (só os dois botões, sem rede de segurança), é uma linha para remover
+  (`resetIdleTimeout` no fim de `endSignSession()`).
+- **Sem teste de UX real ainda.** Quem aperta o botão — o atendente, depois de perguntar/olhar
+  pra pessoa surda — é uma decisão de fluxo que só teste com usuários reais confirma que
+  funciona bem na prática (mesma ressalva que `libras-livre-arquitetura.md` §10 já registra
+  para a tela virada pro visitante, em geral).
 
 ---
 
@@ -177,9 +188,12 @@ real dos óculos).
 Ao receber o evento:
 
 1. `DialogOrchestrator.onBatteryLow()` liga uma flag `economiaBateria` (exposta como
-   `StateFlow<Boolean>` pra UI), termina a sessão de sinais em curso se houver uma (②/②.5) sem
-   tentar salvar o que já foi capturado — bateria crítica é urgente, não há tempo pra terminar
-   graciosamente — e desliga a câmera.
+   `StateFlow<Boolean>` pra UI), termina a sessão de sinais em curso se houver uma (só ②
+   segura a câmera aberta agora — ②.5 já desliga sozinha ao entrar, ver §1.3) sem tentar salvar
+   o que já foi capturado — bateria crítica é urgente, não há tempo pra terminar graciosamente —
+   e desliga a câmera. Se o evento chegar durante ②.5, a confirmação em curso segue seu rumo
+   normal (botão ou timeout); só uma eventual "Corrigir" depois disso cai pro melhor esforço
+   descrito em §1.6.
 2. **"Libras Livre, iniciar" em ① deixa de abrir `CAPTURANDO_SINAIS` e passa a abrir
    `ESCUTANDO_ATENDENTE` direto** (mesmo destino de "iniciar" em ④) — pula ②/②.5/③ inteiros.
    Isso é literalmente "as etapas de visão são puladas e a comunicação fica só no falado": o
@@ -230,12 +244,12 @@ limiar — não dá pra apresentar uma curva de % dos óculos, só os pontos em 
 | Arquivo | Mudança |
 |---|---|
 | `libras/dialogo/DialogState.kt` | novo `CONFIRMANDO_RECONHECIMENTO` |
-| `libras/dialogo/DialogOrchestrator.kt` | ②.5 completo (§1); `economiaBateria` + `onBatteryLow()` (§2) |
-| `camera/CameraViewModel.kt` | `session.errors`/`stream.errorStream` chamando `onBatteryLow()`; rótulo dinâmico da legenda do avatar |
+| `libras/dialogo/DialogOrchestrator.kt` | ②.5 por botão (§1); `confirmarReconhecimento()`/`corrigirReconhecimento()` públicos; `economiaBateria` + `onBatteryLow()` (§2) |
+| `camera/CameraViewModel.kt` | `confirmarReconhecimento()`/`corrigirReconhecimento()` repassando pro orquestrador; `session.errors`/`stream.errorStream` chamando `onBatteryLow()`; rótulo dinâmico da legenda do avatar |
 | `camera/CameraUiState.kt` | `bateriaBaixa`, `avatarConfirmacaoDoSurdo` |
-| `ui/AvatarScreen.kt` | rótulo da legenda por parâmetro (`confirmacaoDoSurdo`) |
+| `ui/AvatarScreen.kt` | rótulo da legenda por parâmetro (`confirmacaoDoSurdo`); novo `ConfirmacaoRow` (botões Confirmar/Corrigir) |
 | `ui/CameraScreen.kt` | novo `BateriaBaixaBanner`, persistente enquanto `bateriaBaixa` |
-| `res/values/strings.xml` | `avatar_caption_label_confirmacao`, `battery_low_banner` |
+| `res/values/strings.xml` | `avatar_caption_label_confirmacao`, `avatar_confirmacao_confirmar`, `avatar_confirmacao_corrigir`, `battery_low_banner` |
 
 **Validado nesta sessão, não só revisado visualmente:** diferente da maior parte do projeto
 (sem SDK/rede — ver `orquestracao-dialogo-audio-plano.md`), esta sessão teve rede disponível.
@@ -246,14 +260,15 @@ nos `.aar` baixados (§2.4). O que falta é só o que precisa de hardware/pessoa
 
 ## 4. Pendente (não feito nesta sessão)
 
-- [ ] Testar em hardware real: janela de confirmação, coexistência MediaPipe+Unity, e os dois
-  eventos de bateria (não há como forçar `BATTERY_LOW`/`BATTERY_CRITICAL` sem óculos reais com
-  bateria baixa de verdade, ou um mock do DAT que os simule — `mwdat-mockdevice` foi checado só
-  por nome nesta sessão, não confirmado se simula esses dois erros).
+- [ ] Testar em hardware real: os botões "Confirmar"/"Corrigir" fim a fim (religar a câmera ao
+  corrigir, timeout de segurança), e os dois eventos de bateria (não há como forçar
+  `BATTERY_LOW`/`BATTERY_CRITICAL` sem óculos reais com bateria baixa de verdade, ou um mock do
+  DAT que os simule — `mwdat-mockdevice` foi checado só por nome nesta sessão, não confirmado se
+  simula esses dois erros).
 - [ ] Medição de consumo (§2.5) — depende de sessão real com os óculos.
-- [ ] Calibrar `CONFIRMATION_WINDOW_MS` com pessoas surdas reais.
-- [ ] Quando o classificador real (`.tflite`) e o vocabulário `sim`/`não` existirem, avaliar
-  trocar "qualquer sinal = correção" por leitura do conteúdo (§1.3).
+- [ ] Decidir se o timeout de segurança de 1 min em ②.5 (§1.3, §1.6) é desejado ou se a
+  confirmação deve ficar só nos dois botões, sem rede de segurança — não foi pedido
+  explicitamente, foi uma adição de engenharia desta revisão.
 - [ ] Testes automatizados do `DialogOrchestrator` — não existiam antes deste plano nem foram
   adicionados agora (a classe depende de `LandmarkPipeline`/`Context` real, o que pede fakes que
   não existem hoje; ficaria maior que o resto desta mudança). Risco registrado, não ignorado.
@@ -262,12 +277,10 @@ nos `.aar` baixados (§2.4). O que falta é só o que precisa de hardware/pessoa
 
 ## 5. Referências
 
-- `docs/libras-livre-arquitetura.md` §5, §8, §9 — saída pra pessoa surda, eficiência energética,
-  confirmação por limiar de confiança (as três seções que este plano implementa).
-- `docs/vlibras-webview-plano.md` §4.2 — a invariante de coexistência MediaPipe/Unity que este
-  plano relaxa por uma janela curta (§1.6).
+- `docs/libras-livre-arquitetura.md` §5, §8, §9, §10 — saída pra pessoa surda, eficiência
+  energética, confirmação por limiar de confiança, e a ressalva de UX não validada que também se
+  aplica aqui (§1.6).
 - `docs/orquestracao-dialogo-audio-plano.md` §5, §6.5 — a máquina de estados original e o
   `DialogOrchestrator`, que este plano estende.
-- `docs/vocabulario-mvp-proposta.md`:64 — `sim`/`não` como candidatos de vocabulário (§1.3).
 - SDK: `CHANGELOG.md` de `meta-wearables-dat-android` — `DeviceSessionError`/`StreamError`,
   casos de bateria/térmico/peak-power.

@@ -345,6 +345,14 @@ class CameraViewModel(
   /** Fecha a tela e devolve a memória. A próxima [abrirAvatar] recarrega do zero. */
   fun fecharAvatar() = liberarAvatar()
 
+  // Libras Livre — botões de confirmação em ②.5 CONFIRMANDO_RECONHECIMENTO
+  // (docs/confirmacao-e-modo-economia-plano.md §1.3), acionados pela AvatarScreen. Repassam
+  // direto pro DialogOrchestrator, que é quem sabe se há uma frase pendente e o que fazer com
+  // ela — mesmo padrão do onWakeWordButton abaixo.
+  fun confirmarReconhecimento() = dialogOrchestrator.confirmarReconhecimento()
+
+  fun corrigirReconhecimento() = dialogOrchestrator.corrigirReconhecimento()
+
   /**
    * Destrói a WebView E fecha a tela. As duas coisas andam juntas: o DialogOrchestrator chama
    * isto quando o atendimento encerra por inatividade, e uma tela aberta sobre uma WebView

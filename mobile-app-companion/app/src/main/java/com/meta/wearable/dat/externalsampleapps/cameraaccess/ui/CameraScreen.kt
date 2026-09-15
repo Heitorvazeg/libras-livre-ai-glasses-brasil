@@ -205,6 +205,8 @@ fun CameraScreen(
           onPausar = cameraViewModel::pausarAvatar,
           onRetomar = cameraViewModel::retomarAvatar,
           confirmacaoDoSurdo = ui.avatarConfirmacaoDoSurdo,
+          onConfirmarReconhecimento = cameraViewModel::confirmarReconhecimento,
+          onCorrigirReconhecimento = cameraViewModel::corrigirReconhecimento,
       )
     }
 
