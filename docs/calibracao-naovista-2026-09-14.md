@@ -1,17 +1,24 @@
-# Conjunto de calibração com pessoas não vistas — montado em 2026-09-14
+# Conjunto de calibração explicitamente experimental — 2026-09-14
 
 ## O que é
 
-Um conjunto de 50 clipes já extraídos, cobrindo as **20 classes do MINDS**,
-de **10 pessoas que nunca entraram no treino de classificação** (nem em
-nenhuma rodada LOSO, nem em `--final`): V-LIBRASIL (V01, V02, V03) e MALTA
-(T002, T042, T044, T045, T048, T050, TUFS). Resolve a pergunta em aberto do
-item 2/P2 de [`pendencias-entrega-2026-09-14.md`](pendencias-entrega-2026-09-14.md):
-como calibrar sem gravar gente nova. Manifesto com hash sha256 de cada clipe:
-[`../computer-vision-model/treino/calibracao_naovista_manifesto.json`](../computer-vision-model/treino/calibracao_naovista_manifesto.json).
+Por decisão do usuário, ficam **preservados os 50 clipes já extraídos**, fruto
+de dias de trabalho, cobrindo as **20 classes do MINDS** e **10 pessoas**:
+V-LIBRASIL (V01, V02, V03) e MALTA (T002, T042, T044, T045, T048, T050, TUFS).
+O uso autorizado é **calibração explicitamente experimental, sem avaliação
+independente nem aprovação de entrega**. Não buscar novas pessoas nem refazer
+o backbone agora. Isso delimita o item 2 da
+[ordem vigente](pendencias-entrega-2026-09-14.md), sem resolver os requisitos de entrega.
+O [manifesto](../computer-vision-model/treino/calibracao_naovista_manifesto.json)
+preserva itens, nomes, hashes e contagens; o nome histórico do arquivo não
+significa que suas pessoas sejam completamente não vistas pelo pipeline.
 
 Não requer nenhuma gravação nova, nenhuma reextração: os `.npy` já existiam
-em `PoC/data/landmarks/` (V-LIBRASIL) e `PoC/data/landmarks-malta/` (MALTA).
+nas pastas locais de landmarks de V-LIBRASIL e MALTA.
+
+O manifesto declara `schema: 1`, `finalidade: "calibracao_experimental"`,
+`avaliacao_independente: false`, `aprovado_entrega: false` e
+`exposicao_previa: "pessoas_expostas_ao_pre_treino_ou_selecao"`.
 
 ## Composição
 
@@ -29,33 +36,52 @@ entre o vocabulário de cada corpus público e as 20 classes do MINDS (o
 V-LIBRASIL local tem só essas 10 em comum; as outras 10 simplesmente não
 existem nele com esse nome).
 
-## Limites — não é um substituto do LOSO
+## Limites — não é teste independente nem substituto do LOSO
 
 - **1–3 repetições por pessoa/classe** (o LOSO do MINDS usa 5). Serve para uma
   checagem grosseira de calibração/limiar, não para métricas por classe com
   poder estatístico.
 - **Corpus diferente do MINDS**: câmera, enquadramento e população de
-  sinalizantes distintos. Mede generalização entre domínios — um teste mais
-  honesto que reusar validação LOSO — mas não é a mesma distribuição que a
-  câmera dos óculos vai capturar.
-- **Exposição parcial ao pipeline**: `V03` nunca foi vista em nenhuma etapa
-  (reservada até do pré-treino contrastivo, ver
-  [`politica-modelo-final-2026-09-14.md`](politica-modelo-final-2026-09-14.md)).
-  As outras 9 pessoas foram vistas no pré-treino contrastivo **sem rótulo**
-  — uma exposição bem mais fraca que o vazamento do pool LOSO (que via
-  rótulo E gradiente de classificação), mas não é independência total do
-  pipeline inteiro. Se for preciso um subconjunto 100% limpo, usar só V03
-  (10 clipes, 10 classes).
+  sinalizantes distintos. Permite uma análise experimental entre domínios,
+  não uma medição independente de generalização nem uma representação da
+  distribuição da câmera dos óculos.
+- **SupCon é supervisionado por rótulos**: em
+  [contrastivo.py](../computer-vision-model/treino/contrastivo.py#L134-L151),
+  os rótulos definem os pares positivos da perda. Não é pré-treino “sem rótulo”.
+  As demais pessoas pertencem ao conjunto de pré-treino; isso não equivale
+  a demonstrar que cada arquivo deste manifesto participou de gradientes.
+- **V03 participou da seleção de época por recuperação**, como pessoa
+  reservada para validação no pré-treino. A avaliação sem gradientes e a
+  escolha dos melhores pesos estão em
+  [pretreinar.py](../computer-vision-model/treino/pretreinar.py#L517-L553).
+  Logo, V03 não é completamente invisível ao pipeline e seus 10 clipes
+  não constituem um subconjunto “100% limpo”.
+- **Os 50 hashes conferidos identificam os arquivos**, mas não provam
+  independência nem exposição individual de cada arquivo ao pré-treino ou
+  à seleção. O aviso de exposição é no nível das pessoas/pipeline, não
+  uma auditoria de participação de cada clipe em gradientes.
+- **Validação LOSO não entra nos gradientes do próprio fold**, mas participa
+  da seleção de época. Seu pool continua sendo análise LOSO, não evidência
+  de calibração transferível ao checkpoint final nem teste independente.
 
-## O que falta para virar calibração de verdade
+## Caminho externo — implementado, sem ajuste real
 
-1. `modelo_final.pt` (item 1 — aguardando a run `--final` no Kaggle).
-2. O pipeline de calibração do Astra, em reescrita ativa nesta sessão
-   (`calibracao.py`, schema 2 com vínculo a checkpoint/fontes) — rodar
-   inferência sobre este manifesto e gerar logits no formato que esse
-   schema exigir. Não antecipar esse formato aqui para não duplicar/colidir
-   com o trabalho em andamento dele.
-3. Decidir e registrar, antes de olhar qualquer resultado de teste, os
-   critérios de aceite (meta de acurácia nos aceitos, cobertura mínima) —
-   por instrução explícita do usuário, calibração é avaliação separada com
-   critério fixado a priori.
+O módulo [calibracao_externa.py](../computer-vision-model/treino/calibracao_externa.py)
+implementa o contrato
+é **schema 3, escopo `checkpoint_final_experimental`**, com evidência externa
+vinculada ao checkpoint final e **protocolo a priori**: `acc_minima` e
+`cobertura_minima` devem ser explícitos e obrigatórios, registrados antes de
+examinar os resultados usados no ajuste. Este documento não define valores
+para essas metas nem inventa formatos de evidência, protocolo ou comandos.
+
+Temperatura/limiar e suas métricas usarão **os mesmos dados de ajuste**;
+mesmo atingir as metas não constitui teste independente ou aprovação de entrega.
+A exportação experimental fica limitada a float32 e ao **mesmo hash de checkpoint**
+da evidência/calibração. O caminho LOSO de **schema 2 permanece preservado**,
+sem autorizar transferência do pool LOSO para o final.
+
+Implementação validada com checkpoints e dados sintéticos; 50 hashes/arrays reais
+também conferidos, sem inferência ou ajuste nos clipes reais. O uso depende do
+checkpoint final e de metas explícitas. Ver
+[procedimento, argumentos e validação](preparacao-final-e-calibracao-experimental-2026-09-14.md).
+Não se autoriza treino nesta frente nem se promete novos dados ou retreino.

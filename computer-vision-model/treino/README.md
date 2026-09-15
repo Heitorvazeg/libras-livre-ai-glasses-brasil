@@ -236,6 +236,14 @@ Metadados identificam seleção/época e ausência de avaliação independente.
 **O treino real final ainda não foi executado; 96,6% LOSO não é sua acurácia medida.**
 Guardas em [test_politica_final.py](test_politica_final.py).
 
+O [notebook final](notebook_treino_final.ipynb) agora exige SHA completo do código
+aprovado (`LIBRAS_COMMIT_FINAL` ou `COMMIT_APROVADO`), snapshot limpo, preparação
+MINDS estrita via [entrada_final.py](entrada_final.py) e `--inventario-final`.
+Não há fallback para branch/HEAD nem mistura de extrações. A guarda repete a
+conferência dos bytes e dos clipes efetivamente carregados antes do modelo.
+Publicar as correções e informar seu SHA antes do Kaggle; nenhuma run foi iniciada.
+Ver [procedimento e testes](../../docs/preparacao-final-e-calibracao-experimental-2026-09-14.md).
+
 ### Calibração experimental de confiança
 
 [calibracao.py](calibracao.py) recebe `--evidencias` (repetível), `--acc-minima`
@@ -257,7 +265,7 @@ recusados. Sem limiar que atinja a meta, `limiar_sugerido=null` e
    `metricas_medidas_em=mesmos_dados_do_ajuste`. A validação já selecionou a época;
    ECE/cobertura/acurácia aqui não aprovam o final nem a demo.
 
-[exportar.py](exportar.py) aceita `--calibracao` somente para schema 2 de um único
+[exportar.py](exportar.py) aceita `--calibracao` schema 2 de um único
 fold com limiar viável, mesmo checkpoint e mesma ordem de rótulos. Reabre fontes,
 confere identidades e recalcula a política para T fornecido antes da conversão e
 da escrita do sidecar; não reajusta T. Fontes precisam estar acessíveis nos
@@ -266,11 +274,32 @@ análise exige saída nova, não troca manual de hashes ou schema.
 
 Sem a flag, o export não adiciona calibração. O limiar sugerido **não é aplicado
 automaticamente no app**. Não transferir o pool para o checkpoint final treinado
-com todas as pessoas MINDS: calibração/teste do final exigem dados novos e
-protocolo separado. Nenhuma calibração real nova foi executada nesta correção.
+com todas as pessoas MINDS. O caminho externo experimental descrito abaixo é
+separado; não transforma dados expostos em teste independente.
+Nenhuma calibração real nova foi executada nesta correção.
 Regressões sintéticas em [test_calibracao.py](test_calibracao.py),
 [test_calibracao_guardas.py](test_calibracao_guardas.py) e
 [test_export_contrato.py](test_export_contrato.py), este com conversor simulado.
+
+### Calibração externa do final — experimental (schema 3)
+
+Por decisão do usuário, preservar os 50 clipes existentes, sem novas pessoas ou
+refazer o backbone agora. SupCon usa rótulos; V03 selecionou a época do backbone.
+O [manifesto](calibracao_naovista_manifesto.json) declara essa exposição prévia,
+sem avaliação independente ou aprovação de entrega.
+
+[calibracao_externa.py](calibracao_externa.py) oferece `protocolo`, `inferir` e
+`ajustar`: critérios explícitos de acurácia/cobertura **antes** da inferência,
+logits do checkpoint final com pré-processamento do treino e ajuste rastreável.
+Saída schema 3, `escopo=checkpoint_final_experimental`; métricas nos mesmos dados
+do ajuste. Exportação somente float32, mesmo checkpoint, rótulos e fontes íntegros.
+Sem política viável, export recusado. Schema 2 e ausência de calibração continuam
+com seus comportamentos anteriores. Não aplicar automaticamente o limiar no app.
+
+Argumentos, limites e ordem operacional no
+[procedimento](../../docs/preparacao-final-e-calibracao-experimental-2026-09-14.md#3-calibração-externa-sem-converter-dados-expostos-em-teste-independente).
+Testes em [test_calibracao_externa.py](test_calibracao_externa.py): inferência com
+pesos sintéticos, guarda de fontes e conversão **simulada**, não validação TFLite real.
 
 ### Pré-treino
 

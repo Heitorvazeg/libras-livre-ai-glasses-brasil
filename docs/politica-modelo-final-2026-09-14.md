@@ -4,6 +4,13 @@
 Resolve a escolha de seed e de estado a salvar, não aprova o modelo para produção.
 Não depende de instalar Android nem de repetir o piloto M01.
 
+**Atualização de preparação (14/09):** notebook exige commit explícito e inventário
+MINDS completo. Por decisão do usuário, os 50 clipes disponíveis serão usados
+somente em calibração **experimental com exposição prévia declarada**, sem novas
+pessoas ou retreino do backbone agora. Isso não satisfaz o requisito de teste
+independente abaixo nem altera a receita final. Ver
+[implementação, uso e testes](preparacao-final-e-calibracao-experimental-2026-09-14.md).
+
 ## 1. Política v1 fixada antes do treino final
 
 | Decisão | Valor e justificativa |

@@ -307,6 +307,10 @@ def validar_exportacao(bloco: dict, checkpoint_sha256: str, rotulos: list[str]) 
     Não recalibra nem altera pesos. Não aprova entrega ou aplica limiar no app.
     JSON legado sem identidade exige nova análise, nunca edição dos hashes.
     """
+    if bloco.get("schema") == 3:
+        from calibracao_externa import validar_exportacao as validar_externa
+        validar_externa(bloco, checkpoint_sha256, rotulos)
+        return
     try:
         json.dumps(bloco, allow_nan=False)
         if (bloco.get("schema") != 2 or bloco.get("escopo") != "checkpoint_loso"

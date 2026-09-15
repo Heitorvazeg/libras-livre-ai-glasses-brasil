@@ -1,5 +1,10 @@
 {
-  "descricao": "Conjunto de calibração/avaliação com pessoas nunca usadas no treino de classificação (LOSO nem --final): V-LIBRASIL V01-V03 + MALTA (pessoas variam por classe). Cobre as 20 classes do MINDS. V03 nunca foi vista em NENHUMA etapa (reservada até do pré-treino contrastivo); as demais pessoas foram vistas no pré-treino contrastivo (não-supervisionado), nunca no treino/validação de classificação.",
+  "schema": 1,
+  "finalidade": "calibracao_experimental",
+  "avaliacao_independente": false,
+  "aprovado_entrega": false,
+  "exposicao_previa": "pessoas_expostas_ao_pre_treino_ou_selecao",
+  "descricao": "Conjunto de 50 clipes preservados para calibração explicitamente experimental: V-LIBRASIL V01-V03 + MALTA, 10 pessoas e as 20 classes do MINDS. Sem avaliação independente nem aprovação de entrega. SupCon é supervisionado por rótulos em contrastivo.py; V03 participou da seleção de época por recuperação em pretreinar.py, portanto não é pessoa completamente invisível ao pipeline. As demais pessoas pertencem ao conjunto de pré-treino, sem que isso comprove a participação individual de cada arquivo em gradientes. Decisão: preservar o trabalho existente, sem buscar novas pessoas nem refazer o backbone agora.",
   "gerado_em": "2026-09-14",
   "n_clipes": 50,
   "n_pessoas": 10,
@@ -131,9 +136,13 @@
   },
   "limites": [
     "1-3 repetições por pessoa/classe (MINDS LOSO usa 5) — não tem poder estatístico para métricas por classe, só para checagem grosseira.",
-    "Corpus diferente do MINDS (câmera, enquadramento, população de sinalizantes) — mede generalização entre domínios, não a distribuição que o app vai encontrar de fato.",
-    "Todas as pessoas exceto V03 foram vistas no pré-treino contrastivo (sem rótulo) — exposição mais fraca que o vazamento do pool LOSO, mas não é 100% independente do pipeline inteiro.",
-    "Ainda não há modelo_final.pt — este manifesto só localiza e verifica os clipes; rodar inferência e gerar logits fica para quando o checkpoint existir e o schema de calibração do Astra estiver pronto."
+    "Corpus diferente do MINDS (câmera, enquadramento, população de sinalizantes) — análise experimental entre domínios, não medição independente de generalização nem representação da distribuição do app.",
+    "SupCon usa rótulos para definir pares positivos. V03 foi validação para seleção de época por recuperação, sem gradientes dessa validação, mas não invisível ao pipeline. Não há subconjunto 100% independente demonstrado neste manifesto.",
+    "Os 50 hashes conferidos identificam arquivos; não provam independência nem exposição individual de cada arquivo ao pré-treino ou à seleção. Exposição das pessoas não comprova participação de todos os seus clipes em gradientes.",
+    "A validação LOSO não entra nos gradientes do próprio fold, mas participa da seleção de época. O pool LOSO continua restrito à análise de schema 2, sem transferência para o checkpoint final.",
+    "Caminho externo em preparação pelo agente principal em calibracao_externa.py: schema 3, escopo checkpoint_final_experimental, evidência externa e protocolo a priori com acc_minima e cobertura_minima explícitos e obrigatórios. Sem definir aqui outro formato ou valores de metas.",
+    "As métricas serão medidas nos mesmos dados usados no ajuste, sem teste independente; atingir metas não aprova entrega. Exportação experimental limitada ao mesmo hash de checkpoint da evidência/calibração.",
+    "Este manifesto preserva o conjunto e registra limites; não anuncia inferência, métricas reais, implementação concluída ou entrega. O uso depende de checkpoint final disponível e do caminho externo implementado, sem autorizar treino, novos dados ou retreino nesta frente."
   ],
   "itens": [
     {

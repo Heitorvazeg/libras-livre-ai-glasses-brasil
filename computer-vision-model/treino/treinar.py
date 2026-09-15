@@ -515,6 +515,8 @@ def main() -> None:
                     help="treina com TODAS as pessoas e salva o checkpoint (sem avaliação)")
     ap.add_argument("--politica-final", choices=["ultima"], default=argparse.SUPPRESS,
                     help="obrigatório com --final: salva a última época, sem seleção em dados vistos")
+    ap.add_argument("--inventario-final", type=Path, default=argparse.SUPPRESS,
+                    help="receita MINDS v1: exige inventário completo e bytes aprovados antes do treino")
     ap.add_argument("--salvar-evidencias", action="store_true",
                     help="LOSO: salva melhor checkpoint, logits de validação/teste e IDs; "
                          "retomada exige artefatos íntegros e mesma execução")
@@ -529,6 +531,8 @@ def main() -> None:
         ap.error("--final exige --politica-final ultima e --semente explícita")
     if not args.final and hasattr(args, "politica_final"):
         ap.error("--politica-final só pode ser usado com --final")
+    if hasattr(args, "inventario_final") and (not args.final or args.fontes != "minds"):
+        ap.error("--inventario-final exige --final --fontes minds")
     if args.saida is None:
         args.saida = f"resultados-{args.arquitetura}"
     if args.final:
@@ -543,8 +547,14 @@ def main() -> None:
 
     cfg = yaml.safe_load(CONFIG.read_text(encoding="utf-8"))
     lm_dir = Path(args.landmarks) if args.landmarks is not None else POC / cfg["paths"]["landmarks"]
+    inventario_final = None
+    if hasattr(args, "inventario_final"):
+        import entrada_final as ef
+        inventario_final = ef.validar_minds(lm_dir, manifesto_referencia=args.inventario_final)
     clipes = dd.carregar(lm_dir, fontes=args.fontes, imputar=not args.sem_imputacao,
                          com_z=args.com_z, z_recentrado=args.z_recentrado)
+    if inventario_final is not None:
+        ef.conferir_carregados(inventario_final, clipes)
     if not clipes:
         raise SystemExit(f"nenhum landmark em {lm_dir} — rode ../PoC/src/extract.py primeiro.")
 

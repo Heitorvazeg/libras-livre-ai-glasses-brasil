@@ -92,6 +92,24 @@ class TestPoliticaFinal(unittest.TestCase):
             self.executar()
         self.assertFalse((self.out / "modelo_final.pt").exists())
 
+    def test_inventario_final_incompleto_recusado_antes_do_modelo(self):
+        with patch.object(tr.gg, "construir", side_effect=AssertionError("não construir")), \
+                self.assertRaises(ValueError):
+            self.executar(self.argv + ["--inventario-final", str(self.base / "inventario.json")])
+        self.assertFalse(self.out.exists())
+
+    def test_inventario_final_so_final_minds_e_sem_descarte(self):
+        import entrada_final as ef
+        extra = ["--inventario-final", str(self.base / "inventario.json")]
+        with self.assertRaises(SystemExit):
+            self.executar(self.argv + extra + ["--fontes", "vlibrasil"])
+        inventario = {"amostras": [], "n_clipes": 800}
+        with patch.object(ef, "validar_minds", return_value=inventario), \
+                patch.object(tr.gg, "construir", side_effect=AssertionError("não construir")), \
+                self.assertRaisesRegex(ValueError, "800 identidades"):
+            self.executar(self.argv + extra)
+        self.assertFalse(self.out.exists())
+
 
 if __name__ == "__main__":
     unittest.main()

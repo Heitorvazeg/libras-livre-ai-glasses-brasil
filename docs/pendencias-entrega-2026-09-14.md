@@ -9,12 +9,31 @@ no final. **94 testes passaram**, com dados sintéticos e conversão simulada.
 Ver [parecer atualizado e limites](revisao-calibracao-3e81c3f-2026-09-14.md).
 Infraestrutura corrigida **não significa calibração real do final concluída**.
 
-**Conjunto de pessoas não vistas montado:** 50 clipes já extraídos, 10 pessoas
-(V-LIBRASIL V01-V03 + MALTA), cobrindo as 20 classes do MINDS, nenhuma delas
-usada em LOSO nem em `--final`. Sem gravação ou reextração nova. Ver
-[composição e limites](calibracao-naovista-2026-09-14.md). Falta o
-`modelo_final.pt` e o schema de calibração (em reescrita) para virar
-calibração de verdade — isto é só o conjunto, não um resultado.
+**Conjunto preservado para calibração explicitamente experimental:** por decisão
+do usuário, manter os 50 clipes já extraídos, 10 pessoas (V-LIBRASIL V01-V03 +
+MALTA) e 20 classes do MINDS, sem buscar novas pessoas nem refazer o backbone
+agora. **Sem avaliação independente nem aprovação de entrega.** SupCon é
+supervisionado por rótulos em
+[contrastivo.py](../computer-vision-model/treino/contrastivo.py#L134-L151);
+V03 participou da seleção de época por recuperação em
+[pretreinar.py](../computer-vision-model/treino/pretreinar.py#L517-L553), não é
+pessoa completamente invisível. Os 50 hashes conferidos não provam independência
+nem exposição individual de cada arquivo. Ver
+[composição, decisão e limites](calibracao-naovista-2026-09-14.md).
+
+**Caminho externo implementado e validado sinteticamente:**
+[calibracao_externa.py](../computer-vision-model/treino/calibracao_externa.py),
+schema 3, escopo `checkpoint_final_experimental`, evidência externa e protocolo
+a priori com `acc_minima` e `cobertura_minima` explícitos e obrigatórios.
+As métricas serão dos mesmos dados de ajuste, sem teste independente; a
+exportação experimental fica limitada a float32 e ao mesmo hash de checkpoint. O LOSO
+schema 2 permanece preservado: validação não entra nos gradientes do próprio
+fold, mas participa da seleção de época. **Não houve ajuste/inferência real ou
+aprovação de entrega.** Notebook final protegido por inventário MINDS estrito,
+SHA explícito e registros de ambiente; **174 testes e selftest completo passaram**.
+Conferidos os 50 hashes/arrays reais, sem alterar o conjunto. Antes do Kaggle,
+commitar/publicar as correções e informar o SHA aprovado; não foi feito push.
+Ver [preparação, uso e limites](preparacao-final-e-calibracao-experimental-2026-09-14.md).
 
 **Frente FILHO definitivamente encerrada por decisão do usuário:**
 [inspeção descritiva](investigacao-filho-2026-09-14.md) concluída, causa inconclusiva.
@@ -44,8 +63,11 @@ Sequência futura, **não autorização de execução nesta frente**:
 
 1. Produzir um único candidato final conforme P1, quando for iniciada a execução
   longa; não comparar sementes pela acurácia no treino.
-2. Tratar calibração e ensaios do roteiro como avaliação separada, com pessoas
-  não vistas e critérios fixados antes de olhar os resultados de teste.
+2. Preparar a calibração explicitamente experimental com os 50 clipes
+  preservados, sem novas pessoas nem refazer o backbone agora. Fixar
+  `acc_minima` e `cobertura_minima` a priori, antes de examinar resultados
+  de ajuste. Métricas nesses mesmos dados não são teste independente nem
+  aprovação de entrega; não substituem avaliação operacional do roteiro.
 3. Aprofundar P3 com dados de captura irregular, sem reformar todos os corpora
   por uma hipótese de fps já corrigida. Android só volta a ser executado numa
   etapa específica de integração; sua ausência não bloqueia as decisões acima.

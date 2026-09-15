@@ -524,6 +524,8 @@ def escrever_sidecar(destino: Path, rotulos: list[str], origem: dict, modo: str,
             or paridade["shape_saida"] != [1, len(rotulos)]):
         raise SystemExit("contrato do sidecar diverge da interface do TFLite; exportação recusada")
     if calibracao is not None:
+        if calibracao.get("schema") == 3 and args.get("quantizacao", "nenhuma") != "nenhuma":
+            raise SystemExit("calibração externa exige float32; quantização altera os logits calibrados")
         conferir_calibracao(calibracao, origem, rotulos)
     corpo = {
         "schema": 1, "modelo": destino.name, "sha256": pv.hash_arquivo(destino),
@@ -623,8 +625,8 @@ def main() -> None:
                     help="pesos aleatórios: valida o toolchain, não gera entrega")
     ap.add_argument(
         "--calibracao", type=Path, default=argparse.SUPPRESS,
-        help="JSON schema 2 experimental de um único fold LOSO, com "
-             "fontes disponíveis e mesmo checkpoint; pool/final recusados",
+        help="JSON experimental schema 2 (um fold LOSO) ou 3 (final externo), "
+             "com fontes disponíveis e mesmo checkpoint; pool recusado",
     )
     args = ap.parse_args()
 
@@ -660,6 +662,8 @@ def main() -> None:
     if calibracao is not None:
         # Antes de criar/converter o TFLite. Repetir no sidecar protege chamadas
         # diretas e mudanças dos arquivos de evidências durante a conversão.
+        if calibracao.get("schema") == 3 and args.quantizacao != "nenhuma":
+            raise SystemExit("calibração externa exige float32; quantização altera os logits calibrados")
         conferir_calibracao(calibracao, origem, rotulos)
     exemplo = entrada_exemplo(args.modo, args.frames, args.pontos,
                               args.layout["dimensoes"])

@@ -28,10 +28,31 @@ checkpoint (`conferir_calibracao`). Ver
 para o histórico dos bugs já corrigidos nesse lado.
 
 **Nada disso foi aprovado como calibração real de entrega** — `aprovado_entrega`
-é sempre `false` hoje, e a calibração é sobre validação LOSO (dados vistos no
-treino do checkpoint que gerou aquele fold), não sobre o conjunto de pessoas
-não vistas montado em
-[`calibracao-naovista-2026-09-14.md`](calibracao-naovista-2026-09-14.md).
+é `false` no caminho descrito. A calibração LOSO usa validação que **não entra
+nos gradientes do próprio fold**, mas **participa da seleção de época** do
+checkpoint desse fold. Não é correto chamá-la de “dados vistos no treino do
+checkpoint” sem essa distinção. O pool LOSO não é calibração do checkpoint
+final nem teste independente; seu caminho de schema 2 permanece preservado.
+
+O [conjunto de 50 clipes](calibracao-naovista-2026-09-14.md) foi preservado por
+decisão do usuário para **calibração explicitamente experimental, sem avaliação
+independente nem aprovação de entrega**, sem buscar novas pessoas nem refazer
+o backbone agora. SupCon é **supervisionado por rótulos** em
+[contrastivo.py](../computer-vision-model/treino/contrastivo.py#L134-L151).
+V03 participou da **seleção de época por recuperação** em
+[pretreinar.py](../computer-vision-model/treino/pretreinar.py#L517-L553): não
+receber gradientes de validação não a torna completamente invisível ao pipeline.
+Os 50 hashes conferidos identificam os arquivos, mas não provam independência
+nem exposição individual de cada arquivo ao pré-treino ou à seleção.
+
+**Implementação externa concluída e validada sinteticamente**, distinta do
+caminho LOSO acima: [calibracao_externa.py](../computer-vision-model/treino/calibracao_externa.py), schema 3, escopo
+`checkpoint_final_experimental`, evidência externa e protocolo a priori com
+`acc_minima` e `cobertura_minima` explícitos e obrigatórios. As métricas serão
+medidas nos mesmos dados de ajuste, **sem teste independente**. Exportação
+experimental limitada a float32 e ao mesmo hash de checkpoint da evidência/calibração;
+atingir as metas não aprova entrega. Não houve inferência/ajuste nos dados reais ou
+integração no app. Ver [procedimento e validação](preparacao-final-e-calibracao-experimental-2026-09-14.md).
 
 ## 2. O que o app lê hoje (Kotlin)
 
