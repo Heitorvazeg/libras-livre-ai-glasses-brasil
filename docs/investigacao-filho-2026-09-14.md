@@ -1,8 +1,12 @@
 # FILHO — investigação descritiva dos vídeos e landmarks
 
-**14/09/2026. Inspeção computacional concluída; causa e revisão visual/linguística
-pendentes.** Escopo autorizado: investigar FILHO, não treinar o final, mudar
-limiares, alterar rótulos, reextrair corpora ou retomar Android.
+**14/09/2026. Frente FILHO definitivamente encerrada por decisão do usuário;
+causa inconclusiva, risco conhecido preservado.** Não há novas ações ou retomada
+previstas nesta frente. O encerramento não significa correção dos erros nem
+aprovação da demo. O usuário informou não ter acesso a profissional de Libras.
+Preservar exemplos, rótulos e risco; não treinar, reextrair ou criar heurísticas
+para FILHO a partir destas observações. O avanço posterior autorizado foi
+corrigir os defeitos de engenharia da calibração, não retomar Android.
 
 ## 1. Evidência e método
 
@@ -114,7 +118,7 @@ partição agora para obter um resultado melhor e chamá-lo de confirmação.
   foram preservados por clipe. A distância entre detectores não é erro contra
   uma anotação de referência, e não foi escolhido limiar para chamá-la de falha.
 
-## 4. Material de revisão e próxima ação específica
+## 4. Material arquivado e roteiro histórico (não executar)
 
 Gerados apenas na área privada:
 
@@ -124,10 +128,25 @@ Gerados apenas na área privada:
   160 contatos de seis frames uniformes e links para vídeos originais completos.
   Abrir no navegador local; mover só a página quebra os links. Sem servidor externo.
 - [Planilha de revisão humana](../experimentos-privados/investigacao-filho-20260914/v1/revisao-humana.csv):
-  IDs/hashes preenchidos, julgamentos humanos **em branco**.
+  inicialmente com julgamentos em branco; posteriormente recebeu **16 anotações
+  de outro agente**, identificado como sem conhecimento de Libras (15 FILHO de
+  M10/M11/M12 e uma VACINA de M10). Não são validação linguística profissional.
+
+As anotações usam principalmente contatos de seis frames, com amostras adicionais
+no primeiro FILHO de cada uma dessas pessoas. Os hashes dos vídeos anotados foram
+conferidos, mas isso não confirma as interpretações visuais nem o pareamento com
+os treinos históricos. A planilha original não foi alterada nesta revisão.
+
+**Cuidado com os intervalos anotados:** `fim` no relatório é a **quantidade de
+frames ausentes após a última detecção**, não o índice da última detecção. Por
+exemplo, M10/FILHO rep02 não tem janela 28–34: a mão direita está presente nos
+índices NPY (base zero, inclusivos) 28, 36–59 e 61. M10/VACINA rep01 não tem
+janela 24–32: são 24, 34–47, 50–55, 60 e 64–66. Sem PTS/alinhamento certificado,
+esses índices não viram limites humanos da articulação.
 
 **Nenhuma revisão visual/linguística foi declarada concluída.** Contatos não
-substituem assistir aos movimentos completos. Ordem recomendada:
+substituem assistir aos movimentos completos. **Roteiro anterior preservado
+apenas como histórico**, cancelado como próxima ação pelo encerramento da frente:
 
 1. FILHO M10, cinco repetições, começando pela 01 (sem lacuna interna): marcar
    início/fim real, observar se a mão está visível durante as bordas sem detecção.
@@ -138,10 +157,10 @@ substituem assistir aos movimentos completos. Ordem recomendada:
 4. Contrastar FILHO com MEDO/APROVEITAR/VACINA da mesma pessoa, sem informar uma
    suposta classe predita por repetição. Não existe esse pareamento histórico.
 
-**Depois dessa revisão**, decidir entre hipóteses de extração, segmentação ou
-representação/realização. Se necessário, uma reextração diagnóstica pequena deve
-preservar PTS e índices originais, gravar em diretório novo e comparar sem
-sobrescrever os NPY. Ainda não executada nem pressuposta como solução.
+O plano anterior previa, após essa revisão, decidir entre hipóteses de extração,
+segmentação ou representação/realização, eventualmente com pequena reextração
+diagnóstica preservando PTS e índices originais. **Plano não executado e
+cancelado como tarefa futura.** Não foi demonstrada uma solução causal.
 
 Mudanças orientadas por estes testes históricos são desenvolvimento. Uma melhora
 nos mesmos casos não substitui nova avaliação independente.
@@ -161,5 +180,7 @@ nos mesmos casos não substitui nova avaliação independente.
 
 **Conclusão desta etapa:** há padrões distintos em M10 e M11. Aumentar imputação,
 cortar bordas, trocar rótulos ou retreinar automaticamente não é justificado
-pelas medidas atuais. O próximo passo é a revisão dirigida dos vídeos, agora
-com material e perguntas concretas, não nova busca de seed.
+pelas medidas atuais. **Não há próximo passo nesta frente: encerramento
+definitivo, sem causa comprovada.** Relatórios, testes, exemplos e rótulos são
+preservados. O risco permanece nos critérios gerais de avaliação da demo,
+sem manter a investigação FILHO como pendência de execução.

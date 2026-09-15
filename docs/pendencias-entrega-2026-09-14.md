@@ -9,10 +9,15 @@ no final. **94 testes passaram**, com dados sintéticos e conversão simulada.
 Ver [parecer atualizado e limites](revisao-calibracao-3e81c3f-2026-09-14.md).
 Infraestrutura corrigida **não significa calibração real do final concluída**.
 
-**Foco solicitado em seguida: investigar FILHO.** A [inspeção descritiva](investigacao-filho-2026-09-14.md)
-dos vídeos/landmarks foi executada sem treino ou reextração. Material privado de
-revisão preparado; causa visual/linguística continua pendente. A ordem geral
-abaixo não autoriza iniciar o treino final enquanto o foco for essa investigação.
+**Frente FILHO definitivamente encerrada por decisão do usuário:**
+[inspeção descritiva](investigacao-filho-2026-09-14.md) concluída, causa inconclusiva.
+Sem retomada prevista ou novas tarefas nesta frente; o risco conhecido continua
+registrado, não corrigido nem convertido em aprovação da demo.
+A planilha recebeu anotações de outro agente sem
+conhecimento de Libras, não validação linguística profissional. Sem acesso a
+especialista, preservar dados/rótulos e risco conhecido, sem reextração ou
+heurística corretiva. O avanço autorizado nesta etapa foi corrigir calibração,
+não iniciar treino final ou retomar Android.
 
 **O trabalho experimental foi preservado em commits locais; Android está pausado.**
 Sem push, merge adicional, novo treino real ou substituição de modelos do app.
@@ -28,6 +33,8 @@ abaixo; suas hipóteses antigas não devem ser usadas como instruções de execu
 
 ### Ordem a partir daqui
 
+Sequência futura, **não autorização de execução nesta frente**:
+
 1. Produzir um único candidato final conforme P1, quando for iniciada a execução
   longa; não comparar sementes pela acurácia no treino.
 2. Tratar calibração e ensaios do roteiro como avaliação separada, com pessoas
@@ -37,8 +44,9 @@ abaixo; suas hipóteses antigas não devem ser usadas como instruções de execu
   etapa específica de integração; sua ausência não bloqueia as decisões acima.
 
 Não encerrar como resolvidos a calibração, o reconhecimento da frase nos óculos,
-o treino/export do final ou a investigação visual dos erros de M10/M11/M12.
-São os limites reais restantes, não justificativa para ampliar o escopo agora.
+ou o treino/export do final. A investigação FILHO saiu das pendências por
+encerramento definitivo, não por resolução dos erros de M10/M11/M12.
+Esses limites não justificam ampliar o escopo agora.
 
 ### Marco local preservado
 
