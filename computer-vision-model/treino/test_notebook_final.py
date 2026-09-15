@@ -1,7 +1,8 @@
-"""Contrato estático do notebook; nunca executa células nem acessa rede/GPU."""
+"""Contrato e descoberta isolada de pastas; sem executar células, rede ou GPU."""
 import ast
 import json
 from pathlib import Path
+import tempfile
 import unittest
 
 
@@ -40,6 +41,53 @@ class TestNotebookFinal(unittest.TestCase):
         self.assertIn("manifesto_referencia=INVENTARIO_CAMINHO", fonte)
         self.assertIn('executar("test_politica_final.py"', fonte)
         self.assertNotIn('"merge"', fonte)
+
+    def _descobrir_minds(self, raiz, *, explicita=None, kaggle=True):
+        # Executar somente o bloco de descoberta extraído do código real.
+        # Não importar dependências do treino nem executar a célula inteira.
+        blocos = [n for arvore in self.arvores for n in arvore.body
+                  if isinstance(n, ast.If) and isinstance(n.test, ast.BoolOp)
+                  and any(isinstance(v, ast.Name) and v.id == "EM_KAGGLE"
+                          for v in n.test.values)]
+        self.assertEqual(len(blocos), 1)
+        contexto = {"RAIZ_INPUT": raiz, "EM_KAGGLE": kaggle, "ORIGEM_MINDS": explicita}
+        exec(compile(ast.Module(body=blocos, type_ignores=[]), "<descoberta-minds>", "exec"), contexto)
+        return contexto["ORIGEM_MINDS"]
+
+    def test_hierarquia_kaggle_tres_corpora(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            raiz = Path(tmp)
+            dataset = raiz / "nome-privado-arbitrario"
+            minds = dataset / "landmarks-minds" / "landmarks"
+            pastas = [minds, dataset / "landmarks-malta" / "ladmarks-malta",
+                      dataset / "landmarks-vlibrasil" / "landmarks-pretreino-auditado",
+                      raiz / "outro-input" / "landmarks"]
+            for pasta in pastas:
+                pasta.mkdir(parents=True)
+                (pasta / "preservar.npy").write_bytes(b"fixture-descoberta")
+            antes = {p.relative_to(raiz): p.read_bytes() for p in raiz.rglob("*.npy")}
+            for _ in range(2):
+                self.assertEqual(self._descobrir_minds(raiz), minds)
+            self.assertEqual(antes, {p.relative_to(raiz): p.read_bytes()
+                                     for p in raiz.rglob("*.npy")})
+
+    def test_hierarquia_ambigua_exige_origem_explicita(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            raiz = Path(tmp)
+            for dataset in ("primeiro", "segundo"):
+                (raiz / dataset / "landmarks-minds" / "landmarks").mkdir(parents=True)
+            with self.assertRaisesRegex(RuntimeError, "Mais de uma pasta MINDS"):
+                self._descobrir_minds(raiz)
+            explicita = raiz / "segundo" / "landmarks-minds" / "landmarks"
+            self.assertEqual(self._descobrir_minds(raiz, explicita=explicita), explicita)
+
+    def test_sem_hierarquia_preserva_descoberta_legada_e_modo_local(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            raiz = Path(tmp)
+            (raiz / "landmarks").mkdir()
+            self.assertIsNone(self._descobrir_minds(raiz))
+            (raiz / "landmarks-minds" / "landmarks").mkdir(parents=True)
+            self.assertIsNone(self._descobrir_minds(raiz, kaggle=False))
 
 
 if __name__ == "__main__":
