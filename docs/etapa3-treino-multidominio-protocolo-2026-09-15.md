@@ -103,3 +103,19 @@ O pacote e a derivação do [manifesto de extras](../computer-vision-model/trein
 foram conferidos localmente: 42 arquivos, sete pessoas, 17 classes; hashes de
 todos os membros correspondem ao manifesto, sem clipes adicionais no pacote.
 Isso verifica integridade, não autorização de redistribuição nem validação linguística.
+
+## Validação da preparação — 15/09/2026
+
+- **20 testes específicos aprovados**: manifesto, entrada NPY estrita,
+  preprocessamento igual ao loader existente, augmentação própria por cópia,
+  inventário combinado no checkpoint, recusa de calibração sobre pessoas/bytes
+  treinados e argumentos das variantes do notebook.
+- **192 testes na regressão combinada, todos aprovados** (46,992 s), incluindo
+  entrada final, política da última época, evidências LOSO, calibração externa,
+  contrato de exportação e fixtures de paridade. Ambiente numérico existente:
+  Python 3.12; dados/checkpoints sintéticos em diretórios temporários.
+- Notebook validado por parsing e execução isolada dos blocos de argumentos;
+  nenhuma célula completa de treino foi executada. Esses testes não equivalem
+  a execução em CUDA nem demonstram ganho de acurácia da candidata.
+- Esta validação inclui as alterações locais das células 8 e 10. Elas também
+  precisam entrar no snapshot publicado; não basta publicar apenas o CLI.
