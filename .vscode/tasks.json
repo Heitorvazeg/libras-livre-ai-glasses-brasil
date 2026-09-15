@@ -1,0 +1,22 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"label": "LIBRAS: validar coleta de lacunas",
+			"type": "shell",
+			"command": "/home/walisson/libras-livre-ai-glasses-brasil/.venv/bin/python",
+			"args": [
+				"-u",
+				"scripts/download_libras_gap_videos.py",
+				"--words",
+				"'por favor'",
+				"porque",
+				"esperar",
+				"--max-attempts",
+				"3"
+			],
+			"isBackground": false,
+			"problemMatcher": []
+		}
+	]
+}
