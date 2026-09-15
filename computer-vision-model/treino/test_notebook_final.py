@@ -32,9 +32,13 @@ class TestNotebookFinal(unittest.TestCase):
                             ("--semente", "20260917"), ("--kernel-temporal", "9"),
                             ("--workers", "2"), ("--fontes", "minds")):
             self.assertEqual(literais[literais.index(flag)+1], valor)
-        for flag in ("--movimento", "--sem-imputacao", "--adjacencia-adaptativa", "--salvar-evidencias"):
+        for flag in ("--movimento", "--sem-imputacao", "--adjacencia-adaptativa", "--salvar-evidencias",
+                     "--aug-dominio"):
             self.assertNotIn(flag, literais)
         fonte = "\n".join(self.fontes)
+        self.assertIn('AUG_DOMINIO = os.environ.get("LIBRAS_AUG_DOMINIO", "0") == "1"', fonte)
+        self.assertIn('if AUG_DOMINIO:\n    FINAL_ARGS.append("--aug-dominio")', fonte)
+        self.assertIn('get("aug_dominio", False)) != AUG_DOMINIO', fonte)
         self.assertIn('os.environ.get("LIBRAS_COMMIT_FINAL", "")', fonte)
         self.assertIn('"checkout", "--detach", COMMIT_APROVADO', fonte)
         self.assertIn("entrada_final.preparar_minds", fonte)

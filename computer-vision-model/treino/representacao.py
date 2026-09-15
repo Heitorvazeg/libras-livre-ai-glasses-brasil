@@ -128,6 +128,58 @@ def aumentar(seq: np.ndarray, rng: np.random.Generator,
     return fora
 
 
+CHANCE_AMPLITUDE = 0.5
+FAIXA_AMPLITUDE = (0.60, 1.05)
+CHANCE_REPOUSO = 0.5
+# (pulso, cotovelo, bloco da mão) no vetor [pose 15 | mão esq 21 | mão dir 21].
+_BRACOS = ((11, 9, (15, 36)), (12, 10, (36, 57)))
+
+
+def frames_parados(seq: np.ndarray) -> tuple[int, int]:
+    """Frames parados no início e no fim: pulsos abaixo de 20% da velocidade máxima."""
+    v = np.maximum(np.linalg.norm(np.diff(seq[:, 11, :2], axis=0), axis=1),
+                   np.linalg.norm(np.diff(seq[:, 12, :2], axis=0), axis=1))
+    if len(v) >= 5:
+        v = np.convolve(v, np.ones(3) / 3, mode="same")
+    if len(v) == 0 or v.max() <= 0:
+        return 0, 0
+    ativos = np.flatnonzero(v > 0.2 * v.max())
+    return int(ativos[0]), int(len(v) - 1 - ativos[-1])
+
+
+def escalar_amplitude(seq: np.ndarray, k: float) -> np.ndarray:
+    """Encolhe ou amplia a trajetória dos braços em torno do pulso médio do clipe.
+
+    O cotovelo desloca metade do pulso e a mão detectada acompanha o pulso sem
+    mudar de forma; blocos de mão ausentes continuam exatamente zerados.
+    """
+    fora = seq.copy()
+    for pulso, cotovelo, (a, b) in _BRACOS:
+        centro = fora[:, pulso, :2].mean(axis=0)
+        delta = (k - 1.0) * (fora[:, pulso, :2] - centro)
+        fora[:, pulso, :2] += delta
+        fora[:, cotovelo, :2] += 0.5 * delta
+        presente = np.abs(seq[:, a:b, :2]).sum(axis=(1, 2)) > 0
+        fora[presente, a:b, :2] += delta[presente, None, :]
+    return fora
+
+
+def aumentar_dominio(seq: np.ndarray, rng: np.random.Generator) -> np.ndarray:
+    """Variações medidas entre MINDS e corpora externos: repouso e amplitude."""
+    if seq.shape[1] != 57:
+        raise ValueError(f"aumentar_dominio exige 57 pontos por frame, veio {seq.shape[1]}")
+    fora = seq
+    if rng.random() < CHANCE_REPOUSO:
+        ini, fim = frames_parados(fora)
+        corte_ini = int(rng.integers(0, ini + 1))
+        corte_fim = int(rng.integers(0, fim + 1))
+        if len(fora) - corte_ini - corte_fim >= 3:
+            fora = fora[corte_ini:len(fora) - corte_fim]
+    if rng.random() < CHANCE_AMPLITUDE:
+        fora = escalar_amplitude(fora, rng.uniform(*FAIXA_AMPLITUDE))
+    return fora
+
+
 def permutacao_espelho(nomes_pose: list[str], n_mao: int = 21) -> np.ndarray:
     """Índices que trocam esquerda<->direita no vetor de pontos do frame.
 

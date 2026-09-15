@@ -4,10 +4,10 @@
   "avaliacao_independente": false,
   "aprovado_entrega": false,
   "exposicao_previa": "pessoas_expostas_ao_pre_treino_ou_selecao",
-  "descricao": "Conjunto de 50 clipes preservados para calibração explicitamente experimental: V-LIBRASIL V01-V03 + MALTA, 10 pessoas e as 20 classes do MINDS. Sem avaliação independente nem aprovação de entrega. SupCon é supervisionado por rótulos em contrastivo.py; V03 participou da seleção de época por recuperação em pretreinar.py, portanto não é pessoa completamente invisível ao pipeline. As demais pessoas pertencem ao conjunto de pré-treino, sem que isso comprove a participação individual de cada arquivo em gradientes. Decisão: preservar o trabalho existente, sem buscar novas pessoas nem refazer o backbone agora.",
-  "gerado_em": "2026-09-14",
-  "n_clipes": 50,
-  "n_pessoas": 10,
+  "descricao": "Conjunto de calibração explicitamente experimental, ampliado em 2026-09-15: V-LIBRASIL (V01-V03, 10 classes) + MALTA (agora nas 20 classes do MINDS, não só nas 10 complementares ao V-LIBRASIL). Sem download, reextração ou review linguística nova — mesmos .npy já extraídos em landmarks/ e landmarks-malta/. O nome histórico do arquivo não significa pessoas completamente não vistas pelo pipeline (ver limites).",
+  "gerado_em": "2026-09-15",
+  "n_clipes": 70,
+  "n_pessoas": 11,
   "pessoas": [
     "T002",
     "T042",
@@ -16,6 +16,7 @@
     "T048",
     "T050",
     "TUFS",
+    "TUFV",
     "V01",
     "V02",
     "V03"
@@ -44,6 +45,8 @@
   ],
   "pessoas_por_classe": {
     "acontecer": [
+      "TUFS",
+      "TUFV",
       "V01",
       "V02",
       "V03"
@@ -52,6 +55,8 @@
       "TUFS"
     ],
     "amarelo": [
+      "T002",
+      "TUFS",
       "V01",
       "V02",
       "V03"
@@ -72,11 +77,16 @@
       "TUFS"
     ],
     "banheiro": [
+      "T002",
+      "T042",
+      "T048",
       "V01",
       "V02",
       "V03"
     ],
     "barulho": [
+      "T002",
+      "TUFS",
       "V01",
       "V02",
       "V03"
@@ -92,6 +102,8 @@
       "T048"
     ],
     "espelho": [
+      "T002",
+      "TUFS",
       "V01",
       "V02",
       "V03"
@@ -101,26 +113,35 @@
       "TUFS"
     ],
     "filho": [
+      "T002",
+      "TUFS",
+      "TUFV",
       "V01",
       "V02",
       "V03"
     ],
     "maca": [
+      "T002",
       "V01",
       "V02",
       "V03"
     ],
     "medo": [
+      "T002",
+      "T042",
       "V01",
       "V02",
       "V03"
     ],
     "ruim": [
+      "TUFS",
       "V01",
       "V02",
       "V03"
     ],
     "sapo": [
+      "T002",
+      "TUFS",
       "V01",
       "V02",
       "V03"
@@ -135,16 +156,31 @@
     ]
   },
   "limites": [
-    "1-3 repetições por pessoa/classe (MINDS LOSO usa 5) — não tem poder estatístico para métricas por classe, só para checagem grosseira.",
-    "Corpus diferente do MINDS (câmera, enquadramento, população de sinalizantes) — análise experimental entre domínios, não medição independente de generalização nem representação da distribuição do app.",
-    "SupCon usa rótulos para definir pares positivos. V03 foi validação para seleção de época por recuperação, sem gradientes dessa validação, mas não invisível ao pipeline. Não há subconjunto 100% independente demonstrado neste manifesto.",
-    "Os 50 hashes conferidos identificam arquivos; não provam independência nem exposição individual de cada arquivo ao pré-treino ou à seleção. Exposição das pessoas não comprova participação de todos os seus clipes em gradientes.",
-    "A validação LOSO não entra nos gradientes do próprio fold, mas participa da seleção de época. O pool LOSO continua restrito à análise de schema 2, sem transferência para o checkpoint final.",
-    "Caminho externo em preparação pelo agente principal em calibracao_externa.py: schema 3, escopo checkpoint_final_experimental, evidência externa e protocolo a priori com acc_minima e cobertura_minima explícitos e obrigatórios. Sem definir aqui outro formato ou valores de metas.",
-    "As métricas serão medidas nos mesmos dados usados no ajuste, sem teste independente; atingir metas não aprova entrega. Exportação experimental limitada ao mesmo hash de checkpoint da evidência/calibração.",
-    "Este manifesto preserva o conjunto e registra limites; não anuncia inferência, métricas reais, implementação concluída ou entrega. O uso depende de checkpoint final disponível e do caminho externo implementado, sem autorizar treino, novos dados ou retreino nesta frente."
+    "1-3 repetições por pessoa/classe (MINDS LOSO usa 5) — poder estatístico baixo por classe, mesmo ampliado.",
+    "Corpus diferente do MINDS (câmera, enquadramento, população de sinalizantes) — análise experimental entre domínios, não medição independente de generalização nem representação da câmera dos óculos.",
+    "SupCon é supervisionado por rótulos (contrastivo.py); a maioria das pessoas pertence ao conjunto de pré-treino, o que não equivale a demonstrar que cada arquivo específico participou de gradientes. V03 participou da seleção de época por recuperação (pretreinar.py) — não é 100% invisível ao pipeline.",
+    "Hashes identificam os arquivos, não provam independência nem exposição individual de cada clipe ao pré-treino ou à seleção.",
+    "Ainda experimental: sem avaliação independente, sem aprovação de entrega. Resultado anterior (2026-09-15, protocolo acc_minima=0.90/cobertura_minima=0.50) não atingiu a meta com os 50 clipes originais; este manifesto ampliado ainda não foi usado numa nova inferência."
   ],
   "itens": [
+    {
+      "classe": "acontecer",
+      "pessoa": "TUFS",
+      "corpus": "malta",
+      "arquivo": "PoC/data/landmarks-malta/pessoaTUFS_sinal-acontecer_rep01.npy",
+      "sha256": "168738666054c4965c4894b8293c70f4cdf2f2155ccc29d7d8982f366dadd547",
+      "proveniencia": "Malta-Lab/ISLR_LIBRAS",
+      "observacao": null
+    },
+    {
+      "classe": "acontecer",
+      "pessoa": "TUFV",
+      "corpus": "malta",
+      "arquivo": "PoC/data/landmarks-malta/pessoaTUFV_sinal-acontecer_rep01.npy",
+      "sha256": "9ea5e4166980c6e4a31c64082fd62ca2748c9801257a617d330a9fb0ad26e754",
+      "proveniencia": "Malta-Lab/ISLR_LIBRAS",
+      "observacao": null
+    },
     {
       "classe": "acontecer",
       "pessoa": "V01",
@@ -178,6 +214,24 @@
       "corpus": "malta",
       "arquivo": "PoC/data/landmarks-malta/pessoaTUFS_sinal-aluno_rep01.npy",
       "sha256": "28fa66c94a9a1b140d70975bc8f9bebb872f3e31524898a6878bf2a3eaeba93f",
+      "proveniencia": "Malta-Lab/ISLR_LIBRAS",
+      "observacao": null
+    },
+    {
+      "classe": "amarelo",
+      "pessoa": "T002",
+      "corpus": "malta",
+      "arquivo": "PoC/data/landmarks-malta/pessoaT002_sinal-amarelo_rep01.npy",
+      "sha256": "79157af9635568dd9313a887a79752ce7360b6e12902109dc957e769cc91a481",
+      "proveniencia": "Malta-Lab/ISLR_LIBRAS",
+      "observacao": null
+    },
+    {
+      "classe": "amarelo",
+      "pessoa": "TUFS",
+      "corpus": "malta",
+      "arquivo": "PoC/data/landmarks-malta/pessoaTUFS_sinal-amarelo_rep01.npy",
+      "sha256": "e0f854aa75919a5c410dfb74531fad2e9c4c876c556752c05f4652207016e296",
       "proveniencia": "Malta-Lab/ISLR_LIBRAS",
       "observacao": null
     },
@@ -273,6 +327,33 @@
     },
     {
       "classe": "banheiro",
+      "pessoa": "T002",
+      "corpus": "malta",
+      "arquivo": "PoC/data/landmarks-malta/pessoaT002_sinal-banheiro_rep01.npy",
+      "sha256": "4d92f5e98f5f739499607cdb82aa1826faf12deef222475bda0311c96224d300",
+      "proveniencia": "Malta-Lab/ISLR_LIBRAS",
+      "observacao": null
+    },
+    {
+      "classe": "banheiro",
+      "pessoa": "T042",
+      "corpus": "malta",
+      "arquivo": "PoC/data/landmarks-malta/pessoaT042_sinal-banheiro_rep01.npy",
+      "sha256": "7c52f2c319ffeffdbf704e50ed34a0be6e7e7d4194f1e085b3d75249fcb0a85e",
+      "proveniencia": "Malta-Lab/ISLR_LIBRAS",
+      "observacao": null
+    },
+    {
+      "classe": "banheiro",
+      "pessoa": "T048",
+      "corpus": "malta",
+      "arquivo": "PoC/data/landmarks-malta/pessoaT048_sinal-banheiro_rep01.npy",
+      "sha256": "b614341cb9257ee409cf36e38985ddd18b8f7d6186a8ec2da8ec80b191b1c0f1",
+      "proveniencia": "Malta-Lab/ISLR_LIBRAS",
+      "observacao": null
+    },
+    {
+      "classe": "banheiro",
       "pessoa": "V01",
       "corpus": "vlibrasil",
       "arquivo": "PoC/data/landmarks/pessoaV01_sinal-banheiro_rep01.npy",
@@ -297,6 +378,24 @@
       "sha256": "aecb8c927a0feb4c6058422d4706d7e928d22c0d08c870d8ea4701d892c0b745",
       "proveniencia": null,
       "observacao": "sem sidecar .proveniencia.json nesta pasta; hash calculado diretamente pelo agente em 2026-09-14"
+    },
+    {
+      "classe": "barulho",
+      "pessoa": "T002",
+      "corpus": "malta",
+      "arquivo": "PoC/data/landmarks-malta/pessoaT002_sinal-barulho_rep01.npy",
+      "sha256": "b9332013657b3feb4a1779e64523a35ce178127296f1de194f435bfa412e5465",
+      "proveniencia": "Malta-Lab/ISLR_LIBRAS",
+      "observacao": null
+    },
+    {
+      "classe": "barulho",
+      "pessoa": "TUFS",
+      "corpus": "malta",
+      "arquivo": "PoC/data/landmarks-malta/pessoaTUFS_sinal-barulho_rep01.npy",
+      "sha256": "c58ee704d45da4e3f125c0c79cebb351ca951c452d452c1347ea53f2be60c39d",
+      "proveniencia": "Malta-Lab/ISLR_LIBRAS",
+      "observacao": null
     },
     {
       "classe": "barulho",
@@ -381,6 +480,24 @@
     },
     {
       "classe": "espelho",
+      "pessoa": "T002",
+      "corpus": "malta",
+      "arquivo": "PoC/data/landmarks-malta/pessoaT002_sinal-espelho_rep01.npy",
+      "sha256": "69a5ed4b12e04d5724b9f035b5adaa62de51e15af3d8098dfbd58e703d469334",
+      "proveniencia": "Malta-Lab/ISLR_LIBRAS",
+      "observacao": null
+    },
+    {
+      "classe": "espelho",
+      "pessoa": "TUFS",
+      "corpus": "malta",
+      "arquivo": "PoC/data/landmarks-malta/pessoaTUFS_sinal-espelho_rep01.npy",
+      "sha256": "54e7e060d5f505fb659c4b6232d75772d237c33e72e68af2ff37cf51f60e6471",
+      "proveniencia": "Malta-Lab/ISLR_LIBRAS",
+      "observacao": null
+    },
+    {
+      "classe": "espelho",
       "pessoa": "V01",
       "corpus": "vlibrasil",
       "arquivo": "PoC/data/landmarks/pessoaV01_sinal-espelho_rep01.npy",
@@ -426,6 +543,33 @@
     },
     {
       "classe": "filho",
+      "pessoa": "T002",
+      "corpus": "malta",
+      "arquivo": "PoC/data/landmarks-malta/pessoaT002_sinal-filho_rep01.npy",
+      "sha256": "a432ac37de1050fe9a76ff59a40ef46f34b3e352622c7c03f8b8462876310a94",
+      "proveniencia": "Malta-Lab/ISLR_LIBRAS",
+      "observacao": null
+    },
+    {
+      "classe": "filho",
+      "pessoa": "TUFS",
+      "corpus": "malta",
+      "arquivo": "PoC/data/landmarks-malta/pessoaTUFS_sinal-filho_rep01.npy",
+      "sha256": "73b3ba483f9748aeb7419b6326e5c45a391e86588b5ae63a0065a63b7a4606b5",
+      "proveniencia": "Malta-Lab/ISLR_LIBRAS",
+      "observacao": null
+    },
+    {
+      "classe": "filho",
+      "pessoa": "TUFV",
+      "corpus": "malta",
+      "arquivo": "PoC/data/landmarks-malta/pessoaTUFV_sinal-filho_rep01.npy",
+      "sha256": "ddb96d0aa0348d87f178694eca7b425a39cae9c595dd80eef9a61c979983c876",
+      "proveniencia": "Malta-Lab/ISLR_LIBRAS",
+      "observacao": null
+    },
+    {
+      "classe": "filho",
       "pessoa": "V01",
       "corpus": "vlibrasil",
       "arquivo": "PoC/data/landmarks/pessoaV01_sinal-filho_rep01.npy",
@@ -450,6 +594,15 @@
       "sha256": "66df7293aa8ed635b4104c33e5405addf19579c86e741a49ef52ce2df185c7b0",
       "proveniencia": null,
       "observacao": "sem sidecar .proveniencia.json nesta pasta; hash calculado diretamente pelo agente em 2026-09-14"
+    },
+    {
+      "classe": "maca",
+      "pessoa": "T002",
+      "corpus": "malta",
+      "arquivo": "PoC/data/landmarks-malta/pessoaT002_sinal-maca_rep01.npy",
+      "sha256": "99858176b49eb15d7a66092c521ee550b08bbc058ca0be759f47afea6e6c463e",
+      "proveniencia": "Malta-Lab/ISLR_LIBRAS",
+      "observacao": null
     },
     {
       "classe": "maca",
@@ -480,6 +633,24 @@
     },
     {
       "classe": "medo",
+      "pessoa": "T002",
+      "corpus": "malta",
+      "arquivo": "PoC/data/landmarks-malta/pessoaT002_sinal-medo_rep01.npy",
+      "sha256": "fc0be69d6ab8ba08872b3c47766a32073f2fcdc702aad0c55a7fa7f0867ac2aa",
+      "proveniencia": "Malta-Lab/ISLR_LIBRAS",
+      "observacao": null
+    },
+    {
+      "classe": "medo",
+      "pessoa": "T042",
+      "corpus": "malta",
+      "arquivo": "PoC/data/landmarks-malta/pessoaT042_sinal-medo_rep01.npy",
+      "sha256": "cc09562ff5a2cf2728581e6f5107ceb55b2ae738a20afe4c2eb01c819daa8822",
+      "proveniencia": "Malta-Lab/ISLR_LIBRAS",
+      "observacao": null
+    },
+    {
+      "classe": "medo",
       "pessoa": "V01",
       "corpus": "vlibrasil",
       "arquivo": "PoC/data/landmarks/pessoaV01_sinal-medo_rep01.npy",
@@ -507,6 +678,15 @@
     },
     {
       "classe": "ruim",
+      "pessoa": "TUFS",
+      "corpus": "malta",
+      "arquivo": "PoC/data/landmarks-malta/pessoaTUFS_sinal-ruim_rep01.npy",
+      "sha256": "7956ab303c9572959a9e0cfccede6313fc6d5848d7732f37bde26d67d5d50645",
+      "proveniencia": "Malta-Lab/ISLR_LIBRAS",
+      "observacao": null
+    },
+    {
+      "classe": "ruim",
       "pessoa": "V01",
       "corpus": "vlibrasil",
       "arquivo": "PoC/data/landmarks/pessoaV01_sinal-ruim_rep01.npy",
@@ -531,6 +711,24 @@
       "sha256": "c903c9f43f7a57805e0f37079707e2f4cf13bb2a6be5b0d71f2dab38320e86d0",
       "proveniencia": null,
       "observacao": "sem sidecar .proveniencia.json nesta pasta; hash calculado diretamente pelo agente em 2026-09-14"
+    },
+    {
+      "classe": "sapo",
+      "pessoa": "T002",
+      "corpus": "malta",
+      "arquivo": "PoC/data/landmarks-malta/pessoaT002_sinal-sapo_rep01.npy",
+      "sha256": "915b84350379146d221c096af9ad4043d629aa5a20e50f7699177391831bf9b4",
+      "proveniencia": "Malta-Lab/ISLR_LIBRAS",
+      "observacao": null
+    },
+    {
+      "classe": "sapo",
+      "pessoa": "TUFS",
+      "corpus": "malta",
+      "arquivo": "PoC/data/landmarks-malta/pessoaTUFS_sinal-sapo_rep01.npy",
+      "sha256": "35d1063390fb8443043c88cce41b955cac994b4b9bb3ad000e9e900d9e890835",
+      "proveniencia": "Malta-Lab/ISLR_LIBRAS",
+      "observacao": null
     },
     {
       "classe": "sapo",
@@ -595,5 +793,76 @@
       "proveniencia": "Malta-Lab/ISLR_LIBRAS",
       "observacao": null
     }
-  ]
+  ],
+  "divisao_pessoas": {
+    "fixada_em": "2026-09-15",
+    "regra": "Pessoas de 'avaliacao' não entram em treino, ajuste de temperatura/limiar nem em decisões de projeto a partir desta data. Todas as 11 pessoas já passaram pelos diagnósticos de 15/09 e pelo pré-treino contrastivo; a divisão protege daqui para frente, não é conjunto limpo.",
+    "avaliacao": {
+      "pessoas": [
+        "T048",
+        "T050",
+        "TUFS",
+        "V03"
+      ],
+      "n_clipes": 28,
+      "classes": [
+        "acontecer",
+        "aluno",
+        "amarelo",
+        "america",
+        "aproveitar",
+        "bala",
+        "banco",
+        "banheiro",
+        "barulho",
+        "cinco",
+        "conhecer",
+        "espelho",
+        "esquina",
+        "filho",
+        "maca",
+        "medo",
+        "ruim",
+        "sapo",
+        "vacina",
+        "vontade"
+      ]
+    },
+    "treino_externo": {
+      "pessoas": [
+        "T002",
+        "T042",
+        "T044",
+        "T045",
+        "TUFV",
+        "V01",
+        "V02"
+      ],
+      "n_clipes": 42,
+      "classes": [
+        "acontecer",
+        "amarelo",
+        "america",
+        "bala",
+        "banheiro",
+        "barulho",
+        "cinco",
+        "conhecer",
+        "espelho",
+        "esquina",
+        "filho",
+        "maca",
+        "medo",
+        "ruim",
+        "sapo",
+        "vacina",
+        "vontade"
+      ],
+      "classes_sem_exemplo": [
+        "aluno",
+        "aproveitar",
+        "banco"
+      ]
+    }
+  }
 }

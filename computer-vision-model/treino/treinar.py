@@ -48,8 +48,9 @@ class DatasetSinais(Dataset):
     def __init__(self, clipes: list[dd.Clipe], rotulos: list[str],
                  permutacao: np.ndarray | None, aumentar: bool, semente: int = 0,
                  arquitetura: str = "resnet", ossos: bool = False,
-                 movimento: bool = False, rodada: int = 0):
+                 movimento: bool = False, rodada: int = 0, aug_dominio: bool = False):
         self.arquitetura = arquitetura
+        self.aug_dominio = aug_dominio
         self.rodada = rodada
         self.epoca = 0
         # Árvore calculada uma vez, não por item: é a mesma para todos os clipes.
@@ -67,6 +68,10 @@ class DatasetSinais(Dataset):
     def __getitem__(self, i: int):
         clipe = self.clipes[i]
         seq = clipe.seq
+        if self.aumentar and self.aug_dominio:
+            # Gerador separado: ligar a flag não altera os sorteios de `rp.aumentar`.
+            rng_dom = np.random.default_rng([self.semente, self.rodada, self.epoca, i, 1])
+            seq = rp.aumentar_dominio(seq, rng_dom)
         # Validade vem do clipe CRU, antes de qualquer augmentação. `maos_ausentes`
         # detecta ausência por "bloco exatamente zerado", e `rp.aumentar` soma ruído
         # gaussiano em x,y — depois dela nenhum bloco é exatamente zero e a máscara
@@ -112,10 +117,10 @@ class DatasetSinais(Dataset):
 
 def _loader(clipes, rotulos, permutacao, aumentar, batch, workers, embaralhar,
             arquitetura="resnet", ossos=False, movimento=False,
-            semente=0, rodada=0):
+            semente=0, rodada=0, aug_dominio=False):
     ds = DatasetSinais(clipes, rotulos, permutacao, aumentar, semente=semente,
                        arquitetura=arquitetura, ossos=ossos, movimento=movimento,
-                       rodada=rodada)
+                       rodada=rodada, aug_dominio=aug_dominio)
     # Gerador PRÓPRIO, não o RNG global. O global é consumido pela construção do
     # modelo, e variantes com contagens de parâmetros diferentes o deixam em
     # estados diferentes — a ordem dos lotes deixaria de ser comparável entre
@@ -310,7 +315,8 @@ def treinar_rodada(treino, validacao, teste, rotulos, permutacao, args, disposit
     mov = bool(getattr(args, "movimento", False)) and arq == "gcn"
     sem = int(getattr(args, "semente", None) or 0)
     l_treino = _loader(treino, rotulos, permutacao, True, args.batch, args.workers, True,
-                       arq, ossos, mov, sem, rodada)
+                       arq, ossos, mov, sem, rodada,
+                       aug_dominio=bool(getattr(args, "aug_dominio", False)))
     l_val = None if final_fixo else _loader(validacao, rotulos, None, False, args.batch, args.workers, False,
                                            arq, ossos, mov, sem, rodada)
     l_teste = None if final_fixo else _loader(teste, rotulos, None, False, args.batch, args.workers, False,
@@ -489,6 +495,9 @@ def main() -> None:
     ap.add_argument("--sem-imputacao", action="store_true",
                     help="desliga o preenchimento de lacunas curtas de mão — existe para "
                          "medir o efeito da imputação contra o mesmo pipeline sem ela")
+    ap.add_argument("--aug-dominio", action="store_true", default=argparse.SUPPRESS,
+                    help="augmentação de domínio no treino: corte do repouso inicial/final e "
+                         "amplitude da trajetória dos braços (docs/etapa2-augmentacao-dominio-protocolo-2026-09-15.md)")
     ap.add_argument("--epocas", type=int, default=30)
     ap.add_argument("--lr", type=float, default=1e-4)
     ap.add_argument("--wd", type=float, default=1e-4)

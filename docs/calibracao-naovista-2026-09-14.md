@@ -1,13 +1,41 @@
 # Conjunto de calibração explicitamente experimental — 2026-09-14
 
+## Atualização 2026-09-15 — manifesto ampliado para 70 clipes
+
+Depois da primeira tentativa real de calibração com os 50 clipes originais
+não atingir o protocolo pré-registrado (acc_minima 0,90/cobertura_minima
+0,50 — ver [`exportacao-e-calibracao-final-s20260917-v1-2026-09-15.md`](exportacao-e-calibracao-final-s20260917-v1-2026-09-15.md)),
+o manifesto foi ampliado: o MALTA já tinha clipes extraídos para as 10
+classes que antes só vinham do V-LIBRASIL, e não estavam sendo usados. Sem
+download, reextração ou revisão linguística nova — mesmos `.npy` já em
+`landmarks-malta/`. **70 clipes, 11 pessoas** (nova: `TUFV`). O manifesto
+antigo (50 clipes) e sua `manifesto_sha256` continuam corretos como
+referência do resultado de 15/09 já documentado — não foram reescritos
+retroativamente; este é um manifesto novo para a próxima tentativa.
+
+## Divisão por pessoa — fixada em 2026-09-15
+
+Registrada em `divisao_pessoas` no manifesto.
+
+| grupo | pessoas | clipes | classes |
+|---|---|---:|---|
+| **avaliação** | V03, TUFS, T048, T050 | 28 | as 20 |
+| **treino externo** | T002, T042, T044, T045, TUFV, V01, V02 | 42 | 17 (sem aluno, aproveitar, banco) |
+
+Regra: a partir de 15/09, as pessoas de avaliação não entram em treino, em
+ajuste de temperatura ou limiar, nem em decisões de projeto. As 11 pessoas já
+passaram pelos diagnósticos de 15/09 e pelo pré-treino contrastivo, então isto
+protege daqui para frente; não é um conjunto limpo. Com 28 clipes, um clipe vale
+3,6 pp e a margem de incerteza é da ordem de ±18 pp.
+
 ## O que é
 
-Por decisão do usuário, ficam **preservados os 50 clipes já extraídos**, fruto
-de dias de trabalho, cobrindo as **20 classes do MINDS** e **10 pessoas**:
-V-LIBRASIL (V01, V02, V03) e MALTA (T002, T042, T044, T045, T048, T050, TUFS).
-O uso autorizado é **calibração explicitamente experimental, sem avaliação
-independente nem aprovação de entrega**. Não buscar novas pessoas nem refazer
-o backbone agora. Isso delimita o item 2 da
+Por decisão do usuário, ficam **preservados os clipes já extraídos**, fruto
+de dias de trabalho, cobrindo as **20 classes do MINDS** e, após a ampliação
+acima, **11 pessoas**: V-LIBRASIL (V01, V02, V03) e MALTA (T002, T042, T044,
+T045, T048, T050, TUFS, TUFV). O uso autorizado é **calibração explicitamente
+experimental, sem avaliação independente nem aprovação de entrega**. Não
+buscar novas pessoas nem refazer o backbone agora. Isso delimita o item 2 da
 [ordem vigente](pendencias-entrega-2026-09-14.md), sem resolver os requisitos de entrega.
 O [manifesto](../computer-vision-model/treino/calibracao_naovista_manifesto.json)
 preserva itens, nomes, hashes e contagens; o nome histórico do arquivo não
@@ -20,21 +48,30 @@ O manifesto declara `schema: 1`, `finalidade: "calibracao_experimental"`,
 `avaliacao_independente: false`, `aprovado_entrega: false` e
 `exposicao_previa: "pessoas_expostas_ao_pre_treino_ou_selecao"`.
 
-## Composição
+## Composição (70 clipes, atualizada 2026-09-15)
 
 | pessoa | corpus | clipes | classes |
 |---|---|---|---|
 | V01, V02, V03 | V-LIBRASIL | 10 cada (30 no total) | acontecer, amarelo, banheiro, barulho, espelho, filho, maca, medo, ruim, sapo |
-| T002 | MALTA | 6 | america, cinco, conhecer, esquina, vacina, vontade |
-| TUFS | MALTA | 6 | aluno, aproveitar, banco, esquina, vacina, vontade |
-| T042 | MALTA | 2 | bala, conhecer |
-| T044, T048 (×2), T045, T050 | MALTA | 1–3 cada | america, cinco, conhecer, bala |
+| T002 | MALTA | 14 | amarelo, america, banheiro, barulho, cinco, conhecer, espelho, esquina, filho, maca, medo, sapo, vacina, vontade |
+| TUFS | MALTA | 13 | acontecer, aluno, amarelo, aproveitar, banco, barulho, espelho, esquina, filho, ruim, sapo, vacina, vontade |
+| T042 | MALTA | 4 | bala, banheiro, conhecer, medo |
+| T048 | MALTA | 4 | america, banheiro, cinco, conhecer |
+| TUFV | MALTA | 2 | acontecer, filho |
+| T044 | MALTA | 1 | america |
+| T045 | MALTA | 1 | cinco |
+| T050 | MALTA | 1 | bala |
 
-As 10 classes cobertas pelo V-LIBRASIL e as 10 cobertas pelo MALTA são
-exatamente complementares — a divisão não foi escolhida, é a interseção real
-entre o vocabulário de cada corpus público e as 20 classes do MINDS (o
-V-LIBRASIL local tem só essas 10 em comum; as outras 10 simplesmente não
-existem nele com esse nome).
+Gerada a partir do manifesto. Atenção ao desbalanço: **T002 e TUFS somam 27
+dos 40 clipes MALTA** — duas pessoas dominam a parte MALTA do conjunto.
+
+O MALTA agora cobre as **20 classes**, não só as 10 complementares ao
+V-LIBRASIL — a versão de 14/09 tinha usado só o subconjunto que faltava por
+simplicidade; os clipes MALTA das outras 10 classes já existiam extraídos e
+não tinham sido incluídos. Nenhuma classe caiu abaixo de 1 pessoa não-MINDS;
+as mais rasas continuam `aluno`, `aproveitar`, `banco` (1 pessoa cada, sempre
+TUFS) — candidatas naturais a mais diversidade se uma fonte externa (ex.:
+YouTube, com revisão linguística e licença resolvidas) entrar no futuro.
 
 ## Limites — não é teste independente nem substituto do LOSO
 
