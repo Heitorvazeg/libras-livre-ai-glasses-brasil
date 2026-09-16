@@ -110,6 +110,11 @@ class FluxoOnda2Test {
     composeTestRule.waitUntilExactlyOneExists(hasTestTag("painel_metricas"), TIMEOUT)
 
     composeTestRule.onNodeWithTag("botao_principal").performClick()
+    // ①.5 (docs/consentimento-por-atendimento-plano.md): "iniciar" pede consentimento antes de
+    // ligar a câmera.
+    val pedindoConsentimento = targetContext.getString(R.string.estado_pedindo_consentimento)
+    composeTestRule.waitUntilAtLeastOneExists(hasText(pedindoConsentimento), TIMEOUT)
+    composeTestRule.onNodeWithTag("consentimento_aceitar_button").performClick()
     val continuar = targetContext.getString(R.string.camera_permission_continue)
     val capturando = targetContext.getString(R.string.estado_capturando)
     composeTestRule.waitUntil(TIMEOUT) {

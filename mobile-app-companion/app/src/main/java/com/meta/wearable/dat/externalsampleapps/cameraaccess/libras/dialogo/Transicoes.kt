@@ -33,6 +33,11 @@ enum class RotuloBotao {
   PREPARANDO,
   // [NOVO] ②.5 — ver AcaoBotao.CONFIRMAR.
   CONFIRMAR,
+  // [NOVO — docs/consentimento-por-atendimento-plano.md §2.2] ①.5: rótulo inerte (ação null) — a
+  // tela mostra "Aceitar"/"Recusar" à parte, dois botões de peso igual, fora do modelo de uma
+  // ação principal só por estado. Ver DialogOrchestrator.aceitarConsentimento()/
+  // recusarConsentimento().
+  CONSENTIMENTO_PENDENTE,
 }
 
 data class BotaoPrincipal(val rotulo: RotuloBotao, val acao: AcaoBotao?) {
@@ -115,6 +120,9 @@ object Transicoes {
         DialogState.CAPTURANDO_SINAIS -> BotaoPrincipal(RotuloBotao.ENCERRAR_AGORA, AcaoBotao.ENCERRAR_CAPTURA)
         // [NOVO] ②.5 — "Corrigir" é um botão pequeno separado, ver AcaoBotao.CONFIRMAR.
         DialogState.CONFIRMANDO_RECONHECIMENTO -> BotaoPrincipal(RotuloBotao.CONFIRMAR, AcaoBotao.CONFIRMAR)
+        // [NOVO] ①.5 — ação null de propósito: "Aceitar"/"Recusar" não passam por AcaoBotao
+        // (§2.2 do plano de consentimento); a tela desenha os dois botões à parte.
+        DialogState.PEDINDO_CONSENTIMENTO -> BotaoPrincipal(RotuloBotao.CONSENTIMENTO_PENDENTE, null)
         DialogState.FALANDO -> BotaoPrincipal(RotuloBotao.FALANDO, null)
         DialogState.AGUARDANDO_RESPOSTA -> BotaoPrincipal(RotuloBotao.OUVIR_RESPOSTA, AcaoBotao.OUVIR)
         DialogState.ESCUTANDO_ATENDENTE -> BotaoPrincipal(RotuloBotao.ENCERRAR_AGORA, AcaoBotao.ENCERRAR_ESCUTA)

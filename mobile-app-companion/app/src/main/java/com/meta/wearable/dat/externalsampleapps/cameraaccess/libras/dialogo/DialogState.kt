@@ -21,6 +21,16 @@ enum class DialogState {
   /** ① Esperando "Libras Livre, iniciar" pra abrir uma nova sessão de sinais. */
   AGUARDANDO_SINAL,
 
+  /**
+   * ①.5 [NOVO — docs/consentimento-por-atendimento-plano.md §1] Antes de ligar a câmera, mostra
+   * pra pessoa surda (mesmo playAvatar() de ②.5/⑦, mais a legenda) o que o sistema faz, e espera
+   * o atendente decidir por ela: "Aceitar" liga a câmera e segue pra CAPTURANDO_SINAIS; "Recusar"
+   * volta a AGUARDANDO_SINAL sem captar nenhum sinal, com aviso de bilhete/intérprete. Os dois
+   * botões têm o mesmo peso visual — não é o modelo de botão único (§2.2 do plano). Sem timeout
+   * que aceita sozinho: silêncio não é consentimento. Câmera desligada, wake word pausada.
+   */
+  PEDINDO_CONSENTIMENTO,
+
   /** ② Sessão aberta — LandmarkPipeline acumulando sinais até "Libras Livre, encerrar". */
   CAPTURANDO_SINAIS,
 

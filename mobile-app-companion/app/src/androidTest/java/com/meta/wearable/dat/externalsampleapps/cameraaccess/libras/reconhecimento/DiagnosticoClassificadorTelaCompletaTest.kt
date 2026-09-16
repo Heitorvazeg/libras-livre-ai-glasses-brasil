@@ -141,6 +141,10 @@ class DiagnosticoClassificadorTelaCompletaTest {
 
   private fun alternarTurno() {
     composeTestRule.onNodeWithTag("botao_principal").performClick()
+    // ①.5 (docs/consentimento-por-atendimento-plano.md): "cancelar atendimento" encerra o
+    // atendimento inteiro, então cada repetição aqui pede consentimento de novo.
+    esperarTexto(R.string.estado_pedindo_consentimento)
+    composeTestRule.onNodeWithTag("consentimento_aceitar_button").performClick()
     esperarTexto(R.string.estado_capturando)
     composeTestRule.onNodeWithTag("cancelar_atendimento_button").performClick()
     esperarTexto(R.string.estado_aguardando_sinal)

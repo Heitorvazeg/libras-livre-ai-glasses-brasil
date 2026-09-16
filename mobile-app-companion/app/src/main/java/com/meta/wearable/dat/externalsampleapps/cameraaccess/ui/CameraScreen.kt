@@ -284,6 +284,11 @@ fun CameraScreen(
           // atendente — troca o rótulo e mostra "Corrigir" ao lado do "Confirmar" (botaoPrincipal).
           confirmacaoDoSurdo = ui.dialogState == DialogState.CONFIRMANDO_RECONHECIMENTO,
           onCorrigirReconhecimento = cameraViewModel::corrigirReconhecimento,
+          // ①.5 (docs/consentimento-por-atendimento-plano.md §2.2): troca o rótulo e substitui
+          // botaoPrincipal por "Aceitar"/"Recusar" de peso igual — nunca captura sem consentimento.
+          pedindoConsentimento = ui.dialogState == DialogState.PEDINDO_CONSENTIMENTO,
+          onAceitarConsentimento = cameraViewModel::aceitarConsentimento,
+          onRecusarConsentimento = cameraViewModel::recusarConsentimento,
       )
     }
 
@@ -904,6 +909,9 @@ internal fun rotuloDoBotao(rotulo: RotuloBotao): Int =
       RotuloBotao.TRANSCREVENDO -> R.string.botao_transcrevendo
       RotuloBotao.PULAR -> R.string.avatar_pular
       RotuloBotao.CONFIRMAR -> R.string.avatar_confirmacao_confirmar
+      // Inerte (ação null, §2.2 do plano de consentimento) — nunca chega a aparecer como texto
+      // clicável, mas precisa de um recurso pra rotuloDoEstado/depuração não quebrarem.
+      RotuloBotao.CONSENTIMENTO_PENDENTE -> R.string.botao_consentimento_pendente
       RotuloBotao.CONECTE_OS_OCULOS -> R.string.botao_conecte_oculos
       RotuloBotao.PREPARANDO -> R.string.botao_preparando
     }
@@ -983,6 +991,7 @@ private fun FaixaDeEstado(ui: CameraUiState, modifier: Modifier = Modifier) {
 internal fun rotuloDoEstado(estado: DialogState): Int =
     when (estado) {
       DialogState.AGUARDANDO_SINAL -> R.string.estado_aguardando_sinal
+      DialogState.PEDINDO_CONSENTIMENTO -> R.string.estado_pedindo_consentimento
       DialogState.CAPTURANDO_SINAIS -> R.string.estado_capturando
       DialogState.CONFIRMANDO_RECONHECIMENTO -> R.string.estado_confirmando
       DialogState.FALANDO -> R.string.estado_falando

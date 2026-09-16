@@ -11,10 +11,13 @@ import org.junit.Test
 class TransicoesTest {
 
   @Test
-  fun `wake word ouve em 1, 2 e 4 e fica pausada em 2,5, 3, 5, 6 e 7`() {
+  fun `wake word ouve em 1, 2 e 4 e fica pausada em 1,5, 2,5, 3, 5, 6 e 7`() {
     val esperado =
         mapOf(
             DialogState.AGUARDANDO_SINAL to true,
+            // [NOVO] docs/consentimento-por-atendimento-plano.md §1 — mesmo padrão de ②.5/③⑥⑦:
+            // as wake words não decidem consentimento por ninguém.
+            DialogState.PEDINDO_CONSENTIMENTO to false,
             DialogState.CAPTURANDO_SINAIS to true,
             // [NOVO] docs/confirmacao-e-modo-economia-plano.md §1.4 — mesmo padrão de ③⑥⑦.
             DialogState.CONFIRMANDO_RECONHECIMENTO to false,
@@ -70,6 +73,9 @@ class TransicoesTest {
     val esperado =
         mapOf(
             DialogState.AGUARDANDO_SINAL to BotaoPrincipal(RotuloBotao.INICIAR, AcaoBotao.INICIAR),
+            // [NOVO] docs/consentimento-por-atendimento-plano.md §2.2 — ação null de propósito:
+            // "Aceitar"/"Recusar" não passam por AcaoBotao, a tela desenha os dois à parte.
+            DialogState.PEDINDO_CONSENTIMENTO to BotaoPrincipal(RotuloBotao.CONSENTIMENTO_PENDENTE, null),
             DialogState.CAPTURANDO_SINAIS to BotaoPrincipal(RotuloBotao.ENCERRAR_AGORA, AcaoBotao.ENCERRAR_CAPTURA),
             // [NOVO] docs/confirmacao-e-modo-economia-plano.md §1.3 — "Corrigir" é um botão
             // pequeno à parte, fora do modelo de botão principal (ver AcaoBotao.CONFIRMAR).

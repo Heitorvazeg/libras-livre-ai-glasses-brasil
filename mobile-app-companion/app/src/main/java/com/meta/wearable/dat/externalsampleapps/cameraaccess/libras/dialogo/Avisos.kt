@@ -37,6 +37,15 @@ enum class TipoAviso(val nivel: NivelAviso) {
   // até o fim do app (o SDK não expõe "bateria recuperada"), não só quando "iniciar" é bloqueado
   // (isso também dispara CAMERA_NAO_SUBIU, via FalhaCamera.BATERIA_BAIXA).
   BATERIA_OCULOS_BAIXA(NivelAviso.ATENCAO),
+  // [NOVO] docs/consentimento-por-atendimento-plano.md §2.1 — o avatar não animou (nem foi
+  // pulado) no momento de ①.5: a explicação do consentimento ficou só na legenda em português,
+  // que pode não satisfazer "acessível em Libras" pra quem não lê português fluente. Sinaliza pro
+  // atendente considerar bilhete/intérprete; não bloqueia sozinho (decisão em aberto no plano).
+  CONSENTIMENTO_SEM_LIBRAS(NivelAviso.ATENCAO),
+  // [NOVO] docs/consentimento-por-atendimento-plano.md §2.5 — "Recusar" em ①.5: aviso
+  // informativo, não bloqueio (a pessoa pode mudar de ideia no mesmo atendimento). Limpo no
+  // início do próximo pedido de consentimento, não persiste entre atendimentos diferentes.
+  CONSENTIMENTO_RECUSADO(NivelAviso.INFORMACAO),
   CAPTURA(NivelAviso.INFORMACAO), // 3.1, 1.11
 }
 

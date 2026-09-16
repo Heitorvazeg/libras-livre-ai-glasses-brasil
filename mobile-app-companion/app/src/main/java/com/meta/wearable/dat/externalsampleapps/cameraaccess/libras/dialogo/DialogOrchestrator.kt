@@ -105,6 +105,14 @@ class DialogOrchestrator(
     private val depoisDeEscutar: () -> Unit = {},
     // A câmera não subiu ou uma pausa longa encerrou a captura (3.4, 3.2).
     private val onFalhaCamera: (FalhaCamera) -> Unit = {},
+    // [NOVO — docs/consentimento-por-atendimento-plano.md §2.5, §2.7] "Recusar" em ①.5: aviso de
+    // bilhete/intérprete. Chamado toda vez que um pedido de consentimento novo começa, pra limpar
+    // o aviso do atendimento anterior (não persiste entre atendimentos diferentes).
+    private val onConsentimentoRecusado: () -> Unit = {},
+    private val onConsentimentoPedido: () -> Unit = {},
+    // [NOVO — §2.1] O avatar não animou (nem foi pulado) mostrando o consentimento: a explicação
+    // ficou só na legenda em português. Decisão em aberto no plano — hoje só sinaliza, não bloqueia.
+    private val onConsentimentoSemLibras: () -> Unit = {},
 ) {
 
   companion object {
@@ -123,6 +131,14 @@ class DialogOrchestrator(
     // Avisos do fluxo "repita" (2.8), falados ao atendente no ③.
     const val AVISO_REPITA = "Não consegui entender. Peça para repetir, com uma pausa entre os sinais."
     const val AVISO_DESISTIR = "Não foi possível entender. Tente outro meio de comunicação."
+
+    // [NOVO — docs/consentimento-por-atendimento-plano.md §2.1] PLACEHOLDER: este texto NÃO foi
+    // revisado juridicamente nem pela comunidade surda (o plano é explícito: "este plano não
+    // propõe o texto"). Existe aqui só pra o fluxo ser exercitável e testável; não usar em
+    // atendimento real sem substituir por um texto revisado.
+    const val TEXTO_CONSENTIMENTO_PLACEHOLDER =
+        "Vou usar a câmera pra reconhecer seus sinais e transformar em voz pro atendente. " +
+            "Nada é gravado. Você pode recusar sem prejuízo: o atendimento segue por bilhete ou intérprete."
 
     // [NOVO] Timeout de segurança em ②.5 CONFIRMANDO_RECONHECIMENTO
     // (docs/confirmacao-e-modo-economia-plano.md §1.3, §1.6): se ninguém apertar "Confirmar" nem
@@ -166,6 +182,13 @@ class DialogOrchestrator(
 
   // Evita um segundo "iniciar" enquanto a câmera do primeiro ainda sobe.
   private var startingSignSession = false
+
+  // [NOVO — docs/consentimento-por-atendimento-plano.md] `startingSignSession` já está true
+  // durante ①.5 (armado por beginSignSession, antes mesmo do consentimento) — não serve pra
+  // proteger aceitarConsentimento() de um duplo toque rápido em "Aceitar", porque o estado só
+  // sai de PEDINDO_CONSENTIMENTO depois de ensureCameraActive() (suspend) resolver. Guarda à
+  // parte, só pra essa janela.
+  private var ligandoCameraAposConsentimento = false
 
   // [NOVO] ②.5 CONFIRMANDO_RECONHECIMENTO (docs/confirmacao-e-modo-economia-plano.md §1): a frase
   // já contextualizada, mostrada pro surdo, esperando confirmarReconhecimento()/
@@ -280,6 +303,7 @@ class DialogOrchestrator(
       DialogState.CAPTURANDO_SINAIS -> if (word == WakeWord.ENCERRAR) endSignSession(MotivoEncerramento.MANUAL)
       DialogState.AGUARDANDO_RESPOSTA -> if (word == WakeWord.INICIAR) beginListening()
       DialogState.ESCUTANDO_ATENDENTE -> if (word == WakeWord.ENCERRAR) endListening()
+      DialogState.PEDINDO_CONSENTIMENTO,
       DialogState.CONFIRMANDO_RECONHECIMENTO,
       DialogState.FALANDO,
       DialogState.TRANSCREVENDO,
@@ -385,8 +409,12 @@ class DialogOrchestrator(
     falhas = 0
     confirmacaoPendente = null
     deactivateCamera()
-    // ②.5 também pode ter o avatar animando (aguardando confirmação) — mesmo tratamento do ⑦.
-    if (anterior == DialogState.GERANDO_AVATAR || anterior == DialogState.CONFIRMANDO_RECONHECIMENTO) pularAvatar()
+    // ①.5/②.5 também podem ter o avatar animando (aguardando consentimento/confirmação) — mesmo
+    // tratamento do ⑦.
+    if (anterior == DialogState.GERANDO_AVATAR || anterior == DialogState.CONFIRMANDO_RECONHECIMENTO ||
+        anterior == DialogState.PEDINDO_CONSENTIMENTO) {
+      pularAvatar()
+    }
     esconderAvatar()
     avaliador.zerar()
     onEvento("atendimento_cancelado", "estado=$anterior")
@@ -397,25 +425,97 @@ class DialogOrchestrator(
   private fun beginSignSession() {
     if (startingSignSession) return
     startingSignSession = true
-    // O relógio da etapa "iniciar -> pode sinalizar" começa no comando, antes de a câmera subir.
+    // O relógio da etapa "iniciar -> pode sinalizar" começa no comando, antes do consentimento e
+    // antes de a câmera subir — ①.5 agora faz parte dessa latência.
     metricas?.novoTurno(SystemClock.uptimeMillis())
+    val minhaGeracao = geracao
+    scope.launch { pedirConsentimento(minhaGeracao) }
+  }
+
+  /**
+   * ①.5 PEDINDO_CONSENTIMENTO (docs/consentimento-por-atendimento-plano.md §1, §2.4): antes de
+   * ligar a câmera, mostra pra pessoa surda — mesmo playAvatar() de ②.5/⑦ — o que o sistema faz.
+   * Fica esperando [aceitarConsentimento]/[recusarConsentimento]; sem timeout que decide sozinho
+   * (§2.3 — silêncio não é consentimento). `startingSignSession` continua true até uma das duas
+   * decidir, pra um segundo "iniciar" não reabrir o pedido por cima.
+   */
+  private suspend fun pedirConsentimento(minhaGeracao: Int) {
+    onConsentimentoPedido()
+    setState(DialogState.PEDINDO_CONSENTIMENTO)
+    val desfecho = playAvatar(TEXTO_CONSENTIMENTO_PLACEHOLDER)
+    if (minhaGeracao != geracao || _state.value != DialogState.PEDINDO_CONSENTIMENTO) {
+      startingSignSession = false
+      return
+    }
+    if (desfecho != DesfechoAvatar.ANIMOU && desfecho != DesfechoAvatar.PULADO) {
+      // Degradação explícita (mesma legenda de sempre via onAvatarUnavailable), mais um aviso à
+      // parte: aqui a apresentação em Libras não é só UX, é o requisito de acessibilidade do
+      // consentimento (§2.1 do plano — decisão em aberto sobre bloquear ou não).
+      onEvento("consentimento_sem_libras", "")
+      onConsentimentoSemLibras()
+    }
+    // Fica em PEDINDO_CONSENTIMENTO à espera do atendente; startingSignSession segue true.
+  }
+
+  /**
+   * Botão "Aceitar" em ①.5: só agora a câmera liga (§2.4 — nada é captado antes disso). Se a
+   * câmera não subir, volta ao ①, como um "iniciar" comum que falhou. Sem estado próprio de
+   * "consentimento já dado neste atendimento": um "iniciar" seguinte pede consentimento de novo
+   * (não há como distinguir isso de um atendimento novo com o que existe hoje) — mais perguntas
+   * que o estritamente necessário numa retentativa, não uma violação do §2.6 (o reset entre
+   * atendimentos continua garantido; só não há um atalho para o caso de retentativa).
+   */
+  fun aceitarConsentimento() {
+    if (_state.value != DialogState.PEDINDO_CONSENTIMENTO) return
+    // Duplo toque rápido em "Aceitar": o estado só sai de PEDINDO_CONSENTIMENTO depois de
+    // ensureCameraActive() (suspend) resolver, então a checagem acima sozinha não bastaria.
+    if (ligandoCameraAposConsentimento) return
+    ligandoCameraAposConsentimento = true
+    onEvento("consentimento", "aceito")
     val minhaGeracao = geracao
     scope.launch {
       try {
         val falha = ensureCameraActive()
+        if (minhaGeracao != geracao) return@launch
         if (falha != null) {
-          Log.w(TAG, "Câmera/stream não subiu ($falha) — 'iniciar' ignorado")
+          Log.w(TAG, "Câmera/stream não subiu ($falha) — consentimento aceito, 'iniciar' não completou")
           onEvento("camera_nao_subiu", falha.name)
           onFalhaCamera(falha)
+          pularAvatar()
+          esconderAvatar()
+          voltarAoInicio()
           return@launch
         }
-        if (minhaGeracao != geracao || _state.value != DialogState.AGUARDANDO_SINAL) return@launch
+        if (_state.value != DialogState.PEDINDO_CONSENTIMENTO) return@launch
+        pularAvatar()
+        esconderAvatar()
         aoIniciarCaptura()
         iniciarCaptura()
       } finally {
         startingSignSession = false
+        ligandoCameraAposConsentimento = false
       }
     }
+  }
+
+  /**
+   * Botão "Recusar" em ①.5 (§2.5): não trava, não insiste — some o avatar e volta ao ①, com um
+   * aviso informativo pro atendente. Nenhum sinal foi captado (a câmera nunca ligou).
+   */
+  fun recusarConsentimento() {
+    if (_state.value != DialogState.PEDINDO_CONSENTIMENTO) return
+    // Invalida um aceitarConsentimento() concorrente (duplo toque em Aceitar-depois-Recusar):
+    // a checagem de geração em aceitarConsentimento() já cobre isso antes mesmo de olhar o
+    // resultado de ensureCameraActive() — mesmo padrão de cancelarAtendimento()/onBateriaBaixa().
+    geracao++
+    startingSignSession = false
+    ligandoCameraAposConsentimento = false
+    onEvento("consentimento", "recusado")
+    pularAvatar()
+    esconderAvatar()
+    onConsentimentoRecusado()
+    Log.i(TAG, "Consentimento recusado — atendimento segue por bilhete/intérprete")
+    voltarAoInicio()
   }
 
   // Abre uma captura: no "iniciar" e, com a câmera ainda ligada, depois de um "repita" (2.8).

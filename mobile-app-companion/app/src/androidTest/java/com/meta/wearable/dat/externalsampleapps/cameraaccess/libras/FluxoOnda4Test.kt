@@ -89,6 +89,7 @@ class FluxoOnda4Test {
     }
 
     composeTestRule.onNodeWithTag("botao_principal").performClick()
+    aceitarConsentimento()
     esperarTexto(R.string.estado_capturando)
 
     // 3.2: toque na haste pausa o stream; a faixa avisa e a captura continua aberta.
@@ -112,6 +113,7 @@ class FluxoOnda4Test {
     iniciarSessao()
     esperarAquecimento()
     composeTestRule.onNodeWithTag("botao_principal").performClick()
+    aceitarConsentimento()
     composeTestRule.waitUntilAtLeastOneExists(hasText(targetContext.getString(R.string.falha_camera_permissao)), TIMEOUT)
     esperarTexto(R.string.estado_aguardando_sinal)
   }
@@ -133,6 +135,7 @@ class FluxoOnda4Test {
     composeTestRule.waitUntil(TIMEOUT) { logcat().contains("renderer morreu") }
 
     composeTestRule.onNodeWithTag("botao_principal").performClick()
+    aceitarConsentimento()
     esperarTexto(R.string.estado_capturando)
     composeTestRule.waitUntil(TIMEOUT) { logcat().contains("recarregando em segundo plano") }
 
@@ -175,6 +178,16 @@ class FluxoOnda4Test {
 
   private fun esperarAquecimento() =
       composeTestRule.waitUntilExactlyOneExists(hasTestTag("botao_principal").and(isEnabled()), TIMEOUT_AQUECIMENTO)
+
+  /**
+   * ①.5 (docs/consentimento-por-atendimento-plano.md): "iniciar" pede consentimento antes de
+   * ligar a câmera. Chamar logo depois de clicar "botao_principal" pela primeira vez no
+   * atendimento — "repita"/"Encerrar agora" reabrem a captura sem passar por ①.5 de novo.
+   */
+  private fun aceitarConsentimento() {
+    esperarTexto(R.string.estado_pedindo_consentimento)
+    composeTestRule.onNodeWithTag("consentimento_aceitar_button").performClick()
+  }
 
   private fun esperarTexto(id: Int) =
       composeTestRule.waitUntilAtLeastOneExists(hasText(targetContext.getString(id)), TIMEOUT)
