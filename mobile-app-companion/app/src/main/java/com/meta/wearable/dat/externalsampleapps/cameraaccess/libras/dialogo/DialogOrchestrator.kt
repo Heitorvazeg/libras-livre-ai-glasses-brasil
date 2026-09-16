@@ -515,10 +515,11 @@ class DialogOrchestrator(
     // 9.3) — o operador vê o texto pra confirmar/corrigir de qualquer jeito.
     val desfecho = playAvatar(resultado.texto)
     if (minhaGeracao != geracao) return
-    if (desfecho != DesfechoAvatar.ANIMOU && desfecho != DesfechoAvatar.PULADO) onAvatarUnavailable(resultado.texto)
     // O operador (ou onBateriaBaixa()/cancelarAtendimento()) pode ter decidido enquanto o avatar
-    // animava — não arma um timeout por cima de uma decisão que já aconteceu.
+    // animava — nem o aviso de "avatar indisponível" nem o timeout valem por cima de uma decisão
+    // que já aconteceu (ex.: "Confirmar" apertado durante a animação, antes dela terminar).
     if (_state.value != DialogState.CONFIRMANDO_RECONHECIMENTO) return
+    if (desfecho != DesfechoAvatar.ANIMOU && desfecho != DesfechoAvatar.PULADO) onAvatarUnavailable(resultado.texto)
     tetoJob?.cancel()
     tetoJob =
         scope.launch {
