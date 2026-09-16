@@ -16,6 +16,7 @@ package com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.diagnostico
 
 import android.content.Context
 import android.content.SharedPreferences
+import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.contextualizacao.MODELO_CONTEXTUALIZACAO_ATIVO
 import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.reconhecimento.ModoPlaceholder
 import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.reconhecimento.ParametrosSegmentacao
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -65,6 +66,11 @@ data class ValoresDemo(
     val tetoTraducaoMs: Long = 5_000L,
     val tetoAnimacaoBaseMs: Long = 3_000L,
     val tetoAnimacaoPorSinalMs: Long = 1_500L,
+    // Toggle de DEBUG: liga o modelo neural de contextualização, sob guarda, no lugar do
+    // template puro. Nunca exposto pro atendente fora do menu de debug — o modelo tem 11,9%
+    // de taxa de invenção medida (Guardas.kt); serve pra coletar dado real sobre quando ele
+    // erra, não pra uso em atendimento de verdade.
+    val modeloContextualizacaoAtivo: Boolean = MODELO_CONTEXTUALIZACAO_ATIVO,
 )
 
 class ConfiguracoesDemo(private val armazenamento: Armazenamento) {
@@ -134,6 +140,7 @@ class ConfiguracoesDemo(private val armazenamento: Armazenamento) {
         tetoTraducaoMs = long(TETO_TRADUCAO, p.tetoTraducaoMs),
         tetoAnimacaoBaseMs = long(TETO_ANIMACAO_BASE, p.tetoAnimacaoBaseMs),
         tetoAnimacaoPorSinalMs = long(TETO_ANIMACAO_SINAL, p.tetoAnimacaoPorSinalMs),
+        modeloContextualizacaoAtivo = bool(MODELO_CONTEXTUALIZACAO, p.modeloContextualizacaoAtivo),
     )
   }
 
@@ -164,6 +171,7 @@ class ConfiguracoesDemo(private val armazenamento: Armazenamento) {
           TETO_TRADUCAO to v.tetoTraducaoMs.toString(),
           TETO_ANIMACAO_BASE to v.tetoAnimacaoBaseMs.toString(),
           TETO_ANIMACAO_SINAL to v.tetoAnimacaoPorSinalMs.toString(),
+          MODELO_CONTEXTUALIZACAO to v.modeloContextualizacaoAtivo.toString(),
       )
 
   companion object {
@@ -193,6 +201,7 @@ class ConfiguracoesDemo(private val armazenamento: Armazenamento) {
     private const val TETO_TRADUCAO = "teto_traducao_ms"
     private const val TETO_ANIMACAO_BASE = "teto_animacao_base_ms"
     private const val TETO_ANIMACAO_SINAL = "teto_animacao_por_sinal_ms"
+    private const val MODELO_CONTEXTUALIZACAO = "modelo_contextualizacao_ativo"
 
     @Volatile private var instancia: ConfiguracoesDemo? = null
 

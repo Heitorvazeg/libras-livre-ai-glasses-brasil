@@ -3,6 +3,7 @@
  */
 package com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.diagnostico
 
+import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.contextualizacao.MODELO_CONTEXTUALIZACAO_ATIVO
 import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.reconhecimento.ModoPlaceholder
 import org.junit.Assert.assertEquals
 import org.junit.Test
@@ -63,6 +64,17 @@ class ConfiguracoesDemoTest {
     assertEquals(5_000L, v.tetoTraducaoMs)
     assertEquals(3_000L, v.tetoAnimacaoBaseMs)
     assertEquals(1_500L, v.tetoAnimacaoPorSinalMs)
+    // O padrão do toggle de debug segue a mesma constante que o CameraViewModel usaria sem
+    // ConfiguracoesDemo — nunca liga o modelo sozinho, mesmo se a constante mudar de lado.
+    assertEquals(MODELO_CONTEXTUALIZACAO_ATIVO, v.modeloContextualizacaoAtivo)
+  }
+
+  @Test
+  fun `toggle do modelo de contextualizacao persiste`() {
+    val memoria = Memoria()
+    ConfiguracoesDemo(memoria).atualizar { it.copy(modeloContextualizacaoAtivo = !MODELO_CONTEXTUALIZACAO_ATIVO) }
+    val reaberta = ConfiguracoesDemo(memoria).valores.value
+    assertEquals(!MODELO_CONTEXTUALIZACAO_ATIVO, reaberta.modeloContextualizacaoAtivo)
   }
 
   @Test
