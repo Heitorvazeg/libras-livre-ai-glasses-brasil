@@ -295,7 +295,12 @@ class CameraViewModel(
 
   // Cadeia modelo -> guarda -> template -> passthrough (§3.3). Nasce uma vez e vive até
   // onCleared(): o Interpreter do .tflite não deve ser recriado por sessão (§7.1).
-  private val glossContextualizer = criarGlossContextualizer(application)
+  // usarModelo vem do toggle de DEBUG (ConfiguracoesDemo) — lido uma vez aqui, não reativo:
+  // trocar o toggle vale a partir do próximo lançamento do app, mesma semântica do
+  // classificador de sinal. Nunca exposto pro atendente fora do menu de debug (11,9% de
+  // taxa de invenção medida, ver Guardas.kt) — serve pra coletar dado real de quando erra.
+  private val glossContextualizer =
+      criarGlossContextualizer(application, usarModelo = configuracoes.valores.value.modeloContextualizacaoAtivo)
 
   // Motor real de STT: Vosk pt-BR local (§4 item 11, §8 item 2), sobre PCM cru. Pra voltar ao motor
   // nativo do Android (fallback, sem depender do asset vosk-model-small-pt-0.3/), troque por
