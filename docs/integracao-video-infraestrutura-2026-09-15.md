@@ -165,3 +165,6 @@ intermediários; contagens e classificações podem variar com carga. `close()` 
 não é interrompível pelo timeout de coroutine. Não há benchmark ARM nem garantia
 de ausência de vazamento em sessões longas. A próxima pendência é validar o
 diagnóstico ligado à tela completa e o ciclo de sessões, sem depender do modelo final.
+
+**Atualização posterior (16/09/2026):** essa pendência foi fechada — ver
+[tela completa e reabertura](integracao-tela-completa-e-reabertura-2026-09-16.md).
