@@ -61,6 +61,7 @@
     <string name="botao_ouvir_resposta" description="Main button when the reply transcription came back empty: listens again">Ouvir resposta</string>
     <string name="botao_transcrevendo" description="Main button, disabled, while the reply is transcribed">Transcrevendo…</string>
     <string name="botao_conecte_oculos" description="Main button, disabled, when no glasses are available">Conecte os óculos</string>
+    <string name="botao_consentimento_pendente" description="Libras Livre: inert main-button label while consent is pending (docs/consentimento-por-atendimento-plano.md §2.2) — never actually shown as a clickable label, the real actions are the two symmetric buttons">Aguardando consentimento</string>
     <string name="cancelar_atendimento" description="Small button that stops everything and goes back to the waiting state">Cancelar atendimento</string>
     <string name="conversa_decisao" description="Conversation panel row label: what the app decided about the signed sentence">Aviso</string>
     <string name="conversa_decisao_repita" description="Conversation panel: the app did not understand and asked for a repetition">Não entendi: pedido de repetição</string>
@@ -83,6 +84,8 @@
     <string name="aviso_celular_quente" description="Status bar warning: the phone is overheating">Celular muito quente: desempenho reduzido</string>
     <string name="aviso_avatar_liberado_memoria" description="Status bar warning: the avatar was unloaded because memory is low">Avatar liberado por falta de memória; resposta em legenda</string>
     <string name="aviso_aquecimento_falhou" description="Status bar block: a warm-up step failed; the argument lists which">Preparação com falha — %1$s</string>
+    <string name="aviso_consentimento_recusado" description="Libras Livre: informational status bar notice after the deaf person declines consent in ①.5 (docs/consentimento-por-atendimento-plano.md §2.5) — cleared at the start of the next consent request">Sem uso do reconhecimento de sinais — siga por bilhete ou intérprete</string>
+    <string name="aviso_consentimento_sem_libras" description="Libras Livre: status bar notice when the avatar failed to animate (or was skipped) while asking for consent in ①.5, so the explanation was shown only as Portuguese text (docs/consentimento-por-atendimento-plano.md §2.1) — the operator should judge whether to proceed via bilhete/intérprete instead">Consentimento mostrado só em texto — avatar em Libras indisponível</string>
     <string name="aviso_aguarde" description="Status bar: capture opened, waiting for the first usable frame">Aguarde…</string>
     <string name="aviso_sinalizando" description="Status bar while the person is signing, with the number of signs captured">● sinalizando · %1$d sinais</string>
     <string name="aviso_parado" description="Status bar while the person is at rest, with the number of signs captured">○ parado · %1$d sinais</string>
@@ -96,6 +99,7 @@
     <string name="falha_camera_pausa_longa" description="Camera failure cause: the stream stayed paused too long and the capture was ended">Stream pausado por muito tempo: captura encerrada</string>
     <string name="falha_camera_bateria_baixa" description="Libras Livre: camera failure cause shown once the DAT reports low/critical glasses battery (docs/confirmacao-e-modo-economia-plano.md §2) — sign capture stays disabled for the rest of the visit">Bateria dos óculos baixa: câmera desligada, atendimento só por voz</string>
     <string name="estado_aguardando_sinal" description="Dialog state in Portuguese: waiting for signs">Aguardando sinais</string>
+    <string name="estado_pedindo_consentimento" description="Libras Livre: dialog state in Portuguese, shown while the app waits for the operator to accept or decline consent on the deaf person's behalf, before turning on the camera (docs/consentimento-por-atendimento-plano.md §1)">Pedindo consentimento</string>
     <string name="estado_capturando" description="Dialog state in Portuguese: capturing signs">Capturando</string>
     <string name="estado_confirmando" description="Libras Livre: dialog state in Portuguese, shown while the deaf person's recognized sentence waits for the operator to confirm or correct it (docs/confirmacao-e-modo-economia-plano.md §1)">Confirmando com a pessoa surda</string>
     <string name="estado_falando" description="Dialog state in Portuguese: speaking the sentence">Falando</string>
@@ -138,6 +142,9 @@
     <string name="avatar_caption_label_confirmacao" description="Libras Livre: label above the written form of what the deaf person signed, shown during the confirmation window (docs/confirmacao-e-modo-economia-plano.md §1) instead of avatar_caption_label">Você sinalizou</string>
     <string name="avatar_confirmacao_confirmar" description="Libras Livre: button shown during the confirmation window (docs/confirmacao-e-modo-economia-plano.md §1.3) that confirms the recognized phrase is correct and moves on to speaking it to the attendant">Confirmar</string>
     <string name="avatar_confirmacao_corrigir" description="Libras Livre: button shown during the confirmation window (docs/confirmacao-e-modo-economia-plano.md §1.3) that discards the recognized phrase and reopens sign capture">Corrigir</string>
+    <string name="avatar_caption_label_consentimento" description="Libras Livre: label above the written form of the consent explanation, shown in ①.5 before the camera turns on (docs/consentimento-por-atendimento-plano.md §1) instead of avatar_caption_label — PLACEHOLDER text below needs legal and deaf-community review before real use">Antes de começar</string>
+    <string name="consentimento_aceitar" description="Libras Livre: one of two equally-weighted buttons in ①.5 (docs/consentimento-por-atendimento-plano.md §2.2) — accepts, turning on the camera; deliberately NOT visually more prominent than consentimento_recusar">Aceitar</string>
+    <string name="consentimento_recusar" description="Libras Livre: one of two equally-weighted buttons in ①.5 (docs/consentimento-por-atendimento-plano.md §2.2) — declines; the visit continues by written note or interpreter, without turning on the camera; deliberately NOT visually smaller/secondary compared to consentimento_aceitar">Recusar</string>
     <string name="avatar_waiting" description="Shown on the avatar screen while no answer has been signed yet">Aguardando a resposta do atendente…</string>
 
     <!-- Update required -->

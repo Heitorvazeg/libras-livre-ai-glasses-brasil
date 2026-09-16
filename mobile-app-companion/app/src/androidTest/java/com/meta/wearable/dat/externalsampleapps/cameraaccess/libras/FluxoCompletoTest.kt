@@ -22,6 +22,7 @@ import android.util.Log
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.hasTestTag
+import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.isEnabled
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithTag
@@ -111,6 +112,11 @@ class FluxoCompletoTest {
     capturar("0-pronto")
 
     composeTestRule.onNodeWithTag("botao_principal").performClick()
+    // ①.5 (docs/consentimento-por-atendimento-plano.md): "iniciar" pede consentimento antes de
+    // ligar a câmera.
+    composeTestRule.waitUntilAtLeastOneExists(
+        hasText(targetContext.getString(R.string.estado_pedindo_consentimento)), TIMEOUT)
+    composeTestRule.onNodeWithTag("consentimento_aceitar_button").performClick()
     val continuar = targetContext.getString(R.string.camera_permission_continue)
     if (composeTestRule.onAllNodesWithText(continuar).fetchSemanticsNodes().isNotEmpty()) {
       composeTestRule.onNodeWithText(continuar).performClick()

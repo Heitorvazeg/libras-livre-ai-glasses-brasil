@@ -25,11 +25,13 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Refresh
 import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.dialogo.AcaoBotao
@@ -85,6 +87,12 @@ fun AvatarScreen(
     // pequeno, ao lado do "Confirmar" (que já vem por [botaoPrincipal]/[onBotaoPrincipal]).
     confirmacaoDoSurdo: Boolean = false,
     onCorrigirReconhecimento: () -> Unit = {},
+    // Libras Livre — consentimento por atendimento (docs/consentimento-por-atendimento-plano.md
+    // §2.2): true em ①.5. Troca o rótulo da legenda e substitui [botaoPrincipal] por dois botões
+    // do MESMO peso visual — "Aceitar"/"Recusar" não são um principal + um pequeno, de propósito.
+    pedindoConsentimento: Boolean = false,
+    onAceitarConsentimento: () -> Unit = {},
+    onRecusarConsentimento: () -> Unit = {},
 ) {
   // Congela o Unity com o app em background — ele desenha a 30 fps mesmo sem ninguém olhando.
   val lifecycleOwner = LocalLifecycleOwner.current
@@ -114,29 +122,54 @@ fun AvatarScreen(
           AvatarStatus(estado = estado, onTentarDeNovo = onTentarDeNovo)
         }
 
-        Legenda(texto = legenda, confirmacaoDoSurdo = confirmacaoDoSurdo)
+        Legenda(texto = legenda, confirmacaoDoSurdo = confirmacaoDoSurdo, pedindoConsentimento = pedindoConsentimento)
 
-        botaoPrincipal?.let {
-          BotaoPrincipalGrande(
-              botao = it,
-              onAcao = onBotaoPrincipal,
+        if (pedindoConsentimento) {
+          // §2.2 do plano: dois botões do mesmo componente, mesmo tamanho — nenhum é "o padrão".
+          Row(
               modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
-              tag = "botao_principal_avatar",
-          )
-        }
-        // ②.5: "Corrigir" é um botão pequeno à parte do principal "Confirmar" (§1.3 do plano) —
-        // mesmo padrão de "Cancelar atendimento" na tela principal, fora do modelo de botão único.
-        if (confirmacaoDoSurdo) {
-          CapturePill(
-              modifier =
-                  Modifier.fillMaxWidth().padding(horizontal = 16.dp).padding(bottom = 12.dp)
-                      .testTag("avatar_corrigir_button"),
-              icon = Icons.Filled.Refresh,
-              label = stringResource(R.string.avatar_confirmacao_corrigir),
-              contentDescription = stringResource(R.string.avatar_confirmacao_corrigir),
-              enabled = true,
-              onClick = onCorrigirReconhecimento,
-          )
+              horizontalArrangement = Arrangement.spacedBy(12.dp),
+          ) {
+            CapturePill(
+                modifier = Modifier.weight(1f).testTag("consentimento_recusar_button"),
+                icon = Icons.Filled.Close,
+                label = stringResource(R.string.consentimento_recusar),
+                contentDescription = stringResource(R.string.consentimento_recusar),
+                enabled = true,
+                onClick = onRecusarConsentimento,
+            )
+            CapturePill(
+                modifier = Modifier.weight(1f).testTag("consentimento_aceitar_button"),
+                icon = Icons.Filled.Check,
+                label = stringResource(R.string.consentimento_aceitar),
+                contentDescription = stringResource(R.string.consentimento_aceitar),
+                enabled = true,
+                onClick = onAceitarConsentimento,
+            )
+          }
+        } else {
+          botaoPrincipal?.let {
+            BotaoPrincipalGrande(
+                botao = it,
+                onAcao = onBotaoPrincipal,
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
+                tag = "botao_principal_avatar",
+            )
+          }
+          // ②.5: "Corrigir" é um botão pequeno à parte do principal "Confirmar" (§1.3 do plano) —
+          // mesmo padrão de "Cancelar atendimento" na tela principal, fora do modelo de botão único.
+          if (confirmacaoDoSurdo) {
+            CapturePill(
+                modifier =
+                    Modifier.fillMaxWidth().padding(horizontal = 16.dp).padding(bottom = 12.dp)
+                        .testTag("avatar_corrigir_button"),
+                icon = Icons.Filled.Refresh,
+                label = stringResource(R.string.avatar_confirmacao_corrigir),
+                contentDescription = stringResource(R.string.avatar_confirmacao_corrigir),
+                enabled = true,
+                onClick = onCorrigirReconhecimento,
+            )
+          }
         }
       }
 
@@ -236,7 +269,7 @@ private fun AvatarStatus(estado: AvatarState, onTentarDeNovo: () -> Unit) {
  * degradado sem precisar trocar o layout no pior momento.
  */
 @Composable
-private fun Legenda(texto: String?, confirmacaoDoSurdo: Boolean) {
+private fun Legenda(texto: String?, confirmacaoDoSurdo: Boolean, pedindoConsentimento: Boolean = false) {
   if (texto.isNullOrBlank()) return
   Column(
       modifier =
@@ -251,8 +284,11 @@ private fun Legenda(texto: String?, confirmacaoDoSurdo: Boolean) {
     Text(
         text =
             stringResource(
-                if (confirmacaoDoSurdo) R.string.avatar_caption_label_confirmacao
-                else R.string.avatar_caption_label
+                when {
+                  pedindoConsentimento -> R.string.avatar_caption_label_consentimento
+                  confirmacaoDoSurdo -> R.string.avatar_caption_label_confirmacao
+                  else -> R.string.avatar_caption_label
+                }
             ),
         color = Color.White.copy(alpha = 0.6f),
         fontSize = 12.sp,

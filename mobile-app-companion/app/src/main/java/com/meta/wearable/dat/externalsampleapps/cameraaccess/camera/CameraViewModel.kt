@@ -424,6 +424,13 @@ class CameraViewModel(
             antesDeEscutar = ::prepararMicrofoneDaResposta,
             depoisDeEscutar = ::devolverMicrofoneDaResposta,
             onFalhaCamera = { falha -> definirAviso(TipoAviso.CAMERA_NAO_SUBIU, textos.falhaCamera(falha)) },
+            // Libras Livre — consentimento por atendimento (docs/consentimento-por-atendimento-plano.md).
+            onConsentimentoPedido = {
+              limparAviso(TipoAviso.CONSENTIMENTO_RECUSADO)
+              limparAviso(TipoAviso.CONSENTIMENTO_SEM_LIBRAS)
+            },
+            onConsentimentoRecusado = { definirAviso(TipoAviso.CONSENTIMENTO_RECUSADO, textos.consentimentoRecusado) },
+            onConsentimentoSemLibras = { definirAviso(TipoAviso.CONSENTIMENTO_SEM_LIBRAS, textos.consentimentoSemLibras) },
         )
     dialogOrchestrator.attachWakeWordDetector(wakeWordDetector)
     AcoesDeDemo.simularQuedaDoAvatar = simularQuedaDoAvatar
@@ -658,6 +665,16 @@ class CameraViewModel(
    * [cancelarAtendimento].
    */
   fun corrigirReconhecimento() = dialogOrchestrator.corrigirReconhecimento()
+
+  /**
+   * Botões "Aceitar"/"Recusar" em ①.5 PEDINDO_CONSENTIMENTO
+   * (docs/consentimento-por-atendimento-plano.md §2.2). Os dois têm o mesmo peso visual — não é o
+   * modelo de botão principal + botão pequeno de [corrigirReconhecimento] — por isso os dois
+   * ficam de fora de [onBotaoPrincipal].
+   */
+  fun aceitarConsentimento() = dialogOrchestrator.aceitarConsentimento()
+
+  fun recusarConsentimento() = dialogOrchestrator.recusarConsentimento()
 
   /**
    * Destrói a WebView E fecha a tela. As duas coisas andam juntas: o DialogOrchestrator chama

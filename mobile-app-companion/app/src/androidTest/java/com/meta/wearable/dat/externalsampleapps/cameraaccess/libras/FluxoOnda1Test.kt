@@ -184,8 +184,23 @@ class FluxoOnda1Test {
     oculos.services.camera.setCameraFeed(copiarAsset("plant.mp4"))
   }
 
+  // ①.5 (docs/consentimento-por-atendimento-plano.md): "iniciar" agora pede consentimento antes
+  // de ligar a câmera. Só no primeiro turno do atendimento — "Encerrar agora"/"repita" reabrem a
+  // captura sem passar por ①.5 de novo (consentimento é por atendimento, não por turno).
+  private fun aceitarConsentimentoSePedido() {
+    val pedindo = targetContext.getString(R.string.estado_pedindo_consentimento)
+    composeTestRule.waitUntil(TIMEOUT) {
+      composeTestRule.onAllNodesWithText(pedindo).fetchSemanticsNodes().isNotEmpty() ||
+          composeTestRule.onAllNodesWithText(estadoTexto("capturando_sinais")).fetchSemanticsNodes().isNotEmpty()
+    }
+    if (composeTestRule.onAllNodesWithText(pedindo).fetchSemanticsNodes().isNotEmpty()) {
+      composeTestRule.onNodeWithTag("consentimento_aceitar_button").performClick()
+    }
+  }
+
   // A permissão de câmera começa negada no mock: o primeiro stream pede a confirmação.
   private fun confirmarPermissaoDeCameraSePedida() {
+    aceitarConsentimentoSePedido()
     val continuar = targetContext.getString(R.string.camera_permission_continue)
     composeTestRule.waitUntil(TIMEOUT) {
       composeTestRule.onAllNodesWithText(continuar).fetchSemanticsNodes().isNotEmpty() ||
