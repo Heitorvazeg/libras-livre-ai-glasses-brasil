@@ -50,27 +50,42 @@ class TfliteSignClassifier(sidecarJson: String, modelo: ByteArray) : SignClassif
 
   val sidecar: SidecarClassificador
   private val interpreter: Interpreter
+  // Segmentos e aquecimento podem chegar de workers distintos. O mesmo lock protege close/run.
+  private val interpreterLock = Any()
+  private var fechado = false
 
   init {
     sidecar = SidecarClassificador.ler(sidecarJson)
     val bytes = modelo
+    if (!sidecar.sha256.equals(sha256(bytes), ignoreCase = true)) {
+      throw ModeloRecusado(listOf("sha256 do .tflite não bate com o sidecar"))
+    }
     val buffer = ByteBuffer.allocateDirect(bytes.size).order(ByteOrder.nativeOrder()).put(bytes).apply { rewind() }
     interpreter = Interpreter(buffer, Interpreter.Options().setNumThreads(NUM_THREADS))
-    val entrada = interpreter.getInputTensor(0)
-    val interfaceModelo =
-        InterfaceModelo(
-            sha256 = sha256(bytes),
-            shapeEntrada = entrada.shape().toList(),
-            dtypeEntrada = if (entrada.dataType() == DataType.FLOAT32) "float32" else entrada.dataType().name,
-            tamanhoSaida = interpreter.getOutputTensor(0).shape().last(),
-        )
-    val motivos = ValidacaoClassificador.motivosDeRecusa(sidecar, interfaceModelo)
-    if (motivos.isNotEmpty()) {
+    try {
+      if (interpreter.inputTensorCount != 1 || interpreter.outputTensorCount != 1) {
+        throw ModeloRecusado(listOf("exige exatamente uma entrada e uma saída"))
+      }
+      val saida = interpreter.getOutputTensor(0)
+      if (saida.dataType() != DataType.FLOAT32 || !saida.shape().contentEquals(intArrayOf(1, sidecar.rotulos.size))) {
+        throw ModeloRecusado(listOf("saída deve ser float32 [1, rótulos]"))
+      }
+      val entrada = interpreter.getInputTensor(0)
+      val interfaceModelo =
+          InterfaceModelo(
+              sha256 = sha256(bytes),
+              shapeEntrada = entrada.shape().toList(),
+              dtypeEntrada = if (entrada.dataType() == DataType.FLOAT32) "float32" else entrada.dataType().name,
+              tamanhoSaida = saida.shape().last(),
+          )
+      val motivos = ValidacaoClassificador.motivosDeRecusa(sidecar, interfaceModelo)
+      if (motivos.isNotEmpty()) throw ModeloRecusado(motivos)
+      Log.i(TAG, "modelo aceito: ${sidecar.rotulos.size} rótulos, entrada ${sidecar.shape}, " +
+          "imputação no grafo=${sidecar.imputacaoEmbutida} (o app imputa nos dois casos, 2.3)")
+    } catch (e: Throwable) {
       interpreter.close()
-      throw ModeloRecusado(motivos)
+      throw e
     }
-    Log.i(TAG, "modelo aceito: ${sidecar.rotulos.size} rótulos, entrada ${sidecar.shape}, " +
-        "imputação no grafo=${sidecar.imputacaoEmbutida} (o app imputa nos dois casos, 2.3)")
   }
 
   override fun classify(segmento: SegmentoSinal): Classificacao {
@@ -86,7 +101,8 @@ class TfliteSignClassifier(sidecarJson: String, modelo: ByteArray) : SignClassif
   }
 
   /** Os logits crus do modelo para um segmento — exposto para os testes de paridade (2.7). */
-  fun logits(segmento: SegmentoSinal): FloatArray {
+  fun logits(segmento: SegmentoSinal): FloatArray = synchronized(interpreterLock) {
+    check(!fechado) { "Classificador de sinais já fechado" }
     if (segmento.frames.size > sidecar.frames) {
       // 2.2: com a duração máxima do 1.8 isto não deveria acontecer; se acontecer, a imputação do
       // grafo pode deixar de ficar ociosa.
@@ -97,11 +113,17 @@ class TfliteSignClassifier(sidecarJson: String, modelo: ByteArray) : SignClassif
     val entrada = Array(1) { Array(sidecar.frames) { t -> Array(sidecar.pontos) { p -> FloatArray(d) { c -> reamostrado[t][p][c] } } } }
     val saida = Array(1) { FloatArray(sidecar.rotulos.size) }
     interpreter.run(entrada, saida)
-    return saida[0]
+    check(saida[0].all { it.isFinite() }) { "Modelo produziu logits não finitos" }
+    saida[0]
   }
 
   override fun close() {
-    runCatching { interpreter.close() }
+    synchronized(interpreterLock) {
+      if (!fechado) {
+        fechado = true
+        interpreter.close()
+      }
+    }
   }
 }
 

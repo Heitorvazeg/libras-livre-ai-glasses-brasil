@@ -27,7 +27,10 @@ import java.nio.ByteBuffer
 import java.util.concurrent.LinkedBlockingQueue
 import java.util.concurrent.TimeUnit
 
-class HevcDecoder {
+class HevcDecoder(
+  // Observabilidade opcional da pipeline de inferência; não altera recuperação do decoder.
+  private val onFailure: (etapa: String, erro: Throwable) -> Unit = { _, _ -> },
+) {
 
   companion object {
     private const val TAG = "HevcDecoder"
@@ -86,6 +89,7 @@ class HevcDecoder {
       ensureCodecsCreated()
     } catch (e: Exception) {
       Log.e(TAG, "Failed to create HEVC decoder: ${e.message}", e)
+      onFailure("criacao", e)
     }
   }
 
@@ -139,6 +143,7 @@ class HevcDecoder {
       decoder?.release()
     } catch (e: Exception) {
       Log.e(TAG, "Error stopping decoder: ${e.message}", e)
+      onFailure("encerramento", e)
     }
     decoder = null
     decoderThread?.quit()
@@ -259,6 +264,7 @@ class HevcDecoder {
 
               override fun onError(codec: MediaCodec, e: MediaCodec.CodecException) {
                 Log.e(TAG, "Codec error: ${e.message}")
+                onFailure("codec", e)
               }
 
               override fun onOutputFormatChanged(codec: MediaCodec, format: MediaFormat) {}
@@ -270,8 +276,10 @@ class HevcDecoder {
       }
     } catch (e: MediaCodec.CodecException) {
       Log.e(TAG, "Decoder activation codec exception: ${e.message}", e)
+      onFailure("ativacao_codec", e)
     } catch (e: Throwable) {
       Log.e(TAG, "Decoder activation exception: ${e.message}", e)
+      onFailure("ativacao", e)
     }
   }
 
@@ -303,6 +311,7 @@ class HevcDecoder {
       bufferQueued = true
     } catch (e: Throwable) {
       Log.e(TAG, "Input buffer error: ${e.message}", e)
+      onFailure("entrada", e)
       if (active) active = false
     } finally {
       if (!bufferQueued) {
@@ -323,6 +332,7 @@ class HevcDecoder {
       codec.releaseOutputBuffer(index, true)
     } catch (e: Throwable) {
       Log.e(TAG, "Output buffer error: ${e.message}", e)
+      onFailure("saida", e)
       try {
         codec.releaseOutputBuffer(index, false)
       } catch (_: Throwable) {}

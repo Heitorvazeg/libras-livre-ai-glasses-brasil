@@ -10,6 +10,7 @@ import java.io.File
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
+import org.junit.Assert.assertThrows
 import org.junit.Assume.assumeTrue
 import org.junit.Test
 
@@ -97,6 +98,41 @@ class ValidacaoClassificadorTest {
     assertTrue(Probabilidades.softmax(floatArrayOf(2f, 1f, 0f), temperatura = 2f)[0] < p[0])
     // Estável com logits grandes.
     assertEquals(1f, Probabilidades.softmax(floatArrayOf(1000f, 0f))[0], 1e-6f)
+  }
+
+  @Test
+  fun `rotulos vazios duplicados e frame count incompativel recusam`() {
+    for (rotulos in listOf(listOf("", "b"), listOf("a", "a"), listOf("a"))) {
+      val json = JSONObject(sidecarJson()).put("rotulos", org.json.JSONArray(rotulos)).toString()
+      assertTrue(motivos(json).any { it.contains("rótulos") })
+    }
+    assertTrue(motivos(sidecarJson(shape = listOf(1, 64, 57, 3)),
+        modeloBom.copy(shapeEntrada = listOf(1, 64, 57, 3))).any { it.contains("contrato do app") })
+  }
+
+  @Test
+  fun `calibracao presente exige temperatura valida`() {
+    for (bloco in listOf("null", "{}", "[]")) {
+      assertThrows(org.json.JSONException::class.java) { SidecarClassificador.ler(sidecarJson(calibracao = bloco)) }
+    }
+    for (valor in listOf("0", "-1", "1e100")) {
+      assertTrue(motivos(sidecarJson(calibracao = """{"temperatura":$valor}""")).any { it.contains("temperatura") })
+    }
+  }
+
+  @Test
+  fun `probabilidades rejeitam dados nao finitos e invalidos`() {
+    for (t in listOf(0f, -1f, Float.NaN, Float.POSITIVE_INFINITY)) {
+      assertThrows(IllegalArgumentException::class.java) { Probabilidades.softmax(floatArrayOf(1f, 2f), t) }
+    }
+    for (v in listOf(Float.NaN, Float.POSITIVE_INFINITY, Float.NEGATIVE_INFINITY)) {
+      assertThrows(IllegalArgumentException::class.java) { Probabilidades.softmax(floatArrayOf(1f, v)) }
+      assertThrows(IllegalArgumentException::class.java) { Probabilidades.top2(floatArrayOf(1f, v)) }
+    }
+    assertThrows(IllegalArgumentException::class.java) { Probabilidades.softmax(floatArrayOf()) }
+    assertThrows(IllegalArgumentException::class.java) { Probabilidades.top2(floatArrayOf(-0.1f, 1.1f)) }
+    val extremos = Probabilidades.softmax(floatArrayOf(Float.MAX_VALUE, -Float.MAX_VALUE), Float.MIN_VALUE)
+    assertEquals(1f, extremos.sum(), 0f)
   }
 
   /**

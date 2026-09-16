@@ -46,8 +46,8 @@ class LandmarkPipelineTurnosTest {
 
   @Test
   fun tresTurnosSeguidosColetamFramesComASessaoAbertaAntesDoPrimeiroFrame() = runBlocking {
-    // O AAR do MediaPipe não traz x86_64: num emulador só x86_64 (o Pixel_7 API 33 do guia) a
-    // biblioteca nativa não existe e não há o que testar aqui. Roda em aparelho ARM.
+    // Verifica o runtime efetivamente empacotado, não presume suporte pela arquitetura.
+    // O APK atual com MediaPipe 0.10.35 também inclui x86_64 e foi executado no AVD API 36.
     assumeTrue(
         "biblioteca nativa do MediaPipe indisponível para ${Build.SUPPORTED_ABIS.toList()}",
         listOf("mediapipe_tasks_vision_jni", "mediapipe_tasks_jni").any {

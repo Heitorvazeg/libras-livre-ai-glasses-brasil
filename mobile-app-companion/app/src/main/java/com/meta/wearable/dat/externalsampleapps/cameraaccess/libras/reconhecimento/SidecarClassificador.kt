@@ -52,7 +52,7 @@ class SidecarClassificador(
           poseOrdenada = pose,
           framesFixos = contrato.optInt("frames_fixos", shape.getOrElse(1) { 0 }),
           imputacaoEmbutida = contrato.optBoolean("imputacao_embutida", false),
-          temperatura = raiz.optJSONObject("calibracao")?.optDouble("temperatura", 1.0)?.toFloat() ?: 1f,
+          temperatura = if (raiz.has("calibracao")) raiz.getJSONObject("calibracao").getDouble("temperatura").toFloat() else 1f,
       )
     }
   }
@@ -71,6 +71,9 @@ object ValidacaoClassificador {
   /** Lista vazia = modelo aceito. Cada item é um motivo legível, para a faixa de estado e o log. */
   fun motivosDeRecusa(sidecar: SidecarClassificador, modelo: InterfaceModelo): List<String> {
     val motivos = mutableListOf<String>()
+    if (!sidecar.sha256.matches(Regex("[a-fA-F0-9]{64}"))) motivos += "sha256 inválido"
+    if (sidecar.rotulos.size < 2 || sidecar.rotulos.any { it.isBlank() } ||
+      sidecar.rotulos.distinct().size != sidecar.rotulos.size) motivos += "rótulos vazios ou duplicados"
     if (!sidecar.sha256.equals(modelo.sha256, ignoreCase = true)) {
       motivos += "sha256 do .tflite não bate com o sidecar"
     }
@@ -89,6 +92,7 @@ object ValidacaoClassificador {
       if (sidecar.framesFixos != sidecar.frames) {
         motivos += "frames_fixos=${sidecar.framesFixos} diverge do shape (${sidecar.frames})"
       }
+      if (sidecar.frames != 96) motivos += "modelo exige ${sidecar.frames} frames; contrato do app é 96"
     }
     if (!sidecar.dtype.equals("float32", ignoreCase = true) || !modelo.dtypeEntrada.equals("float32", ignoreCase = true)) {
       motivos += "dtype de entrada ${sidecar.dtype}/${modelo.dtypeEntrada}; o app entrega float32"
@@ -101,7 +105,7 @@ object ValidacaoClassificador {
     if (sidecar.rotulos.size != modelo.tamanhoSaida) {
       motivos += "${sidecar.rotulos.size} rótulos para uma saída de ${modelo.tamanhoSaida}"
     }
-    if (sidecar.temperatura <= 0f) motivos += "temperatura ${sidecar.temperatura} inválida"
+    if (!sidecar.temperatura.isFinite() || sidecar.temperatura <= 0f) motivos += "temperatura ${sidecar.temperatura} inválida"
     return motivos
   }
 }
@@ -112,6 +116,8 @@ object Probabilidades {
   data class Top2(val indice: Int, val confianca: Float, val margem: Float)
 
   fun softmax(logits: FloatArray, temperatura: Float = 1f): FloatArray {
+    require(temperatura.isFinite() && temperatura > 0f) { "temperatura inválida" }
+    require(logits.isNotEmpty() && logits.all { it.isFinite() }) { "logits vazios ou não finitos" }
     val escalados = DoubleArray(logits.size) { logits[it].toDouble() / temperatura }
     val maximo = escalados.maxOrNull() ?: return FloatArray(0)
     val exps = DoubleArray(escalados.size) { exp(escalados[it] - maximo) } // estável numericamente
@@ -121,6 +127,7 @@ object Probabilidades {
 
   fun top2(probabilidades: FloatArray): Top2 {
     require(probabilidades.isNotEmpty()) { "sem classes" }
+    require(probabilidades.all { it.isFinite() && it in 0f..1f }) { "probabilidades inválidas" }
     var primeiro = 0
     for (i in probabilidades.indices) if (probabilidades[i] > probabilidades[primeiro]) primeiro = i
     val segundo = probabilidades.indices.filter { it != primeiro }.maxOfOrNull { probabilidades[it] } ?: 0f

@@ -43,6 +43,7 @@ Escritos antes do código. Cada um tem um estado de implementação.
 
 | Documento | Estado |
 |---|---|
+| [integração privada do modelo no app](integracao-modelo-app-plano-2026-09-15.md) | **vídeo validado por componentes reais no emulador** — tela/ciclo completos e hardware pendentes; [evidências do item 1](integracao-video-infraestrutura-2026-09-15.md) |
 | [`libras-livre-poc-plano.md`](libras-livre-poc-plano.md) | **concluído** — PoC executada; resultado em `computer-vision-model/PoC/results/relatorio.md` |
 | [`extracao-landmarks-plano.md`](extracao-landmarks-plano.md) | **implementado** — `libras/reconhecimento/LandmarkNormalizer.kt`, `HandGapImputer.kt`, com testes de paridade |
 | [`sign-boundary-detector-plano.md`](sign-boundary-detector-plano.md) | **implementado, não calibrado** — `libras/reconhecimento/SignBoundaryDetector.kt` roda com os valores sugeridos pelo plano |
