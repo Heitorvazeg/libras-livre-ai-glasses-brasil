@@ -7,6 +7,9 @@
  */
 
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
+import groovy.json.JsonSlurper
+import java.security.MessageDigest
+import java.nio.file.Files
 
 plugins {
   alias(libs.plugins.android.application)
@@ -49,6 +52,94 @@ val paridadeClassificadorJson =
         "paridade_classificador.json",
     ).canonicalFile
 
+// APK principal debug: distinto de classificadorFixtures (APK de testes).
+val nomesClassificadorPrivado = setOf(
+    "sinal_classifier.tflite", "sinal_classifier.json", "sinal_classifier.identidade.json")
+fun hashPrivado(bytes: ByteArray): String =
+    MessageDigest.getInstance("SHA-256").digest(bytes).joinToString("") { "%02x".format(it) }
+val classificadorPrivado = providers.gradleProperty("librasLivre.classificadorPrivado").orNull?.let {
+  val pasta = File(it)
+  if (!pasta.isAbsolute) throw GradleException("classificadorPrivado exige caminho absoluto privado.")
+  val repo = rootProject.projectDir.parentFile.canonicalFile.toPath()
+  val destino = pasta.canonicalFile.toPath()
+  if (destino.startsWith(repo) && !destino.startsWith(repo.resolve("experimentos-privados"))) {
+    throw GradleException("classificadorPrivado deve ficar em experimentos-privados/ ou fora do repositório.")
+  }
+  generateSequence(pasta.toPath()) { p -> p.parent }.forEach { p ->
+    if (Files.isSymbolicLink(p)) throw GradleException("classificadorPrivado não aceita links simbólicos.")
+  }
+  if (!pasta.isDirectory || pasta.list()?.toSet() != nomesClassificadorPrivado) {
+    throw GradleException("Pacote privado deve conter exatamente modelo, sidecar e identidade.")
+  }
+  nomesClassificadorPrivado.forEach { nome ->
+    val p = pasta.resolve(nome)
+    if (Files.isSymbolicLink(p.toPath()) || !p.isFile) throw GradleException("Arquivo privado irregular: $nome")
+  }
+  pasta.canonicalFile
+}
+// Fixa o manifesto ao APK, além dos hashes entre os três arquivos.
+val identidadePrivadaSha = classificadorPrivado?.resolve("sinal_classifier.identidade.json")
+    ?.readBytes()?.let(::hashPrivado) ?: ""
+val assetsClassificadorPrivado = layout.buildDirectory.dir("generated/classificadorPrivado/assets")
+val prepararClassificadorPrivado = tasks.register("prepararClassificadorPrivado") {
+  group = "verification"
+  description = "Valida e gera somente os assets debug do classificador privado."
+  inputs.property("habilitado", classificadorPrivado != null)
+  inputs.property("identidadeSha", identidadePrivadaSha)
+  classificadorPrivado?.let { inputs.dir(it).withPathSensitivity(PathSensitivity.RELATIVE) }
+  outputs.dir(assetsClassificadorPrivado)
+  // Revalidar sempre; inclusive remoção da propriedade entre builds, sem resíduo.
+  outputs.upToDateWhen { false }
+  doLast {
+    val destino = assetsClassificadorPrivado.get().asFile
+    val pasta = classificadorPrivado
+    if (pasta != null) {
+      if (pasta.list()?.toSet() != nomesClassificadorPrivado) throw GradleException("Pacote privado mudou.")
+      nomesClassificadorPrivado.forEach { nome ->
+        if (!pasta.resolve(nome).isFile || Files.isSymbolicLink(pasta.resolve(nome).toPath()))
+          throw GradleException("Arquivo privado irregular: $nome")
+      }
+      val modelo = pasta.resolve("sinal_classifier.tflite").readBytes()
+      val sidecar = pasta.resolve("sinal_classifier.json").readBytes()
+      val idBytes = pasta.resolve("sinal_classifier.identidade.json").readBytes()
+      val identidade = JsonSlurper().parse(idBytes) as Map<*, *>
+      val contrato = JsonSlurper().parse(sidecar) as Map<*, *>
+      if (hashPrivado(idBytes) != identidadePrivadaSha || identidade["schema"] != 1 ||
+          identidade["experimental"] != true || identidade["aprovado_entrega"] != false ||
+          identidade["calibracao"] != "ausente_nao_calibrado" || contrato.containsKey("calibracao") ||
+          identidade["modelo_sha256"] != hashPrivado(modelo) ||
+          identidade["sidecar_sha256"] != hashPrivado(sidecar) ||
+          contrato["sha256"] != hashPrivado(modelo) ||
+          (contrato["origem"] as? Map<*, *>)?.get("sha256") != identidade["checkpoint_sha256"] ||
+          !(identidade["checkpoint_sha256"] as? String).orEmpty().matches(Regex("[0-9a-f]{64}"))) {
+        throw GradleException("Identidade/hash do pacote privado inválido; não empacotar.")
+      }
+      // Nenhuma colisão com assets normais, inclusive diretórios de source sets adicionais.
+      android.sourceSets.filter { it.name != "androidTest" }.forEach { source ->
+        source.assets.srcDirs.filter { it.canonicalFile != destino.canonicalFile }.forEach { dir ->
+          if (nomesClassificadorPrivado.any { dir.resolve(it).exists() })
+            throw GradleException("Colisão do classificador privado com assets em $dir")
+        }
+      }
+      project.delete(destino)
+      destino.mkdirs()
+      // Copiar o snapshot validado, não reler arquivos que possam mudar nesse intervalo.
+      destino.resolve("sinal_classifier.tflite").writeBytes(modelo)
+      destino.resolve("sinal_classifier.json").writeBytes(sidecar)
+      destino.resolve("sinal_classifier.identidade.json").writeBytes(idBytes)
+    } else {
+      project.delete(destino)
+      destino.mkdirs()
+    }
+  }
+}
+// Abortar antes de executar qualquer tarefa de release, mesmo se invocada por assemble/build.
+gradle.taskGraph.whenReady {
+  if (classificadorPrivado != null && allTasks.any { it.project == project && it.name.contains("Release") }) {
+    throw GradleException("classificadorPrivado é exclusivo de debug; release proibido.")
+  }
+}
+
 android {
   namespace = "com.meta.wearable.dat.externalsampleapps.cameraaccess"
   compileSdk = 36
@@ -62,6 +153,8 @@ android {
   buildFeatures { buildConfig = true }
 
   defaultConfig {
+    buildConfigField("boolean", "CLASSIFICADOR_PRIVADO_OBRIGATORIO", "false")
+    buildConfigField("String", "CLASSIFICADOR_IDENTIDADE_SHA256", "\"\"")
     applicationId = "com.meta.wearable.dat.externalsampleapps.cameraaccess"
     minSdk = 31
     targetSdk = 36
@@ -78,12 +171,17 @@ android {
   }
 
   buildTypes {
+    getByName("debug") {
+      buildConfigField("boolean", "CLASSIFICADOR_PRIVADO_OBRIGATORIO", (classificadorPrivado != null).toString())
+      buildConfigField("String", "CLASSIFICADOR_IDENTIDADE_SHA256", "\"$identidadePrivadaSha\"")
+    }
     release {
       isMinifyEnabled = true
       proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
       signingConfig = signingConfigs.getByName("debug")
     }
   }
+  sourceSets.getByName("debug").assets.srcDir(assetsClassificadorPrivado)
   compileOptions {
     sourceCompatibility = JavaVersion.VERSION_17
     targetCompatibility = JavaVersion.VERSION_17
@@ -179,6 +277,7 @@ val verificarAssets =
 tasks
     .matching { it.name.startsWith("merge") && it.name.endsWith("Assets") }
     .configureEach { dependsOn(verificarAssets) }
+tasks.matching { it.name == "mergeDebugAssets" }.configureEach { dependsOn(prepararClassificadorPrivado) }
 
 // ModeloContextualizacaoProvenienciaTest e TabelasDuplicadasTest leem estes arquivos direto do
 // disco. Eles não são entrada dos testes de unidade por padrão: sem declarar aqui, trocar só o
@@ -241,6 +340,8 @@ dependencies {
   implementation(files("libs/sherpa-onnx-1.13.8.aar"))
 
   androidTestImplementation(libs.androidx.ui.test.junit4)
+  // Activity hospedeira do teste isolado do cartão; não faz parte de release.
+  debugImplementation("androidx.compose.ui:ui-test-manifest")
   androidTestImplementation(libs.androidx.test.uiautomator)
   androidTestImplementation(libs.androidx.test.rules)
   // Libras Livre: testes de paridade numérica (LandmarkNormalizer/HandGapImputer contra

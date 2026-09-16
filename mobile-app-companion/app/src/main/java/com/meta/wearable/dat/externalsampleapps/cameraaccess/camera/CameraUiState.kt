@@ -26,6 +26,7 @@ import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.dialogo.Conv
 import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.dialogo.TipoAviso
 import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.dialogo.DialogState
 import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.reconhecimento.LibrasState
+import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.reconhecimento.DiagnosticoClassificador
 
 /** A capture awaiting preview/share — a still photo or a recorded video file. */
 sealed interface CapturePreview {
@@ -63,6 +64,9 @@ data class CameraUiState(
     val isStartingStream: Boolean = false,
     // Libras Livre: estado do reconhecimento de sinal (captura, classificação, resultado, erro).
     val libras: LibrasState = LibrasState(),
+    // Independente dos erros transitórios e da chave opcional do painel de métricas.
+    val classificador: DiagnosticoClassificador? = null,
+    val limiarClassificador: Float = 0.60f,
     // Libras Livre: estado da sessão de diálogo bidirecional (ver libras/DialogOrchestrator.kt).
     val dialogState: DialogState = DialogState.AGUARDANDO_SINAL,
     // Libras Livre: painel de conversa (docs/prontidao-demo/10-tela.md §10.1). Independe do stream:

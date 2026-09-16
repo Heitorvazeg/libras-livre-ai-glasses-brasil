@@ -349,6 +349,7 @@ class LandmarkPipeline(
         if (collecting && ex != null) processar(ex, image)
       } catch (e: Throwable) {
         Log.e(TAG, "Erro extraindo/normalizando landmarks do frame", e)
+        onEvento("falha_extracao", e.message ?: e.javaClass.simpleName)
       } finally {
         image.close()
       }
@@ -356,7 +357,9 @@ class LandmarkPipeline(
     imageReader = reader
 
     decoder =
-        HevcDecoder().also { d ->
+        HevcDecoder(onFailure = { etapa, erro ->
+          onEvento("falha_decoder", "$etapa: ${erro.message ?: erro.javaClass.simpleName}")
+        }).also { d ->
           d.start(width, height, reader.surface)
           // Prime com o CSD acumulado (VPS/SPS/PPS), como o decoder de preview faz — assim
           // um decoder criado no meio do stream ativa no próximo keyframe.

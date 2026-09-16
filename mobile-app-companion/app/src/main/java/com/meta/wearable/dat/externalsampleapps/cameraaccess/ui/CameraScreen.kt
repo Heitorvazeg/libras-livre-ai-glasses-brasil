@@ -244,6 +244,7 @@ fun CameraScreen(
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
       // 10.3: faixa de estado (médio), aquecimento e painel de conversa (grande).
+      CartaoClassificador(ui.classificador, ui.limiarClassificador)
       FaixaDeEstado(ui = ui)
       CartaoAquecimento(resultados = ui.aquecimento, pronto = ui.aquecido)
       PainelConversa(conversa = ui.conversa)

@@ -101,7 +101,6 @@ import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.diagnostico.
 import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.contextualizacao.LexicoGlosas
 import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.dialogo.AcaoBotao
 import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.dialogo.AvaliadorDeFrase
-import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.reconhecimento.ClassificadorRecusado
 import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.reconhecimento.ModeloRecusado
 import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.reconhecimento.SignClassifier
 import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.reconhecimento.TfliteSignClassifier
@@ -130,6 +129,9 @@ import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.dialogo.Para
 import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.dialogo.TipoAviso
 import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.reconhecimento.LandmarkPipeline.Companion.ERRO_MODELOS
 import com.meta.wearable.dat.externalsampleapps.cameraaccess.ui.AcoesDeDemo
+import com.meta.wearable.dat.externalsampleapps.cameraaccess.BuildConfig
+import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.reconhecimento.FabricaClassificadorApp
+import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.reconhecimento.DiagnosticoClassificador
 
 class CameraViewModel(
     application: Application,
@@ -215,21 +217,25 @@ class CameraViewModel(
       )
 
   /**
-   * O classificador do app (2.6). Com `sinal_classifier.tflite` nos assets, o modelo validado pelo
-   * sidecar; se o sidecar recusar, o erro fica na tela e toda classificação falha com o motivo —
-   * nunca um modelo errado rodando em silêncio. Sem o `.tflite`, o placeholder no modo escolhido nas
-   * configurações de demo.
+    * O build privado exige identidade fixada e assets íntegros. Qualquer falha recusa o modelo,
+    * sem fallback. Apenas o build sem opt-in e sem modelo usa a simulação configurada.
    */
   private fun criarClassificador(): SignClassifier {
     val assets = getApplication<Application>().assets
-    val temModelo = runCatching { assets.list("")?.contains("${TfliteSignClassifier.NOME_PADRAO}.tflite") == true }.getOrDefault(false)
-    if (!temModelo) return PlaceholderSignClassifier(modo = { configuracoes.valores.value.modoPlaceholder })
-    return runCatching<SignClassifier> { TfliteSignClassifier(assets) }.getOrElse { e ->
-      val motivo = (e as? ModeloRecusado)?.message ?: (ModeloRecusado.PREFIXO + (e.message ?: e.javaClass.simpleName))
-      Log.e(TAG, motivo, e)
+    val carregado = FabricaClassificadorApp.carregar(
+      assets = assets,
+        criarSimulado = { PlaceholderSignClassifier(modo = { configuracoes.valores.value.modoPlaceholder }) },
+    )
+    val diagnostico = DiagnosticoClassificador(carregado.modo, carregado.identidade, carregado.motivo,
+      "${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE}) ${BuildConfig.BUILD_TYPE}")
+    val limiar = configuracoes.valores.value.limiarConfianca
+    _uiState.update { it.copy(classificador = diagnostico, limiarClassificador = limiar) }
+    Log.i(TAG, diagnostico.detalhes(limiar))
+    carregado.motivo?.let { motivo ->
+      Log.e(TAG, motivo)
       _uiState.update { it.copy(libras = it.libras.copy(error = motivo)) }
-      ClassificadorRecusado(motivo)
     }
+    return carregado.classificador
   }
   private val audioSessionManager = AudioSessionManager(application)
 
@@ -420,6 +426,13 @@ class CameraViewModel(
     dialogOrchestrator.attachWakeWordDetector(wakeWordDetector)
     AcoesDeDemo.simularQuedaDoAvatar = simularQuedaDoAvatar
 
+    viewModelScope.launch {
+      configuracoes.valores.map { it.limiarConfianca }.distinctUntilChanged().collect { limiar ->
+        _uiState.update { it.copy(limiarClassificador = limiar) }
+        _uiState.value.classificador?.let { Log.i(TAG, it.detalhes(limiar)) }
+      }
+    }
+
     // 4.5, 4.6: motor da wake word e interruptor "Comando de voz" seguem as configurações de demo.
     viewModelScope.launch {
       configuracoes.valores.map { it.motorWakeWord }.distinctUntilChanged().collect { motor ->
@@ -474,7 +487,13 @@ class CameraViewModel(
           }
           .collect { (valores, sessao) ->
             if (valores.gravadorSessao && sessao) {
-              if (gravador.arquivo == null) withContext(Dispatchers.IO) { gravador.abrir() }
+              if (gravador.arquivo == null) {
+                withContext(Dispatchers.IO) { gravador.abrir() }
+              }
+              _uiState.value.classificador?.let {
+                gravador.evento(SystemClock.uptimeMillis(), metricas.turno, "identidade_classificador",
+                    it.detalhes(valores.limiarConfianca))
+              }
             } else if (gravador.arquivo != null) {
               withContext(Dispatchers.IO) { gravador.fechar() }
             }
