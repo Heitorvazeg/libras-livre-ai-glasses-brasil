@@ -44,6 +44,15 @@ data class CameraUiState(
     // tem o que mostrar no ⑦, e fora dele seguraria ~300 MB à toa.
     val avatarVisivel: Boolean = false,
     val avatarLegenda: String? = null,
+    // Libras Livre — confirmação de reconhecimento (docs/confirmacao-e-modo-economia-plano.md
+    // §1). true quando o avatar/legenda em tela é a frase que o SISTEMA ENTENDEU do surdo (②.5),
+    // não a resposta do atendente (⑦) — muda só o rótulo acima da legenda.
+    val avatarConfirmacaoDoSurdo: Boolean = false,
+    // Libras Livre — modo economia de bateria (docs/confirmacao-e-modo-economia-plano.md §2).
+    // Espelha DialogOrchestrator.economiaBateria: liga sozinho quando o DAT reporta
+    // BATTERY_LOW/BATTERY_CRITICAL, nunca desliga sozinho (o SDK não expõe "bateria
+    // recuperada").
+    val bateriaBaixa: Boolean = false,
     val sessionState: DeviceSessionState = DeviceSessionState.IDLE,
     val streamState: StreamState = StreamState.STOPPED,
     // Flips once when the first preview frame arrives; drives the loading→preview swap. A one-shot

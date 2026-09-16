@@ -35,6 +35,7 @@ import com.meta.wearable.dat.camera.Stream
 import com.meta.wearable.dat.camera.addCamera
 import com.meta.wearable.dat.camera.types.PhotoData
 import com.meta.wearable.dat.camera.types.StreamConfiguration
+import com.meta.wearable.dat.camera.types.StreamError
 import com.meta.wearable.dat.camera.types.StreamState
 import com.meta.wearable.dat.camera.types.VideoFrame
 import com.meta.wearable.dat.camera.types.VideoQuality
@@ -42,6 +43,7 @@ import com.meta.wearable.dat.core.Wearables
 import com.meta.wearable.dat.core.selectors.DeviceSelector
 import com.meta.wearable.dat.core.session.DeviceSession
 import com.meta.wearable.dat.core.session.DeviceSessionState
+import com.meta.wearable.dat.core.types.DeviceSessionError
 import com.meta.wearable.dat.core.types.Permission
 import com.meta.wearable.dat.core.types.PermissionStatus
 import com.meta.wearable.dat.externalsampleapps.cameraaccess.R
@@ -650,6 +652,14 @@ class CameraViewModel(
   fun cancelarAtendimento() = dialogOrchestrator.cancelarAtendimento()
 
   /**
+   * Botão "Corrigir" em ②.5 CONFIRMANDO_RECONHECIMENTO
+   * (docs/confirmacao-e-modo-economia-plano.md §1.3). "Confirmar" já passa pelo botão principal
+   * (AcaoBotao.CONFIRMAR, via onBotaoPrincipal) — este é o pequeno, à parte, mesmo padrão de
+   * [cancelarAtendimento].
+   */
+  fun corrigirReconhecimento() = dialogOrchestrator.corrigirReconhecimento()
+
+  /**
    * Destrói a WebView E fecha a tela. As duas coisas andam juntas: o DialogOrchestrator chama
    * isto quando o atendimento encerra por inatividade, e uma tela aberta sobre uma WebView
    * destruída mostraria um retângulo preto sem dono.
@@ -678,6 +688,24 @@ class CameraViewModel(
   private fun limparAviso(tipo: TipoAviso) {
     if (tipo !in _uiState.value.avisos) return
     _uiState.update { it.copy(avisos = it.avisos - tipo) }
+  }
+
+  // Libras Livre — modo economia de bateria (docs/confirmacao-e-modo-economia-plano.md §2).
+  // Ligado uma vez por onBateriaBaixa(), nunca desligado sozinho (o DAT não expõe "bateria
+  // recuperada", só os dois limiares de baixa/crítica). Checado por ensureCameraActiveForLibras()
+  // pra bloquear "iniciar"/"corrigir" pelo mesmo caminho de qualquer outra falha de câmera
+  // (FalhaCamera.BATERIA_BAIXA).
+  private var economiaBateria = false
+
+  private fun onBateriaBaixa() {
+    if (economiaBateria) return
+    economiaBateria = true
+    Log.w(TAG, "Bateria baixa/crítica nos óculos — modo economia ligado")
+    // Persistente (ao contrário do ERRO_OCULOS acima, que é um evento único): o operador precisa
+    // lembrar que a captura de sinais ficou desligada pelo resto do atendimento, não só no
+    // instante em que a bateria caiu.
+    definirAviso(TipoAviso.BATERIA_OCULOS_BAIXA, textos.falhaCamera(FalhaCamera.BATERIA_BAIXA))
+    dialogOrchestrator.onBateriaBaixa()
   }
 
   /** 6.4: as etapas do plano, em ordem. O "iniciar" libera depois das cinco primeiras. */
@@ -893,6 +921,9 @@ class CameraViewModel(
         val mensagem = error.getLocalizedDescription(getApplication())
         wearablesViewModel.setRecentError(mensagem)
         definirAviso(TipoAviso.ERRO_OCULOS, mensagem)
+        // Libras Livre — modo economia de bateria (docs/confirmacao-e-modo-economia-plano.md §2).
+        // Confirmado por inspeção do mwdat-core-0.9.0.aar real (javap): enum, comparável com ==.
+        if (error == DeviceSessionError.BATTERY_CRITICAL) onBateriaBaixa()
       }
     }
   }
@@ -1033,6 +1064,9 @@ class CameraViewModel(
         val mensagem = error.getLocalizedDescription(getApplication())
         wearablesViewModel.setRecentError(mensagem)
         definirAviso(TipoAviso.ERRO_OCULOS, mensagem)
+        // Libras Livre — modo economia de bateria (docs/confirmacao-e-modo-economia-plano.md §2).
+        // Confirmado por inspeção do mwdat-camera-0.9.0.aar real (javap): enum, comparável com ==.
+        if (error == StreamError.BATTERY_LOW) onBateriaBaixa()
       }
     }
   }
@@ -1266,6 +1300,11 @@ class CameraViewModel(
    * stream não ficarem prontos a tempo (sem óculos pareados, permissão de câmera pendente etc.).
    */
   private suspend fun ensureCameraActiveForLibras(): FalhaCamera? {
+    // Libras Livre — modo economia de bateria (docs/confirmacao-e-modo-economia-plano.md §2):
+    // checado antes de tudo, inclusive do atalho de stream já ativo — bateria crítica bloqueia
+    // qualquer nova captura de sinais dali em diante, mesmo que o stream ainda estivesse de pé
+    // por algum motivo.
+    if (economiaBateria) return FalhaCamera.BATERIA_BAIXA
     if (_uiState.value.isStreaming) return null
     // 3.2: stream pausado nos óculos — startStreaming() sairia cedo e o "iniciar" desistiria em
     // silêncio. Mostra a mensagem e espera a retomada até o teto da pausa.

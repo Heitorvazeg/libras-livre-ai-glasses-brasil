@@ -273,12 +273,17 @@ fun CameraScreen(
           onPausar = cameraViewModel::pausarAvatar,
           onRetomar = cameraViewModel::retomarAvatar,
           // 9.2: o botão principal também dentro da tela do avatar — "Pular" enquanto anima,
-          // "Iniciar" depois (esconde a tela e começa a captura).
+          // "Iniciar" depois (esconde a tela e começa a captura), "Confirmar" em ②.5
+          // (docs/confirmacao-e-modo-economia-plano.md §1.3).
           botaoPrincipal = Transicoes.botaoPrincipal(ui.dialogState, wearablesUi.hasActiveDevice, ui.aquecido),
           onBotaoPrincipal = { acao ->
             if (acao == AcaoBotao.INICIAR) cameraViewModel.iniciarPeloAvatar()
             else cameraViewModel.onBotaoPrincipal(acao, onRequestRecordAudioPermission)
           },
+          // ②.5: a legenda em tela é a frase que o SISTEMA ENTENDEU do surdo, não a resposta do
+          // atendente — troca o rótulo e mostra "Corrigir" ao lado do "Confirmar" (botaoPrincipal).
+          confirmacaoDoSurdo = ui.dialogState == DialogState.CONFIRMANDO_RECONHECIMENTO,
+          onCorrigirReconhecimento = cameraViewModel::corrigirReconhecimento,
       )
     }
 
@@ -898,6 +903,7 @@ internal fun rotuloDoBotao(rotulo: RotuloBotao): Int =
       RotuloBotao.OUVIR_RESPOSTA -> R.string.botao_ouvir_resposta
       RotuloBotao.TRANSCREVENDO -> R.string.botao_transcrevendo
       RotuloBotao.PULAR -> R.string.avatar_pular
+      RotuloBotao.CONFIRMAR -> R.string.avatar_confirmacao_confirmar
       RotuloBotao.CONECTE_OS_OCULOS -> R.string.botao_conecte_oculos
       RotuloBotao.PREPARANDO -> R.string.botao_preparando
     }
@@ -978,6 +984,7 @@ internal fun rotuloDoEstado(estado: DialogState): Int =
     when (estado) {
       DialogState.AGUARDANDO_SINAL -> R.string.estado_aguardando_sinal
       DialogState.CAPTURANDO_SINAIS -> R.string.estado_capturando
+      DialogState.CONFIRMANDO_RECONHECIMENTO -> R.string.estado_confirmando
       DialogState.FALANDO -> R.string.estado_falando
       DialogState.AGUARDANDO_RESPOSTA -> R.string.estado_aguardando_resposta
       DialogState.ESCUTANDO_ATENDENTE -> R.string.estado_ouvindo

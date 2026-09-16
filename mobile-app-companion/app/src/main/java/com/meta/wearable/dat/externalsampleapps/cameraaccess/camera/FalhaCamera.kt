@@ -14,6 +14,11 @@ enum class FalhaCamera {
   SESSAO_SEM_RESPOSTA,
   STREAM_NAO_SUBIU,
   PAUSA_LONGA,
+  // [NOVO — docs/confirmacao-e-modo-economia-plano.md §2] Modo economia ligado por
+  // DeviceSessionError.BATTERY_CRITICAL/StreamError.BATTERY_LOW (CameraViewModel.onBateriaBaixa).
+  // "Antes de tentar" verifica isso primeiro (ensureCameraActiveForLibras), então nem chega a
+  // tentar ligar o stream.
+  BATERIA_BAIXA,
   ;
 
   companion object {

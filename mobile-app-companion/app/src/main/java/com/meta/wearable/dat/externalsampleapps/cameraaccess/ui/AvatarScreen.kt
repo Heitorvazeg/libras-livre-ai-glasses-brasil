@@ -74,10 +74,17 @@ fun AvatarScreen(
     onPausar: () -> Unit,
     onRetomar: () -> Unit,
     // Botão principal dentro da tela do avatar (docs/prontidao-demo/09 §9.2): "Pular" no ⑦, "Iniciar"
-    // depois. Null esconde o botão.
+    // depois, "Confirmar" em ②.5 (docs/confirmacao-e-modo-economia-plano.md §1.3). Null esconde o
+    // botão.
     botaoPrincipal: BotaoPrincipal? = null,
     onBotaoPrincipal: (AcaoBotao) -> Unit = {},
     modifier: Modifier = Modifier,
+    // Libras Livre — confirmação de reconhecimento (docs/confirmacao-e-modo-economia-plano.md
+    // §1.3, §1.5): true quando a legenda é a frase que o sistema entendeu do SURDO (②.5), não a
+    // resposta do atendente (⑦) — troca o rótulo acima do texto e mostra o botão "Corrigir"
+    // pequeno, ao lado do "Confirmar" (que já vem por [botaoPrincipal]/[onBotaoPrincipal]).
+    confirmacaoDoSurdo: Boolean = false,
+    onCorrigirReconhecimento: () -> Unit = {},
 ) {
   // Congela o Unity com o app em background — ele desenha a 30 fps mesmo sem ninguém olhando.
   val lifecycleOwner = LocalLifecycleOwner.current
@@ -107,7 +114,7 @@ fun AvatarScreen(
           AvatarStatus(estado = estado, onTentarDeNovo = onTentarDeNovo)
         }
 
-        Legenda(texto = legenda)
+        Legenda(texto = legenda, confirmacaoDoSurdo = confirmacaoDoSurdo)
 
         botaoPrincipal?.let {
           BotaoPrincipalGrande(
@@ -115,6 +122,20 @@ fun AvatarScreen(
               onAcao = onBotaoPrincipal,
               modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
               tag = "botao_principal_avatar",
+          )
+        }
+        // ②.5: "Corrigir" é um botão pequeno à parte do principal "Confirmar" (§1.3 do plano) —
+        // mesmo padrão de "Cancelar atendimento" na tela principal, fora do modelo de botão único.
+        if (confirmacaoDoSurdo) {
+          CapturePill(
+              modifier =
+                  Modifier.fillMaxWidth().padding(horizontal = 16.dp).padding(bottom = 12.dp)
+                      .testTag("avatar_corrigir_button"),
+              icon = Icons.Filled.Refresh,
+              label = stringResource(R.string.avatar_confirmacao_corrigir),
+              contentDescription = stringResource(R.string.avatar_confirmacao_corrigir),
+              enabled = true,
+              onClick = onCorrigirReconhecimento,
           )
         }
       }
@@ -215,7 +236,7 @@ private fun AvatarStatus(estado: AvatarState, onTentarDeNovo: () -> Unit) {
  * degradado sem precisar trocar o layout no pior momento.
  */
 @Composable
-private fun Legenda(texto: String?) {
+private fun Legenda(texto: String?, confirmacaoDoSurdo: Boolean) {
   if (texto.isNullOrBlank()) return
   Column(
       modifier =
@@ -228,7 +249,11 @@ private fun Legenda(texto: String?) {
       verticalArrangement = Arrangement.spacedBy(6.dp),
   ) {
     Text(
-        text = stringResource(R.string.avatar_caption_label),
+        text =
+            stringResource(
+                if (confirmacaoDoSurdo) R.string.avatar_caption_label_confirmacao
+                else R.string.avatar_caption_label
+            ),
         color = Color.White.copy(alpha = 0.6f),
         fontSize = 12.sp,
     )

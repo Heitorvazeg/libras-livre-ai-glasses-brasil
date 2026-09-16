@@ -11,11 +11,13 @@ import org.junit.Test
 class TransicoesTest {
 
   @Test
-  fun `wake word ouve em 1, 2 e 4 e fica pausada em 3, 5, 6 e 7`() {
+  fun `wake word ouve em 1, 2 e 4 e fica pausada em 2,5, 3, 5, 6 e 7`() {
     val esperado =
         mapOf(
             DialogState.AGUARDANDO_SINAL to true,
             DialogState.CAPTURANDO_SINAIS to true,
+            // [NOVO] docs/confirmacao-e-modo-economia-plano.md §1.4 — mesmo padrão de ③⑥⑦.
+            DialogState.CONFIRMANDO_RECONHECIMENTO to false,
             DialogState.FALANDO to false,
             DialogState.AGUARDANDO_RESPOSTA to true,
             DialogState.ESCUTANDO_ATENDENTE to false,
@@ -53,9 +55,12 @@ class TransicoesTest {
   }
 
   @Test
-  fun `pedir repeticao volta ao 2 e falar abre a escuta pulando o 4`() {
+  fun `pedir repeticao volta ao 2 e falar vai pra confirmacao do surdo antes do 5`() {
+    // [MUDOU] docs/confirmacao-e-modo-economia-plano.md §1.4: Falar não pula mais direto pra
+    // ESCUTANDO_ATENDENTE — passa por ②.5 CONFIRMANDO_RECONHECIMENTO primeiro.
     assertEquals(DialogState.CAPTURANDO_SINAIS, Transicoes.estadoAposDecisao(DecisaoFrase.PedirRepeticao))
-    assertEquals(DialogState.ESCUTANDO_ATENDENTE, Transicoes.estadoAposDecisao(DecisaoFrase.Falar(listOf("filho"))))
+    assertEquals(
+        DialogState.CONFIRMANDO_RECONHECIMENTO, Transicoes.estadoAposDecisao(DecisaoFrase.Falar(listOf("filho"))))
     assertEquals(DialogState.AGUARDANDO_SINAL, Transicoes.estadoAposDecisao(DecisaoFrase.Desistir))
     assertEquals(DialogState.AGUARDANDO_SINAL, Transicoes.estadoAposDecisao(DecisaoFrase.Ignorar))
   }
@@ -66,6 +71,9 @@ class TransicoesTest {
         mapOf(
             DialogState.AGUARDANDO_SINAL to BotaoPrincipal(RotuloBotao.INICIAR, AcaoBotao.INICIAR),
             DialogState.CAPTURANDO_SINAIS to BotaoPrincipal(RotuloBotao.ENCERRAR_AGORA, AcaoBotao.ENCERRAR_CAPTURA),
+            // [NOVO] docs/confirmacao-e-modo-economia-plano.md §1.3 — "Corrigir" é um botão
+            // pequeno à parte, fora do modelo de botão principal (ver AcaoBotao.CONFIRMAR).
+            DialogState.CONFIRMANDO_RECONHECIMENTO to BotaoPrincipal(RotuloBotao.CONFIRMAR, AcaoBotao.CONFIRMAR),
             DialogState.FALANDO to BotaoPrincipal(RotuloBotao.FALANDO, null),
             DialogState.AGUARDANDO_RESPOSTA to BotaoPrincipal(RotuloBotao.OUVIR_RESPOSTA, AcaoBotao.OUVIR),
             DialogState.ESCUTANDO_ATENDENTE to BotaoPrincipal(RotuloBotao.ENCERRAR_AGORA, AcaoBotao.ENCERRAR_ESCUTA),

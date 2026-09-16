@@ -14,6 +14,11 @@ enum class AcaoBotao {
   OUVIR,
   ENCERRAR_ESCUTA,
   PULAR,
+  // [NOVO — docs/confirmacao-e-modo-economia-plano.md §1.3] ②.5: confirma a frase reconhecida
+  // pro surdo e segue o ciclo normal. "Corrigir" NÃO é uma AcaoBotao — é uma ação separada
+  // (DialogOrchestrator.corrigirReconhecimento()), no mesmo padrão de "Cancelar atendimento":
+  // um botão pequeno ao lado do principal, fora do modelo de uma ação só por estado.
+  CONFIRMAR,
 }
 
 /** O texto do botão principal; a tela resolve para uma string. */
@@ -26,6 +31,8 @@ enum class RotuloBotao {
   PULAR,
   CONECTE_OS_OCULOS,
   PREPARANDO,
+  // [NOVO] ②.5 — ver AcaoBotao.CONFIRMAR.
+  CONFIRMAR,
 }
 
 data class BotaoPrincipal(val rotulo: RotuloBotao, val acao: AcaoBotao?) {
@@ -80,12 +87,13 @@ object Transicoes {
 
   /**
    * Para onde a conversa vai depois do ③, conforme a decisão sobre a frase (2.8, 4.1): falada, a
-   * escuta abre sozinha, pulando o ④; "repita" volta ao ② sem passar pelo ⑤; desistência e sessão
-   * ignorada voltam ao ①.
+   * pessoa surda confirma antes de a escuta abrir sozinha (②.5,
+   * docs/confirmacao-e-modo-economia-plano.md §1); "repita" volta ao ② sem passar pelo ⑤;
+   * desistência e sessão ignorada voltam ao ①.
    */
   fun estadoAposDecisao(decisao: DecisaoFrase): DialogState =
       when (decisao) {
-        is DecisaoFrase.Falar -> DialogState.ESCUTANDO_ATENDENTE
+        is DecisaoFrase.Falar -> DialogState.CONFIRMANDO_RECONHECIMENTO
         DecisaoFrase.PedirRepeticao -> DialogState.CAPTURANDO_SINAIS
         DecisaoFrase.Desistir,
         DecisaoFrase.Ignorar -> DialogState.AGUARDANDO_SINAL
@@ -105,6 +113,8 @@ object Transicoes {
               else -> BotaoPrincipal(RotuloBotao.INICIAR, AcaoBotao.INICIAR)
             }
         DialogState.CAPTURANDO_SINAIS -> BotaoPrincipal(RotuloBotao.ENCERRAR_AGORA, AcaoBotao.ENCERRAR_CAPTURA)
+        // [NOVO] ②.5 — "Corrigir" é um botão pequeno separado, ver AcaoBotao.CONFIRMAR.
+        DialogState.CONFIRMANDO_RECONHECIMENTO -> BotaoPrincipal(RotuloBotao.CONFIRMAR, AcaoBotao.CONFIRMAR)
         DialogState.FALANDO -> BotaoPrincipal(RotuloBotao.FALANDO, null)
         DialogState.AGUARDANDO_RESPOSTA -> BotaoPrincipal(RotuloBotao.OUVIR_RESPOSTA, AcaoBotao.OUVIR)
         DialogState.ESCUTANDO_ATENDENTE -> BotaoPrincipal(RotuloBotao.ENCERRAR_AGORA, AcaoBotao.ENCERRAR_ESCUTA)

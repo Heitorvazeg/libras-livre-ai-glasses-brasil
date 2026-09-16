@@ -94,8 +94,10 @@
     <string name="falha_camera_sessao" description="Camera failure cause: glasses session did not become ready">Óculos não responderam (dobrados ou fora do rosto?)</string>
     <string name="falha_camera_stream" description="Camera failure cause: stream did not start">Câmera não subiu (bateria ou temperatura dos óculos?)</string>
     <string name="falha_camera_pausa_longa" description="Camera failure cause: the stream stayed paused too long and the capture was ended">Stream pausado por muito tempo: captura encerrada</string>
+    <string name="falha_camera_bateria_baixa" description="Libras Livre: camera failure cause shown once the DAT reports low/critical glasses battery (docs/confirmacao-e-modo-economia-plano.md §2) — sign capture stays disabled for the rest of the visit">Bateria dos óculos baixa: câmera desligada, atendimento só por voz</string>
     <string name="estado_aguardando_sinal" description="Dialog state in Portuguese: waiting for signs">Aguardando sinais</string>
     <string name="estado_capturando" description="Dialog state in Portuguese: capturing signs">Capturando</string>
+    <string name="estado_confirmando" description="Libras Livre: dialog state in Portuguese, shown while the deaf person's recognized sentence waits for the operator to confirm or correct it (docs/confirmacao-e-modo-economia-plano.md §1)">Confirmando com a pessoa surda</string>
     <string name="estado_falando" description="Dialog state in Portuguese: speaking the sentence">Falando</string>
     <string name="estado_aguardando_resposta" description="Dialog state in Portuguese: waiting for the attendant's reply">Aguardando resposta</string>
     <string name="estado_ouvindo" description="Dialog state in Portuguese: listening to the attendant">Ouvindo a resposta</string>
@@ -133,6 +135,9 @@
     <string name="demo_config_metrics" description="Switch that shows the metrics overlay (fps, stage timings, thermal, battery, RAM)">Painel de métricas</string>
     <string name="demo_config_placeholder" description="Label of the selector for the fake sign classifier mode used while there is no model">Classificador sem modelo (placeholder)</string>
     <string name="avatar_caption_label" description="Label above the written form of what the hearing person said">O atendente disse</string>
+    <string name="avatar_caption_label_confirmacao" description="Libras Livre: label above the written form of what the deaf person signed, shown during the confirmation window (docs/confirmacao-e-modo-economia-plano.md §1) instead of avatar_caption_label">Você sinalizou</string>
+    <string name="avatar_confirmacao_confirmar" description="Libras Livre: button shown during the confirmation window (docs/confirmacao-e-modo-economia-plano.md §1.3) that confirms the recognized phrase is correct and moves on to speaking it to the attendant">Confirmar</string>
+    <string name="avatar_confirmacao_corrigir" description="Libras Livre: button shown during the confirmation window (docs/confirmacao-e-modo-economia-plano.md §1.3) that discards the recognized phrase and reopens sign capture">Corrigir</string>
     <string name="avatar_waiting" description="Shown on the avatar screen while no answer has been signed yet">Aguardando a resposta do atendente…</string>
 
     <!-- Update required -->

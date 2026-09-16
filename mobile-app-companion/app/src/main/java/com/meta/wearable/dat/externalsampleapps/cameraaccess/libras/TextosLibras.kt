@@ -39,5 +39,6 @@ class TextosLibras(context: Context) {
             FalhaCamera.SESSAO_SEM_RESPOSTA -> R.string.falha_camera_sessao
             FalhaCamera.STREAM_NAO_SUBIU -> R.string.falha_camera_stream
             FalhaCamera.PAUSA_LONGA -> R.string.falha_camera_pausa_longa
+            FalhaCamera.BATERIA_BAIXA -> R.string.falha_camera_bateria_baixa
           })
 }

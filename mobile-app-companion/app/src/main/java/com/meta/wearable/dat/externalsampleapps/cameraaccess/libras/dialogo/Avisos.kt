@@ -33,6 +33,10 @@ enum class TipoAviso(val nivel: NivelAviso) {
   ERRO_OCULOS(NivelAviso.ATENCAO), // 3.4: erros do SDK que antes só iam para a snackbar
   PAUSA_LONGA(NivelAviso.ATENCAO), // 3.2: sessão encerrada depois de pausa longa
   ERRO_RECONHECIMENTO(NivelAviso.ATENCAO), // falha ao classificar um segmento
+  // [NOVO] docs/confirmacao-e-modo-economia-plano.md §2 — persistente desde o evento de bateria
+  // até o fim do app (o SDK não expõe "bateria recuperada"), não só quando "iniciar" é bloqueado
+  // (isso também dispara CAMERA_NAO_SUBIU, via FalhaCamera.BATERIA_BAIXA).
+  BATERIA_OCULOS_BAIXA(NivelAviso.ATENCAO),
   CAPTURA(NivelAviso.INFORMACAO), // 3.1, 1.11
 }
 

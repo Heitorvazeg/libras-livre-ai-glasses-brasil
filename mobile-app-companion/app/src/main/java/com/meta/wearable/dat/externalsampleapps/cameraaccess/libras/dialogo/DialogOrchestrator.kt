@@ -17,6 +17,19 @@
 // a captura; a pausa longa depois dos sinais a fecha; a decisão sobre a frase (2.8) fala e abre a
 // escuta sozinha, ou pede repetição, ou desiste; o fim de fala do Vosk fecha a escuta; o avatar
 // responde e o ciclo volta ao ①. Os botões continuam valendo em todo passo, como gatilho e correção.
+//
+// [NOVO — docs/confirmacao-e-modo-economia-plano.md] Dois pontos do feedback da banca de
+// 2026-09-15, encaixados nesta arquitetura (não construídos à parte):
+//  - ②.5 CONFIRMANDO_RECONHECIMENTO, entre a decisão Falar e a escuta do atendente
+//    (Transicoes.estadoAposDecisao): mostra pro SURDO (via playAvatar, o mesmo do ⑦) a frase que
+//    o sistema entendeu, e espera o botão do operador — confirmarReconhecimento() fala pro
+//    atendente e segue; corrigirReconhecimento() descarta e reabre a captura (reaproveita
+//    beginSignSession()/iniciarCaptura()). Um timeout de segurança confirma sozinho.
+//  - onBateriaBaixa(): chamado pelo CameraViewModel quando o DAT reporta bateria baixa/crítica
+//    dos óculos. Encerra a captura em curso (mesmo padrão de encerrarCapturaPorPausaLonga) e
+//    marca a flag que faz ensureCameraActive() (dono: CameraViewModel) devolver
+//    FalhaCamera.BATERIA_BAIXA dali em diante — nenhuma outra mudança de fluxo é necessária, o
+//    "iniciar" já é bloqueado pelo mesmo caminho de qualquer outra falha de câmera.
 
 package com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.dialogo
 
@@ -28,6 +41,7 @@ import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.audio.SttEng
 import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.audio.WakeWord
 import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.audio.WakeWordDetector
 import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.avatar.DesfechoAvatar
+import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.contextualizacao.Contextualizacao
 import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.contextualizacao.GlossContextualizer
 import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.diagnostico.Etapa
 import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.diagnostico.Metricas
@@ -109,6 +123,13 @@ class DialogOrchestrator(
     // Avisos do fluxo "repita" (2.8), falados ao atendente no ③.
     const val AVISO_REPITA = "Não consegui entender. Peça para repetir, com uma pausa entre os sinais."
     const val AVISO_DESISTIR = "Não foi possível entender. Tente outro meio de comunicação."
+
+    // [NOVO] Timeout de segurança em ②.5 CONFIRMANDO_RECONHECIMENTO
+    // (docs/confirmacao-e-modo-economia-plano.md §1.3, §1.6): se ninguém apertar "Confirmar" nem
+    // "Corrigir", confirma sozinho — mesma escala do resto dos tetos de estado ativo (captura,
+    // escuta), pra este estado nunca travar o atendimento se o operador largar a tela. Adição de
+    // engenharia desta revisão, não pedido explícito da banca.
+    const val TETO_CONFIRMACAO_MS = 60_000L
   }
 
   private val _state = MutableStateFlow(DialogState.AGUARDANDO_SINAL)
@@ -145,6 +166,19 @@ class DialogOrchestrator(
 
   // Evita um segundo "iniciar" enquanto a câmera do primeiro ainda sobe.
   private var startingSignSession = false
+
+  // [NOVO] ②.5 CONFIRMANDO_RECONHECIMENTO (docs/confirmacao-e-modo-economia-plano.md §1): a frase
+  // já contextualizada, mostrada pro surdo, esperando confirmarReconhecimento()/
+  // corrigirReconhecimento() ou o timeout de segurança. null fora desse estado.
+  private data class ConfirmacaoPendente(val texto: String, val origem: Contextualizacao.Origem)
+  private var confirmacaoPendente: ConfirmacaoPendente? = null
+
+  // [NOVO] Modo economia de bateria (docs/confirmacao-e-modo-economia-plano.md §2) — ligado uma
+  // vez por onBateriaBaixa() e nunca desligado sozinho (o DAT não expõe "bateria recuperada").
+  // Só usado aqui pra não repetir o encerramento forçado da captura duas vezes; quem realmente
+  // bloqueia "iniciar"/"corrigir" é o CameraViewModel (ensureCameraActive devolvendo
+  // FalhaCamera.BATERIA_BAIXA).
+  private var bateriaBaixa = false
 
   /**
    * Liga a fonte de wake words. Aceita troca em tempo de execução (4.5): o motor anterior é parado e
@@ -211,6 +245,34 @@ class DialogOrchestrator(
     voltarAoInicio()
   }
 
+  /**
+   * [NOVO] Chamado pelo CameraViewModel quando o DAT reporta `DeviceSessionError.BATTERY_CRITICAL`
+   * (sessão) ou `StreamError.BATTERY_LOW` (stream) — docs/confirmacao-e-modo-economia-plano.md
+   * §2. Se uma captura estiver em curso, encerra na hora (mesmo padrão de
+   * [encerrarCapturaPorPausaLonga]): bateria crítica é urgente, não tenta preservar o que já foi
+   * capturado. Fora da captura, só marca a flag — o bloqueio de fato é do CameraViewModel
+   * (`ensureCameraActive` devolvendo `FalhaCamera.BATERIA_BAIXA`), o mesmo caminho que qualquer
+   * outra falha de câmera já usa. Idempotente: um segundo evento de bateria não repete nada.
+   */
+  fun onBateriaBaixa() {
+    if (bateriaBaixa) return
+    bateriaBaixa = true
+    if (_state.value != DialogState.CAPTURANDO_SINAIS) return
+    Log.w(TAG, "Bateria baixa/crítica nos óculos — encerrando a captura em curso")
+    geracao++
+    tetoJob?.cancel()
+    silencioJob?.cancel()
+    pausaJob?.cancel()
+    capturaAberta = false
+    scope.launch { landmarkPipeline.endSession() }
+    classificacoes.clear()
+    falhas = 0
+    deactivateCamera()
+    onEvento("bateria_baixa", "")
+    onFalhaCamera(FalhaCamera.BATERIA_BAIXA)
+    voltarAoInicio()
+  }
+
   /** Chamado pelo [WakeWordDetector] quando uma frase é ouvida. */
   fun onWakeWord(word: WakeWord) {
     when (_state.value) {
@@ -218,6 +280,7 @@ class DialogOrchestrator(
       DialogState.CAPTURANDO_SINAIS -> if (word == WakeWord.ENCERRAR) endSignSession(MotivoEncerramento.MANUAL)
       DialogState.AGUARDANDO_RESPOSTA -> if (word == WakeWord.INICIAR) beginListening()
       DialogState.ESCUTANDO_ATENDENTE -> if (word == WakeWord.ENCERRAR) endListening()
+      DialogState.CONFIRMANDO_RECONHECIMENTO,
       DialogState.FALANDO,
       DialogState.TRANSCREVENDO,
       DialogState.GERANDO_AVATAR ->
@@ -241,6 +304,7 @@ class DialogOrchestrator(
       AcaoBotao.OUVIR -> beginListening()
       AcaoBotao.ENCERRAR_ESCUTA -> endListening()
       AcaoBotao.PULAR -> pularAvatar()
+      AcaoBotao.CONFIRMAR -> confirmarReconhecimento()
     }
   }
 
@@ -319,8 +383,10 @@ class DialogOrchestrator(
     }
     classificacoes.clear()
     falhas = 0
+    confirmacaoPendente = null
     deactivateCamera()
-    if (anterior == DialogState.GERANDO_AVATAR) pularAvatar()
+    // ②.5 também pode ter o avatar animando (aguardando confirmação) — mesmo tratamento do ⑦.
+    if (anterior == DialogState.GERANDO_AVATAR || anterior == DialogState.CONFIRMANDO_RECONHECIMENTO) pularAvatar()
     esconderAvatar()
     avaliador.zerar()
     onEvento("atendimento_cancelado", "estado=$anterior")
@@ -400,10 +466,14 @@ class DialogOrchestrator(
       onConversa(EventoConversa.DecisaoTomada(Conversas.decisaoNaConversa(decisao)))
 
       // Efeitos da decisão no ③. Na repetição a câmera continua ligada: é o mesmo turno de captura.
+      // [MUDOU] Falar não fala mais direto: contextualiza e mostra pro SURDO em ②.5 primeiro
+      // (docs/confirmacao-e-modo-economia-plano.md §1) — iniciarConfirmacao cuida do resto do
+      // turno (fala e escuta, se confirmado; nova captura, se corrigido), por isso o early return.
       when (decisao) {
         is DecisaoFrase.Falar -> {
           deactivateCamera()
-          falarFrase(decisao.glosas)
+          iniciarConfirmacao(decisao.glosas, minhaGeracao)
+          return@launch
         }
         DecisaoFrase.PedirRepeticao -> speaker.speakAndAwait(AVISO_REPITA)
         DecisaoFrase.Desistir -> {
@@ -415,28 +485,109 @@ class DialogOrchestrator(
       if (minhaGeracao != geracao || _state.value != DialogState.FALANDO) return@launch
 
       when (Transicoes.estadoAposDecisao(decisao)) {
-        DialogState.ESCUTANDO_ATENDENTE -> {
-          // 5.3: a fala já terminou de tocar; a folga evita pegar o eco no microfone do celular.
-          delay(parametros().folgaAposFalaMs)
-          if (minhaGeracao == geracao && _state.value == DialogState.FALANDO) beginListening()
-        }
         DialogState.CAPTURANDO_SINAIS -> iniciarCaptura()
         else -> voltarAoInicio()
       }
     }
   }
 
-  private suspend fun falarFrase(glosas: List<String>) {
+  /**
+   * ②.5 CONFIRMANDO_RECONHECIMENTO (docs/confirmacao-e-modo-economia-plano.md §1): contextualiza
+   * a frase e mostra pro SURDO — o mesmo playAvatar() do ⑦ — antes de falar pro atendente.
+   * Chamada só quando o avaliador decidiu Falar, de dentro do scope.launch de [endSignSession]
+   * (por isso é suspend, não abre um launch novo). Fica em ②.5 esperando
+   * [confirmarReconhecimento]/[corrigirReconhecimento] ou o timeout de segurança.
+   */
+  private suspend fun iniciarConfirmacao(glosas: List<String>, minhaGeracao: Int) {
     val inicioContextualizacao = SystemClock.elapsedRealtime()
     val resultado = contextualizer.contextualize(glosas)
     metricas?.marcar(
         Etapa.CONTEXTUALIZACAO, SystemClock.elapsedRealtime() - inicioContextualizacao, "origem=${resultado.origem}")
     Log.i(TAG, "glosas=$glosas -> \"${resultado.texto}\" (${resultado.origem})")
-    if (resultado.texto.isBlank()) return
-    onConversa(EventoConversa.FraseFalada(resultado.texto, resultado.origem))
-    val inicioFala = SystemClock.elapsedRealtime()
-    speaker.speakAndAwait(resultado.texto) {
-      metricas?.marcar(Etapa.FRASE_PRIMEIRO_AUDIO, SystemClock.elapsedRealtime() - inicioFala)
+    if (minhaGeracao != geracao) return
+    if (resultado.texto.isBlank()) {
+      voltarAoInicio()
+      return
+    }
+    confirmacaoPendente = ConfirmacaoPendente(resultado.texto, resultado.origem)
+    setState(DialogState.CONFIRMANDO_RECONHECIMENTO)
+    // playAvatar() já preenche a legenda mesmo se o avatar não subir (piso de acessibilidade,
+    // 9.3) — o operador vê o texto pra confirmar/corrigir de qualquer jeito.
+    val desfecho = playAvatar(resultado.texto)
+    if (minhaGeracao != geracao) return
+    // O operador (ou onBateriaBaixa()/cancelarAtendimento()) pode ter decidido enquanto o avatar
+    // animava — nem o aviso de "avatar indisponível" nem o timeout valem por cima de uma decisão
+    // que já aconteceu (ex.: "Confirmar" apertado durante a animação, antes dela terminar).
+    if (_state.value != DialogState.CONFIRMANDO_RECONHECIMENTO) return
+    if (desfecho != DesfechoAvatar.ANIMOU && desfecho != DesfechoAvatar.PULADO) onAvatarUnavailable(resultado.texto)
+    tetoJob?.cancel()
+    tetoJob =
+        scope.launch {
+          delay(TETO_CONFIRMACAO_MS)
+          if (minhaGeracao == geracao && _state.value == DialogState.CONFIRMANDO_RECONHECIMENTO) {
+            confirmarReconhecimento()
+          }
+        }
+  }
+
+  /**
+   * Botão "Confirmar" em ②.5 (ou o timeout de segurança): a frase mostrada era isso mesmo — fala
+   * pro atendente e a escuta abre sozinha, como o fluxo já fazia antes da confirmação existir.
+   * No-op fora de CONFIRMANDO_RECONHECIMENTO ou sem frase pendente (ex.: os dois botões
+   * apertados em sequência rápida, ou o timeout disparando depois de o operador já ter decidido).
+   */
+  fun confirmarReconhecimento() {
+    if (_state.value != DialogState.CONFIRMANDO_RECONHECIMENTO) return
+    val pendente = confirmacaoPendente ?: return
+    confirmacaoPendente = null
+    tetoJob?.cancel()
+    val minhaGeracao = geracao
+    setState(DialogState.FALANDO)
+    scope.launch {
+      onConversa(EventoConversa.FraseFalada(pendente.texto, pendente.origem))
+      val inicioFala = SystemClock.elapsedRealtime()
+      speaker.speakAndAwait(pendente.texto) {
+        metricas?.marcar(Etapa.FRASE_PRIMEIRO_AUDIO, SystemClock.elapsedRealtime() - inicioFala)
+      }
+      if (minhaGeracao != geracao || _state.value != DialogState.FALANDO) return@launch
+      // 5.3: a fala já terminou de tocar; a folga evita pegar o eco no microfone do celular.
+      delay(parametros().folgaAposFalaMs)
+      if (minhaGeracao == geracao && _state.value == DialogState.FALANDO) beginListening()
+    }
+  }
+
+  /**
+   * Botão "Corrigir" em ②.5: não era isso — descarta a frase pendente e reabre a captura de
+   * sinais do zero, reaproveitando o mesmo caminho de [beginSignSession] (religa a câmera, avisa
+   * [aoIniciarCaptura] pro avatar caído recarregar, arma o timeout de ② normal). Em modo economia
+   * de bateria (§2) a câmera não religa — [ensureCameraActive] devolve
+   * `FalhaCamera.BATERIA_BAIXA` do mesmo jeito que bloquearia um "iniciar" comum, e o fallback é
+   * falar o que já foi reconhecido (melhor esforço) em vez de deixar o botão sem efeito.
+   */
+  fun corrigirReconhecimento() {
+    if (_state.value != DialogState.CONFIRMANDO_RECONHECIMENTO) return
+    if (startingSignSession) return
+    startingSignSession = true
+    tetoJob?.cancel()
+    val minhaGeracao = geracao
+    scope.launch {
+      try {
+        val falha = ensureCameraActive()
+        if (minhaGeracao != geracao) return@launch
+        if (falha != null) {
+          Log.w(TAG, "Câmera não religou pra correção ($falha) — falando o que já foi reconhecido")
+          onEvento("corrigir_sem_camera", falha.name)
+          onFalhaCamera(falha)
+          confirmarReconhecimento()
+          return@launch
+        }
+        if (_state.value != DialogState.CONFIRMANDO_RECONHECIMENTO) return@launch
+        confirmacaoPendente = null
+        aoIniciarCaptura()
+        iniciarCaptura()
+      } finally {
+        startingSignSession = false
+      }
     }
   }
 
