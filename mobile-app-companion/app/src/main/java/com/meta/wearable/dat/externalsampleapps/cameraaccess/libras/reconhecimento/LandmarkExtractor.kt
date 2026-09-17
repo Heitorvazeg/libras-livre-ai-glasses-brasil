@@ -83,7 +83,8 @@ class LandmarkExtractor(context: Context) {
    * Extrai os landmarks de um frame. Devolve null se não houver pose confiável (sem
    * tronco não há como o servidor normalizar — mesmo critério da PoC, aplicado lá).
    *
-   * @param image frame YUV_420_888; NÃO é fechado aqui (o chamador é dono do ciclo dele).
+  * @param image frame YUV_420_888; NÃO é fechado aqui. O chamador mantém tanto a Image quanto
+  * seu ImageReader abertos até o retorno e serializa extract/close inclusive entre streams.
    * @param timestampMs carimbo monotônico crescente exigido pelo modo VIDEO.
    */
   fun extract(image: Image, timestampMs: Long): FrameLandmarks? {

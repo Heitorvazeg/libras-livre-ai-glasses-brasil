@@ -26,17 +26,16 @@
 //    atendente e segue; corrigirReconhecimento() descarta e reabre a captura (reaproveita
 //    beginSignSession()/iniciarCaptura()). Um timeout de segurança confirma sozinho.
 //  - onBateriaBaixa(): chamado pelo CameraViewModel quando o DAT reporta bateria baixa/crítica
-//    dos óculos. Encerra a captura em curso (mesmo padrão de encerrarCapturaPorPausaLonga) e
-//    marca a flag que faz ensureCameraActive() (dono: CameraViewModel) devolver
-//    FalhaCamera.BATERIA_BAIXA dali em diante — nenhuma outra mudança de fluxo é necessária, o
-//    "iniciar" já é bloqueado pelo mesmo caminho de qualquer outra falha de câmera.
+//    dos óculos. Bloqueia a política compartilhada e encerra captura, abertura e retomada após
+//    aviso de repetição. Não muda a confirmação/fala já reconhecida nem cria modo voz somente.
 
 package com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.dialogo
 
 import android.os.SystemClock
 import com.meta.wearable.dat.externalsampleapps.cameraaccess.camera.FalhaCamera
+import com.meta.wearable.dat.externalsampleapps.cameraaccess.camera.PoliticaCamera
 import android.util.Log
-import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.audio.Speaker
+import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.audio.TtsEngine
 import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.audio.SttEngine
 import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.audio.WakeWord
 import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.audio.WakeWordDetector
@@ -47,7 +46,6 @@ import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.diagnostico.
 import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.diagnostico.Metricas
 import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.reconhecimento.Classificacao
 import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.reconhecimento.EstadoSinalizacao
-import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.reconhecimento.LandmarkPipeline
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -66,8 +64,8 @@ data class ParametrosDialogo(
 
 class DialogOrchestrator(
     private val scope: CoroutineScope,
-    private val landmarkPipeline: LandmarkPipeline,
-    private val speaker: Speaker,
+  private val landmarkPipeline: CapturaDialogo,
+  private val speaker: TtsEngine,
     private val sttEngine: SttEngine,
     // Glossário -> frase em PT-BR (modelo sob guarda -> template -> passthrough).
     private val contextualizer: GlossContextualizer,
@@ -113,6 +111,7 @@ class DialogOrchestrator(
     // [NOVO — §2.1] O avatar não animou (nem foi pulado) mostrando o consentimento: a explicação
     // ficou só na legenda em português. Decisão em aberto no plano — hoje só sinaliza, não bloqueia.
     private val onConsentimentoSemLibras: () -> Unit = {},
+    private val politicaCamera: PoliticaCamera,
 ) {
 
   companion object {
@@ -189,6 +188,10 @@ class DialogOrchestrator(
   // sai de PEDINDO_CONSENTIMENTO depois de ensureCameraActive() (suspend) resolver. Guarda à
   // parte, só pra essa janela.
   private var ligandoCameraAposConsentimento = false
+  private var aberturaJob: Job? = null
+  private var somentePreview = false
+  // Inclui a finalização do pipeline e o TTS de repetição, não a fala de frase confirmada.
+  private var retomadaCapturaPendente = false
 
   // [NOVO] ②.5 CONFIRMANDO_RECONHECIMENTO (docs/confirmacao-e-modo-economia-plano.md §1): a frase
   // já contextualizada, mostrada pro surdo, esperando confirmarReconhecimento()/
@@ -198,9 +201,7 @@ class DialogOrchestrator(
 
   // [NOVO] Modo economia de bateria (docs/confirmacao-e-modo-economia-plano.md §2) — ligado uma
   // vez por onBateriaBaixa() e nunca desligado sozinho (o DAT não expõe "bateria recuperada").
-  // Só usado aqui pra não repetir o encerramento forçado da captura duas vezes; quem realmente
-  // bloqueia "iniciar"/"corrigir" é o CameraViewModel (ensureCameraActive devolvendo
-  // FalhaCamera.BATERIA_BAIXA).
+  // Idempotência do efeito no diálogo; a autoridade compartilhada é politicaCamera.
   private var bateriaBaixa = false
 
   /**
@@ -273,24 +274,33 @@ class DialogOrchestrator(
    * (sessão) ou `StreamError.BATTERY_LOW` (stream) — docs/confirmacao-e-modo-economia-plano.md
    * §2. Se uma captura estiver em curso, encerra na hora (mesmo padrão de
    * [encerrarCapturaPorPausaLonga]): bateria crítica é urgente, não tenta preservar o que já foi
-   * capturado. Fora da captura, só marca a flag — o bloqueio de fato é do CameraViewModel
-   * (`ensureCameraActive` devolvendo `FalhaCamera.BATERIA_BAIXA`), o mesmo caminho que qualquer
-   * outra falha de câmera já usa. Idempotente: um segundo evento de bateria não repete nada.
+    * capturado. Também interrompe Aceitar em voo e a retomada após AVISO_REPITA, mesmo em
+    * FALANDO. Corrigir em voo recebe BATERIA_BAIXA pela espera da câmera e mantém seu fallback.
+    * Idempotente: um segundo evento de bateria não repete nada.
    */
   fun onBateriaBaixa() {
     if (bateriaBaixa) return
     bateriaBaixa = true
-    if (_state.value != DialogState.CAPTURANDO_SINAIS) return
+    politicaCamera.ativarEconomia()
+    deactivateCamera() // Também cancela abertura/preview sem stream nominal ainda.
+    if (_state.value != DialogState.CAPTURANDO_SINAIS &&
+        !ligandoCameraAposConsentimento && !retomadaCapturaPendente) return
     Log.w(TAG, "Bateria baixa/crítica nos óculos — encerrando a captura em curso")
     geracao++
+    aberturaJob?.cancel()
+    startingSignSession = false
+    ligandoCameraAposConsentimento = false
+    retomadaCapturaPendente = false
     tetoJob?.cancel()
     silencioJob?.cancel()
     pausaJob?.cancel()
+    speaker.stop()
+    if (capturaAberta) scope.launch { landmarkPipeline.endSession() }
     capturaAberta = false
-    scope.launch { landmarkPipeline.endSession() }
     classificacoes.clear()
     falhas = 0
-    deactivateCamera()
+    pularAvatar()
+    esconderAvatar()
     onEvento("bateria_baixa", "")
     onFalhaCamera(FalhaCamera.BATERIA_BAIXA)
     voltarAoInicio()
@@ -392,6 +402,10 @@ class DialogOrchestrator(
   fun cancelarAtendimento() {
     val anterior = _state.value
     geracao++
+    politicaCamera.revogarConsentimento()
+    aberturaJob?.cancel()
+    ligandoCameraAposConsentimento = false
+    retomadaCapturaPendente = false
     tetoJob?.cancel()
     silencioJob?.cancel()
     pausaJob?.cancel()
@@ -422,8 +436,21 @@ class DialogOrchestrator(
     voltarAoInicio()
   }
 
-  private fun beginSignSession() {
+  /** Preview do sample passa pelo mesmo consentimento, mas não inicia reconhecimento. */
+  fun pedirPreview() {
+    if (_state.value == DialogState.AGUARDANDO_SINAL) beginSignSession(preview = true)
+  }
+
+  private fun beginSignSession(preview: Boolean = false) {
     if (startingSignSession) return
+    if (politicaCamera.economia) {
+      onFalhaCamera(FalhaCamera.BATERIA_BAIXA)
+      return
+    }
+    geracao++
+    politicaCamera.revogarConsentimento()
+    deactivateCamera()
+    somentePreview = preview
     startingSignSession = true
     // O relógio da etapa "iniciar -> pode sinalizar" começa no comando, antes do consentimento e
     // antes de a câmera subir — ①.5 agora faz parte dessa latência.
@@ -440,11 +467,11 @@ class DialogOrchestrator(
    * decidir, pra um segundo "iniciar" não reabrir o pedido por cima.
    */
   private suspend fun pedirConsentimento(minhaGeracao: Int) {
+    if (minhaGeracao != geracao) return
     onConsentimentoPedido()
     setState(DialogState.PEDINDO_CONSENTIMENTO)
     val desfecho = playAvatar(TEXTO_CONSENTIMENTO_PLACEHOLDER)
     if (minhaGeracao != geracao || _state.value != DialogState.PEDINDO_CONSENTIMENTO) {
-      startingSignSession = false
       return
     }
     if (desfecho != DesfechoAvatar.ANIMOU && desfecho != DesfechoAvatar.PULADO) {
@@ -459,11 +486,9 @@ class DialogOrchestrator(
 
   /**
    * Botão "Aceitar" em ①.5: só agora a câmera liga (§2.4 — nada é captado antes disso). Se a
-   * câmera não subir, volta ao ①, como um "iniciar" comum que falhou. Sem estado próprio de
-   * "consentimento já dado neste atendimento": um "iniciar" seguinte pede consentimento de novo
-   * (não há como distinguir isso de um atendimento novo com o que existe hoje) — mais perguntas
-   * que o estritamente necessário numa retentativa, não uma violação do §2.6 (o reset entre
-   * atendimentos continua garantido; só não há um atalho para o caso de retentativa).
+  * câmera não subir, volta ao ①. A política guarda consentimento para Corrigir/repetir/preview,
+  * mas um novo "iniciar" continua pedindo de novo, como na base. Preview consentido abre apenas
+  * stream; não chama iniciarCaptura nem depende do aquecimento dos modelos de reconhecimento.
    */
   fun aceitarConsentimento() {
     if (_state.value != DialogState.PEDINDO_CONSENTIMENTO) return
@@ -471,9 +496,10 @@ class DialogOrchestrator(
     // ensureCameraActive() (suspend) resolver, então a checagem acima sozinha não bastaria.
     if (ligandoCameraAposConsentimento) return
     ligandoCameraAposConsentimento = true
+    politicaCamera.aceitarConsentimento()
     onEvento("consentimento", "aceito")
     val minhaGeracao = geracao
-    scope.launch {
+    aberturaJob = scope.launch {
       try {
         val falha = ensureCameraActive()
         if (minhaGeracao != geracao) return@launch
@@ -489,18 +515,24 @@ class DialogOrchestrator(
         if (_state.value != DialogState.PEDINDO_CONSENTIMENTO) return@launch
         pularAvatar()
         esconderAvatar()
-        aoIniciarCaptura()
-        iniciarCaptura()
+        if (somentePreview) {
+          voltarAoInicio()
+        } else {
+          aoIniciarCaptura()
+          iniciarCaptura()
+        }
       } finally {
-        startingSignSession = false
-        ligandoCameraAposConsentimento = false
+        if (minhaGeracao == geracao) {
+          startingSignSession = false
+          ligandoCameraAposConsentimento = false
+        }
       }
     }
   }
 
   /**
    * Botão "Recusar" em ①.5 (§2.5): não trava, não insiste — some o avatar e volta ao ①, com um
-   * aviso informativo pro atendente. Nenhum sinal foi captado (a câmera nunca ligou).
+    * aviso informativo pro atendente. Revoga e para também um Aceitar ainda abrindo a câmera.
    */
   fun recusarConsentimento() {
     if (_state.value != DialogState.PEDINDO_CONSENTIMENTO) return
@@ -508,6 +540,9 @@ class DialogOrchestrator(
     // a checagem de geração em aceitarConsentimento() já cobre isso antes mesmo de olhar o
     // resultado de ensureCameraActive() — mesmo padrão de cancelarAtendimento()/onBateriaBaixa().
     geracao++
+    politicaCamera.revogarConsentimento()
+    aberturaJob?.cancel()
+    deactivateCamera()
     startingSignSession = false
     ligandoCameraAposConsentimento = false
     onEvento("consentimento", "recusado")
@@ -520,6 +555,13 @@ class DialogOrchestrator(
 
   // Abre uma captura: no "iniciar" e, com a câmera ainda ligada, depois de um "repita" (2.8).
   private fun iniciarCaptura() {
+    retomadaCapturaPendente = false
+    if (!politicaCamera.permitida) {
+      deactivateCamera()
+      if (politicaCamera.economia) onFalhaCamera(FalhaCamera.BATERIA_BAIXA)
+      voltarAoInicio()
+      return
+    }
     classificacoes.clear()
     falhas = 0
     capturaAberta = true
@@ -548,14 +590,15 @@ class DialogOrchestrator(
     tetoJob?.cancel()
     silencioJob?.cancel()
     pausaJob?.cancel()
+    retomadaCapturaPendente = true
     // Pausa a wake word já aqui; a classificação de um sinal em aberto ainda vai terminar.
     setState(DialogState.FALANDO)
     val minhaGeracao = geracao
     scope.launch {
       // Força classificar o segmento em aberto e espera as classificações em voo.
       landmarkPipeline.endSession()
-      capturaAberta = false
       if (minhaGeracao != geracao) return@launch
+      capturaAberta = false
 
       val decisao = avaliador.avaliar(ResultadoSessao(classificacoes.toList(), falhas, motivo))
       Log.i(TAG, "Frase ($motivo, ${classificacoes.size} sinais, $falhas falhas): $decisao")
@@ -571,16 +614,21 @@ class DialogOrchestrator(
       // turno (fala e escuta, se confirmado; nova captura, se corrigido), por isso o early return.
       when (decisao) {
         is DecisaoFrase.Falar -> {
+          retomadaCapturaPendente = false
           deactivateCamera()
           iniciarConfirmacao(decisao.glosas, minhaGeracao)
           return@launch
         }
         DecisaoFrase.PedirRepeticao -> speaker.speakAndAwait(AVISO_REPITA)
         DecisaoFrase.Desistir -> {
+          retomadaCapturaPendente = false
           deactivateCamera()
           speaker.speakAndAwait(AVISO_DESISTIR)
         }
-        DecisaoFrase.Ignorar -> deactivateCamera()
+        DecisaoFrase.Ignorar -> {
+          retomadaCapturaPendente = false
+          deactivateCamera()
+        }
       }
       if (minhaGeracao != geracao || _state.value != DialogState.FALANDO) return@launch
 
@@ -641,6 +689,14 @@ class DialogOrchestrator(
     val pendente = confirmacaoPendente ?: return
     confirmacaoPendente = null
     tetoJob?.cancel()
+    // Corrigir suspende ainda em CONFIRMANDO. Confirmar (inclusive o fallback) ganha a
+    // decisão, cancela a espera e invalida o token físico ANTES de iniciar a fala.
+    // Outra geração impede que finally/retorno antigo altere uma nova abertura.
+    geracao++
+    aberturaJob?.cancel()
+    aberturaJob = null
+    startingSignSession = false
+    deactivateCamera()
     val minhaGeracao = geracao
     setState(DialogState.FALANDO)
     scope.launch {
@@ -670,7 +726,7 @@ class DialogOrchestrator(
     startingSignSession = true
     tetoJob?.cancel()
     val minhaGeracao = geracao
-    scope.launch {
+    aberturaJob = scope.launch {
       try {
         val falha = ensureCameraActive()
         if (minhaGeracao != geracao) return@launch
@@ -686,7 +742,7 @@ class DialogOrchestrator(
         aoIniciarCaptura()
         iniciarCaptura()
       } finally {
-        startingSignSession = false
+        if (minhaGeracao == geracao) startingSignSession = false
       }
     }
   }
@@ -782,6 +838,8 @@ class DialogOrchestrator(
   /** Fim do ATENDIMENTO por inatividade: libera o avatar e a próxima pessoa começa com o contador zerado. */
   private fun encerrarAtendimento() {
     Log.i(TAG, "Atendimento ocioso — liberando o avatar")
+    politicaCamera.revogarConsentimento()
+    deactivateCamera()
     releaseAvatar()
     avaliador.zerar()
   }

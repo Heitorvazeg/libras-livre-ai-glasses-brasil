@@ -43,8 +43,8 @@ Escritos antes do código. Cada um tem um estado de implementação.
 
 | Documento | Estado |
 |---|---|
-| [consentimento por atendimento](consentimento-por-atendimento-plano.md) | **implementado e testado** na branch `feat/consentimento-por-atendimento` (não mergeada) — texto do consentimento é placeholder não revisado; decisões em aberto (avatar indisponível no momento do consentimento, timeout, registro de auditoria) seguem sem resolução do time |
-| [integração privada do modelo no app](integracao-modelo-app-plano-2026-09-15.md) | **vídeo, tela completa, ciclo de sessões e caminho RECUSADO validados** (só SIMULADO/RECUSADO fabricado; o `.tflite` treinado real e os vídeos MINDS só existem na máquina do Walisson/Kaggle, não aqui) — vídeo real e hardware pendentes; [evidências do item 1](integracao-video-infraestrutura-2026-09-15.md), [tela completa, reabertura e acesso ao modelo](integracao-tela-completa-e-reabertura-2026-09-16.md) |
+| [consentimento por atendimento](consentimento-por-atendimento-plano.md) | Incorporado à base `07bc365`; correções locais de câmera e testes em [fechamento da infraestrutura](integracao-infraestrutura-fechamento-2026-09-17.md). Texto provisório e decisões de produto permanecem pendentes. |
+| [integração privada do modelo no app](integracao-modelo-app-plano-2026-09-15.md) | Transporte APK, atendimento privado focado, persistência entre processos e recusa por segmento validados no emulador; [resultados e limites em 17/09](integracao-infraestrutura-fechamento-2026-09-17.md). Hardware e atendimento bidirecional completo pendentes; não aprova o modelo final. |
 | [`libras-livre-poc-plano.md`](libras-livre-poc-plano.md) | **concluído** — PoC executada; resultado em `computer-vision-model/PoC/results/relatorio.md` |
 | [`extracao-landmarks-plano.md`](extracao-landmarks-plano.md) | **implementado** — `libras/reconhecimento/LandmarkNormalizer.kt`, `HandGapImputer.kt`, com testes de paridade |
 | [`sign-boundary-detector-plano.md`](sign-boundary-detector-plano.md) | **implementado, não calibrado** — `libras/reconhecimento/SignBoundaryDetector.kt` roda com os valores sugeridos pelo plano |
