@@ -115,6 +115,9 @@ class DialogOrchestrator(
     // [NOVO — §2.1] O avatar não animou (nem foi pulado) mostrando o consentimento: a explicação
     // ficou só na legenda em português. Decisão em aberto no plano — hoje só sinaliza, não bloqueia.
     private val onConsentimentoSemLibras: () -> Unit = {},
+    // A frase reconhecida foi descartada sem ser falada: o teto de ②.5 expirou, ou o "Corrigir"
+    // não conseguiu reabrir a câmera. Aviso ao atendente, porque nada foi dito ao balcão.
+    private val onConfirmacaoNaoConcluida: (MotivoConfirmacaoNaoConcluida) -> Unit = {},
     private val politicaCamera: PoliticaCamera,
 ) {
 
@@ -154,11 +157,11 @@ class DialogOrchestrator(
         "Vou usar a câmera pra reconhecer seus sinais e transformar em voz pro atendente. " +
             "Nada é gravado. Você pode recusar sem prejuízo: o atendimento segue por bilhete ou intérprete."
 
-    // [NOVO] Timeout de segurança em ②.5 CONFIRMANDO_RECONHECIMENTO
-    // (docs/confirmacao-e-modo-economia-plano.md §1.3, §1.6): se ninguém apertar "Confirmar" nem
-    // "Corrigir", confirma sozinho — mesma escala do resto dos tetos de estado ativo (captura,
-    // escuta), pra este estado nunca travar o atendimento se o operador largar a tela. Adição de
-    // engenharia desta revisão, não pedido explícito da banca.
+    // Timeout de segurança em ②.5 CONFIRMANDO_RECONHECIMENTO
+    // (docs/confirmacao-e-modo-economia-plano.md §1.3, §1.6): mesma escala do resto dos tetos de
+    // estado ativo (captura, escuta), pra este estado nunca travar o atendimento se o operador
+    // largar a tela. [MUDOU] Expirar CANCELA a frase pendente, com aviso ao atendente, em vez de
+    // confirmar e falar sozinho: silêncio do operador não é conferência do que foi reconhecido.
     const val TETO_CONFIRMACAO_MS = 60_000L
   }
 
@@ -758,14 +761,37 @@ class DialogOrchestrator(
     // que já aconteceu (ex.: "Confirmar" apertado durante a animação, antes dela terminar).
     if (_state.value != DialogState.CONFIRMANDO_RECONHECIMENTO) return
     if (desfecho != DesfechoAvatar.ANIMOU && desfecho != DesfechoAvatar.PULADO) onAvatarUnavailable(resultado.texto)
+    armarTetoDaConfirmacao(minhaGeracao)
+  }
+
+  private fun armarTetoDaConfirmacao(minhaGeracao: Int) {
     tetoJob?.cancel()
     tetoJob =
         scope.launch {
           delay(TETO_CONFIRMACAO_MS)
           if (minhaGeracao == geracao && _state.value == DialogState.CONFIRMANDO_RECONHECIMENTO) {
-            confirmarReconhecimento()
+            expirarConfirmacao()
           }
         }
+  }
+
+  /**
+   * O teto de ②.5 expirou sem "Confirmar" nem "Corrigir": descarta a frase pendente sem falar e
+   * volta ao ①, avisando o atendente. Confirmar sozinho poria na voz do balcão uma frase que
+   * ninguém conferiu — e quem sinalizou não tem como saber o que foi dito.
+   */
+  private fun expirarConfirmacao() {
+    if (_state.value != DialogState.CONFIRMANDO_RECONHECIMENTO) return
+    confirmacaoPendente = null
+    tetoJob?.cancel()
+    geracao++
+    Log.i(TAG, "②.5 expirou sem decisão do operador — frase descartada sem ser falada")
+    onEvento("confirmacao_expirada", "")
+    onConfirmacaoNaoConcluida(MotivoConfirmacaoNaoConcluida.TETO_EXPIRADO)
+    pularAvatar()
+    esconderAvatar()
+    deactivateCamera()
+    voltarAoInicio()
   }
 
   /**
@@ -821,10 +847,14 @@ class DialogOrchestrator(
         val falha = ensureCameraActive()
         if (minhaGeracao != geracao) return@launch
         if (falha != null) {
-          Log.w(TAG, "Câmera não religou pra correção ($falha) — falando o que já foi reconhecido")
+          // [MUDOU] Não fala a frase anterior: o operador acabou de dizer que ela estava errada.
+          // Informa a falha e continua em ②.5, onde "Corrigir" tenta de novo, "Confirmar" fala
+          // mesmo assim por escolha explícita e "Cancelar atendimento" encerra.
+          Log.w(TAG, "Câmera não religou pra correção ($falha) — frase pendente segue sem ser falada")
           onEvento("corrigir_sem_camera", falha.name)
           onFalhaCamera(falha)
-          confirmarReconhecimento()
+          onConfirmacaoNaoConcluida(MotivoConfirmacaoNaoConcluida.CORRECAO_SEM_CAMERA)
+          if (_state.value == DialogState.CONFIRMANDO_RECONHECIMENTO) armarTetoDaConfirmacao(minhaGeracao)
           return@launch
         }
         if (_state.value != DialogState.CONFIRMANDO_RECONHECIMENTO) return@launch

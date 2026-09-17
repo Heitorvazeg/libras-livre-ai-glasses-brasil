@@ -66,6 +66,7 @@ import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.contextualiz
 import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.dialogo.DialogOrchestrator
 import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.dialogo.CapturaDialogo
 import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.dialogo.DialogState
+import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.dialogo.MotivoConfirmacaoNaoConcluida
 import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.reconhecimento.LandmarkPipeline
 import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.reconhecimento.PlaceholderSignClassifier
 import com.meta.wearable.dat.externalsampleapps.cameraaccess.stream.HevcDecoder
@@ -471,6 +472,14 @@ class CameraViewModel(
             },
             onConsentimentoRecusado = { definirAviso(TipoAviso.CONSENTIMENTO_RECUSADO, textos.consentimentoRecusado) },
             onConsentimentoSemLibras = { definirAviso(TipoAviso.CONSENTIMENTO_SEM_LIBRAS, textos.consentimentoSemLibras) },
+            onConfirmacaoNaoConcluida = { motivo ->
+              definirAviso(
+                  TipoAviso.CONFIRMACAO_NAO_CONCLUIDA,
+                  when (motivo) {
+                    MotivoConfirmacaoNaoConcluida.TETO_EXPIRADO -> textos.confirmacaoExpirada
+                    MotivoConfirmacaoNaoConcluida.CORRECAO_SEM_CAMERA -> textos.correcaoSemCamera
+                  })
+            },
         )
     dialogOrchestrator.attachWakeWordDetector(wakeWordDetector)
     AcoesDeDemo.simularQuedaDoAvatar = simularQuedaDoAvatar

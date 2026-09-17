@@ -46,6 +46,9 @@ enum class TipoAviso(val nivel: NivelAviso) {
   // informativo, não bloqueio (a pessoa pode mudar de ideia no mesmo atendimento). Limpo no
   // início do próximo pedido de consentimento, não persiste entre atendimentos diferentes.
   CONSENTIMENTO_RECUSADO(NivelAviso.INFORMACAO),
+  // A frase reconhecida foi descartada sem ser falada (teto de ②.5 expirado, ou "Corrigir" sem
+  // câmera): atenção, porque o atendente pode estar esperando uma fala que não vai sair.
+  CONFIRMACAO_NAO_CONCLUIDA(NivelAviso.ATENCAO),
   CAPTURA(NivelAviso.INFORMACAO), // 3.1, 1.11
 }
 

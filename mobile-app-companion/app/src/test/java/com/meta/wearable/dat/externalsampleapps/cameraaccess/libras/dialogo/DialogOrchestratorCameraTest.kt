@@ -238,7 +238,7 @@ class DialogOrchestratorCameraTest {
   }
 
   @Test
-  fun `confirmacao timeout e fala seguem em economia sem novo modo voz somente`() = runTest {
+  fun `teto de confirmacao expira sem falar e sem abrir escuta, inclusive em economia`() = runTest {
     val c = Cenario(backgroundScope)
     c.dialogo.onWakeWord(WakeWord.INICIAR)
     runCurrent()
@@ -253,16 +253,19 @@ class DialogOrchestratorCameraTest {
     assertEquals(DialogState.CONFIRMANDO_RECONHECIMENTO, c.estado)
     advanceTimeBy(DialogOrchestrator.TETO_CONFIRMACAO_MS)
     runCurrent()
-    assertEquals(listOf("filho"), c.falas)
-    assertEquals(DialogState.FALANDO, c.estado)
-    advanceTimeBy(Transicoes.FOLGA_APOS_FALA_MS)
+    // Silêncio do operador não é conferência: nada é falado ao balcão e a escuta não abre.
+    assertTrue(c.falas.isEmpty())
+    assertEquals(0, c.escutas)
+    assertEquals(listOf(MotivoConfirmacaoNaoConcluida.TETO_EXPIRADO), c.naoConcluidas)
+    assertEquals(DialogState.AGUARDANDO_SINAL, c.estado)
+    // Confirmar atrasado, depois de a frase ter sido descartada, não ressuscita a fala.
+    c.dialogo.confirmarReconhecimento()
     runCurrent()
-    assertEquals(DialogState.ESCUTANDO_ATENDENTE, c.estado)
-    assertEquals(1, c.escutas)
+    assertTrue(c.falas.isEmpty())
   }
 
   @Test
-  fun `corrigir em voo preserva fallback quando bateria impede abertura`() = runTest {
+  fun `corrigir sem camera informa a falha e nao fala a frase anterior`() = runTest {
     val c = Cenario(backgroundScope)
     c.dialogo.onWakeWord(WakeWord.INICIAR)
     runCurrent()
@@ -279,9 +282,40 @@ class DialogOrchestratorCameraTest {
     runCurrent()
     assertEquals(1, c.capturas)
     assertFalse(c.cameraAtiva)
+    // O operador acabou de dizer que a frase estava errada: ela não é falada por fallback.
+    assertTrue(c.falas.isEmpty())
+    assertTrue(FalhaCamera.BATERIA_BAIXA in c.falhas)
+    assertEquals(listOf(MotivoConfirmacaoNaoConcluida.CORRECAO_SEM_CAMERA), c.naoConcluidas)
+    // Segue em ②.5, com a decisão na mão do operador: aqui ele confirma de propósito.
+    assertEquals(DialogState.CONFIRMANDO_RECONHECIMENTO, c.estado)
+    c.dialogo.confirmarReconhecimento()
+    runCurrent()
     assertEquals(listOf("filho"), c.falas)
     assertEquals(DialogState.FALANDO, c.estado)
-    assertTrue(FalhaCamera.BATERIA_BAIXA in c.falhas)
+  }
+
+  @Test
+  fun `corrigir sem camera rearma o teto e expirar nao fala`() = runTest {
+    val c = Cenario(backgroundScope)
+    c.dialogo.onWakeWord(WakeWord.INICIAR)
+    runCurrent()
+    c.dialogo.aceitarConsentimento()
+    runCurrent()
+    c.dialogo.onSignRecognized(Classificacao("filho", 0.99f, margem = 0.9f))
+    c.dialogo.onWakeWord(WakeWord.ENCERRAR)
+    runCurrent()
+    c.politica.ativarEconomia()
+    c.dialogo.corrigirReconhecimento()
+    runCurrent()
+    assertEquals(DialogState.CONFIRMANDO_RECONHECIMENTO, c.estado)
+    advanceTimeBy(DialogOrchestrator.TETO_CONFIRMACAO_MS)
+    runCurrent()
+    assertTrue(c.falas.isEmpty())
+    assertEquals(
+        listOf(MotivoConfirmacaoNaoConcluida.CORRECAO_SEM_CAMERA,
+            MotivoConfirmacaoNaoConcluida.TETO_EXPIRADO),
+        c.naoConcluidas)
+    assertEquals(DialogState.AGUARDANDO_SINAL, c.estado)
   }
 
   @Test
@@ -435,6 +469,7 @@ class DialogOrchestratorCameraTest {
     var escutas = 0
     val falas = mutableListOf<String>()
     val falhas = mutableListOf<FalhaCamera>()
+    val naoConcluidas = mutableListOf<MotivoConfirmacaoNaoConcluida>()
     val estado get() = dialogo.state.value
 
     val dialogo = DialogOrchestrator(
@@ -488,6 +523,7 @@ class DialogOrchestratorCameraTest {
         releaseAvatar = {},
         onAvatarUnavailable = {},
         onFalhaCamera = { falhas += it },
+        onConfirmacaoNaoConcluida = { naoConcluidas += it },
     )
 
     private fun falhaPolitica() =

@@ -118,7 +118,8 @@ internal object InterrupcaoEtapa4 {
       atomico.failWrite(stream)
       throw erro
     }
-    val fd = Os.open(pasta.path, OsConstants.O_RDONLY or OsConstants.O_DIRECTORY, 0)
+    // Sem O_DIRECTORY: OsConstants não o expõe. O check de isDirectory acima é a garantia do tipo.
+    val fd = Os.open(pasta.path, OsConstants.O_RDONLY, 0)
     try { Os.fsync(fd) } finally { Os.close(fd) }
     CountDownLatch(1).await() // Indefinido; sem sleep, timeout ou aprovação artificial.
     error("Espera de interrupção retornou indevidamente")

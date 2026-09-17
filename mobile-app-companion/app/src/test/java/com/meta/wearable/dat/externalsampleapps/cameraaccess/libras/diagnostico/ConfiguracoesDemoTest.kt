@@ -51,7 +51,9 @@ class ConfiguracoesDemoTest {
   fun `padroes decididos no plano para os seletores da onda 4`() {
     val v = ValoresDemo()
     assertEquals(0.7f, v.segmentacao.limiarEntrada)
-    assertEquals(500L, v.segmentacao.pausaMs)
+    // 800 ms, não os 500 ms do plano: calibrado com os clipes reais do MINDS
+    // (docs/integracao-video-minds-e-calibracao-2026-09-17.md).
+    assertEquals(800L, v.segmentacao.pausaMs)
     assertEquals(30_000L, v.tetoCapturaMs)
     assertEquals(20_000L, v.tetoEscutaMs)
     assertEquals(MotorWakeWord.SPEECH_RECOGNIZER, v.motorWakeWord)
