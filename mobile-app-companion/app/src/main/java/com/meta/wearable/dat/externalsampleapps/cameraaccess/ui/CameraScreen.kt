@@ -585,16 +585,22 @@ private fun BottomBar(
           onCancelarAtendimento = onCancelarAtendimento,
           onAbrirAvatar = onAbrirAvatar,
       )
+      // 4.6: "Comando de voz" fica perto do botão (mesma linha visual, mas Row separada).
       Row(
-          modifier = Modifier.align(Alignment.CenterHorizontally),
+          modifier = Modifier.fillMaxWidth(),
           verticalAlignment = Alignment.CenterVertically,
-          horizontalArrangement = Arrangement.spacedBy(4.dp),
+          horizontalArrangement = Arrangement.Center,
       ) {
-        // 4.6: "Comando de voz", salvo nas configurações de demo — ao lado das gavetas, não mais
-        // embaixo do botão principal (menos uma linha fixa no rodapé).
         Text(text = stringResource(R.string.comando_de_voz), color = Color.White.copy(alpha = 0.85f), fontSize = 13.sp)
-        Switch(checked = ui.comandoDeVoz, onCheckedChange = onComandoDeVoz, modifier = Modifier.testTag("comando_de_voz"))
         Spacer(modifier = Modifier.width(8.dp))
+        Switch(checked = ui.comandoDeVoz, onCheckedChange = onComandoDeVoz, modifier = Modifier.testTag("comando_de_voz"))
+      }
+      // Gavetas em linha separada embaixo, com espaço para expandir sem colidir.
+      Row(
+          modifier = Modifier.fillMaxWidth(),
+          verticalAlignment = Alignment.CenterVertically,
+          horizontalArrangement = Arrangement.spacedBy(16.dp, Alignment.CenterHorizontally),
+      ) {
         TextButton(
             onClick = { controlesAbertos = !controlesAbertos },
             modifier = Modifier.testTag("mais_controles"),
