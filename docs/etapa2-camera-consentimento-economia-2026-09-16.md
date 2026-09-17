@@ -115,11 +115,11 @@ não o modo somente preview. Não foi criada flag de bypass para testes/builds.
 
 ## Pendências e riscos para revisão
 
-- **Corrigir/fallback/timeout preservados.** Falha de câmera em Corrigir ainda fala a frase
-  pendente por melhor esforço; timeout de confirmação ainda confirma sozinho. Isso exige
-  decisão de produto/acessibilidade (especialmente falar uma frase que o operador quis
-  corrigir), mas esta etapa não muda essa decisão. Há teste de regressão para bateria
-  durante Corrigir e para confirmação por timeout em economia.
+- **Corrigir/fallback/timeout preservados nesta etapa.** Falha de câmera em Corrigir falava a
+  frase pendente por melhor esforço, e o timeout de confirmação confirmava sozinho — esta etapa
+  não mudou isso, só preservou. A decisão de produto veio em 17/09: nenhum dos dois fala mais
+  ([rodada de 17/09](integracao-video-minds-e-calibracao-2026-09-17.md)), e os testes de
+  regressão de bateria durante Corrigir e de teto em economia foram reescritos junto.
 - **Voz somente:** não foi criado modo novo nem novo caminho de entrada para escuta.
   A fala/escuta já alcançada continua; um novo Iniciar de sinais é bloqueado em economia.
 - **Texto de consentimento:** continua sendo placeholder, inclusive “Nada é gravado”,

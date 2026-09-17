@@ -100,9 +100,12 @@ modelo existente.
 
 ### 2.3 Sem timeout de auto-aceite — e o timeout de segurança, se existir, recusa
 
-②.5 tem `TETO_CONFIRMACAO_MS` (60s) que **confirma sozinho** se ninguém decidir — bom
-lá, porque "a frase mostrada era isso mesmo" tende a ser verdade por padrão. Aqui a
-lógica se inverte: silêncio não é consentimento (LGPD exige manifestação
+②.5 tinha `TETO_CONFIRMACAO_MS` (60s) que **confirmava sozinho** se ninguém decidisse.
+Esse era o argumento original ("a frase mostrada era isso mesmo" tende a ser verdade por
+padrão), mas o time decidiu o contrário em 17/09: expirar descarta a frase sem falar, com
+aviso ao atendente — silêncio do operador não é conferência
+([rodada de 17/09](integracao-video-minds-e-calibracao-2026-09-17.md)). Aqui a lógica é a
+mesma, e mais forte: silêncio não é consentimento (LGPD exige manifestação
 inequívoca). Se existir uma rede de segurança pra não travar o app caso o atendente
 largue a tela, ela só pode **recusar por padrão** (voltar a ①, como se "Recusar"
 tivesse sido apertado) — nunca assumir aceite. Vale considerar não ter timeout nenhum

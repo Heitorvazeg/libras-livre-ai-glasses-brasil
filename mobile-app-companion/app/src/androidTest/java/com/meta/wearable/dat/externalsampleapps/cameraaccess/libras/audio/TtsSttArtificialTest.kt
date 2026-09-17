@@ -31,7 +31,7 @@ import org.junit.runner.RunWith
 class TtsSttArtificialTest {
   private val context = InstrumentationRegistry.getInstrumentation().targetContext
 
-  @Test fun ttsSintetizaOsAvisosDoDialogoEFalaSemErro() = runBlocking {
+  @Test fun ttsSintetizaOsAvisosDoDialogoEFalaSemErro(): Unit = runBlocking {
     val engine = PiperSherpaOnnxTtsEngine(context)
     try {
       val avisos = listOf(DialogOrchestrator.AVISO_REPITA, DialogOrchestrator.AVISO_DESISTIR)

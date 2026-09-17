@@ -168,6 +168,8 @@ português na faixa (`estado_confirmando`, `rotuloDoEstado`).
   — o mesmo problema que os tetos de ②/⑤/atendimento ocioso da `dev` já existem pra evitar. Se o
   time preferir só os dois botões, sem rede de segurança, é a chamada a `scope.launch` dentro de
   `iniciarConfirmacao()` que sai.
+  **Resolvido em 17/09:** o teto continua existindo, mas **não confirma mais sozinho** — expira
+  descartando a frase, com aviso ao atendente (`CONFIRMACAO_NAO_CONCLUIDA`) e volta ao ①.
 - **Se o operador fechar a tela do avatar ("Fechar" só esconde, não libera) durante ②.5,** o
   botão "Corrigir" some da tela até reabrir o avatar — o "Confirmar" continua acessível pelo
   botão principal da tela de baixo (`ControlesDoAtendimento`), mas não há um "Corrigir" fora da
@@ -297,8 +299,10 @@ passando.
   `BATTERY_LOW`/`BATTERY_CRITICAL` sem óculos reais com bateria baixa de verdade, ou um mock do
   DAT que os simule).
 - [ ] Medição de consumo (§2.5) — depende de sessão real com os óculos.
-- [ ] Decidir se o timeout de segurança de 60 s em ②.5 (§1.3, §1.6) é desejado ou se a
-  confirmação deve ficar só nos dois botões, sem rede de segurança.
+- [x] Decidir se o timeout de segurança de 60 s em ②.5 (§1.3, §1.6) é desejado ou se a
+  confirmação deve ficar só nos dois botões, sem rede de segurança. **Decidido (17/09):** o teto
+  fica, mas cancela em vez de confirmar; a falha do "Corrigir" também não fala mais a frase
+  anterior. Implementado e coberto por testes JVM.
 - [ ] O gap de UX do "Corrigir" sumir quando a tela do avatar é fechada manualmente (§1.6).
 - [ ] Testes automatizados do `DialogOrchestrator`/`CameraViewModel` — não existem hoje (dependem
   de `LandmarkPipeline`/`Context` reais); os testes novos que existem (`TransicoesTest`) cobrem

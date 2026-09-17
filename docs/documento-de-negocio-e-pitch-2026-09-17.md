@@ -1,7 +1,7 @@
 # Libras Livre — documento de negócio e pitch
 
 > Gerado em 2026-09-17, complementar ao
-> [`libras-livre-guia-hackathon.md`](libras-livre-guia-hackathon.md) (que cobre a estratégia
+> [`guia-tecnico-completo-hackathon-2026-09-17.md`](guia-tecnico-completo-hackathon-2026-09-17.md) (que cobre a estratégia
 > tecnológica). Este documento é sobre **o negócio**: o argumento que sustenta o pitch, o
 > problema, a evidência, o arranjo legal e o posicionamento — organizado em torno do que
 > importa pra apresentar, não em torno de nenhum feedback específico. Toda afirmação foi

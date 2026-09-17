@@ -180,6 +180,10 @@ class CameraViewModel(
   private var permissaoPendenteToken: Long? = null
   // Inclui confirmação local, fila do launcher e decisão no app Meta; não tem prazo humano.
   private val aguardandoPermissaoCamera = MutableStateFlow(false)
+  // A causa "permissão da câmera pendente" sobrevive à invalidação da abertura: o stream que cai
+  // enquanto o pedido está na tela apaga o pedido e invalida a geração, e sem isto o diagnóstico
+  // que chega à faixa de estado viraria o genérico "stream não subiu".
+  private var permissaoPendenteNaUltimaTentativa = false
   private var streamEncerrando: Stream? = null
   // O viewModelScope já está cancelado em onCleared. A limpeza precisa sobreviver para drenar
   // o frame/IO em voo sem runBlocking na main, que também recebe callbacks do recorder.
@@ -1064,6 +1068,7 @@ class CameraViewModel(
       return
     }
     if (stream != null || aberturaCameraJob?.isActive == true || permissaoPendenteToken != null) return
+    permissaoPendenteNaUltimaTentativa = false
     _uiState.update { it.copy(isStartingStream = true) }
     aberturaCameraJob = viewModelScope.launch {
       try {
@@ -1075,6 +1080,10 @@ class CameraViewModel(
               } else {
                 permissaoPendenteToken = token
                 aguardandoPermissaoCamera.value = true
+                permissaoPendenteNaUltimaTentativa = true
+                // A espera pela decisão humana é ilimitada de propósito, então a causa vai para a
+                // faixa agora: sem isto o atendente fica sem explicação até o stream cair.
+                definirAviso(TipoAviso.CAMERA_NAO_SUBIU, textos.falhaCamera(FalhaCamera.PERMISSAO_PENDENTE))
                 _uiState.update { it.copy(showCameraPermissionRedirectConfirm = true) }
               }
             }
@@ -1096,6 +1105,7 @@ class CameraViewModel(
     // Consome o pedido original uma vez; nunca cria uma geração nova para um redirect atrasado.
     val token = permissaoPendenteToken ?: return
     permissaoPendenteToken = null
+    permissaoPendenteNaUltimaTentativa = false
     _uiState.update { it.copy(showCameraPermissionRedirectConfirm = false) }
     if (!politicaCamera.valida(token) || !_uiState.value.isSessionActive || stream != null) return
     _uiState.update { it.copy(isStartingStream = true) }
@@ -1513,7 +1523,8 @@ class CameraViewModel(
       return FalhaCamera.depoisDeEsperar(
           sessaoPronta = true,
           streamPronto = pronta,
-          permissaoPendente = _uiState.value.showCameraPermissionRedirectConfirm,
+          permissaoPendente = _uiState.value.showCameraPermissionRedirectConfirm ||
+              permissaoPendenteNaUltimaTentativa,
       )
     } finally {
       // Timeout/cancelamento também cancela permissão pendente. Uma espera antiga nunca para
@@ -1522,8 +1533,12 @@ class CameraViewModel(
     }
   }
 
-  private fun falhaDaPoliticaCamera(): FalhaCamera =
-      if (politicaCamera.economia) FalhaCamera.BATERIA_BAIXA else FalhaCamera.STREAM_NAO_SUBIU
+  private fun falhaDaPoliticaCamera(): FalhaCamera = when {
+    politicaCamera.economia -> FalhaCamera.BATERIA_BAIXA
+    // O pedido de permissão sumiu da tela junto com a invalidação, mas a causa é ele.
+    permissaoPendenteNaUltimaTentativa -> FalhaCamera.PERMISSAO_PENDENTE
+    else -> FalhaCamera.STREAM_NAO_SUBIU
+  }
 
   private suspend fun aguardarCamera(
       token: Long,

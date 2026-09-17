@@ -45,7 +45,7 @@ Escritos antes do código. Cada um tem um estado de implementação.
 |---|---|
 | [consentimento por atendimento](consentimento-por-atendimento-plano.md) | **implementado e testado, mergeado na `dev`** (PR #23) — correções locais de câmera e testes em [fechamento da infraestrutura](integracao-infraestrutura-fechamento-2026-09-17.md); texto do consentimento é placeholder não revisado e as decisões em aberto (avatar indisponível, timeout, auditoria) seguem sem resolução do time |
 | [confirmação de reconhecimento pro surdo + modo economia de bateria](confirmacao-e-modo-economia-plano.md) | **implementado e testado, mergeado na `dev`** (PR #22) — feedback da banca de 2026-09-15; sem teste em hardware real (os eventos de bateria não têm como ser forçados sem óculos reais ou um mock que os simule) |
-| [integração privada do modelo no app](integracao-modelo-app-plano-2026-09-15.md) | **mergeado na `dev`** (PR #21) e continuado nesta branch: transporte APK, atendimento privado focado, persistência entre processos e recusa por segmento validados no emulador — [resultados e limites em 17/09](integracao-infraestrutura-fechamento-2026-09-17.md). Hardware e atendimento bidirecional completo pendentes; não aprova o modelo final |
+| [integração privada do modelo no app](integracao-modelo-app-plano-2026-09-15.md) | **implementado e testado no emulador, com clipes reais do MINDS** — transporte APK, atendimento privado, persistência entre processos, recusa por segmento e os seis clipes da sinalizante 08 reconhecidos ponta a ponta; ver as [rodadas de integração](#integração-do-modelo-no-app-rodadas-de-1617092026). Hardware e generalização pendentes; **não aprova o modelo final** |
 | [`libras-livre-poc-plano.md`](libras-livre-poc-plano.md) | **concluído** — PoC executada; resultado em `computer-vision-model/PoC/results/relatorio.md` |
 | [`extracao-landmarks-plano.md`](extracao-landmarks-plano.md) | **implementado** — `libras/reconhecimento/LandmarkNormalizer.kt`, `HandGapImputer.kt`, com testes de paridade |
 | [`sign-boundary-detector-plano.md`](sign-boundary-detector-plano.md) | **implementado, não calibrado** — `libras/reconhecimento/SignBoundaryDetector.kt` roda com os valores sugeridos pelo plano |
@@ -66,6 +66,22 @@ Escritos antes do código. Cada um tem um estado de implementação.
 | [`guia-de-testes-mock-e-oculos.md`](guia-de-testes-mock-e-oculos.md) | como testar o app com o `MockDeviceKit` e com os óculos em mãos; ensaio geral |
 | [`modelo-visao-pontos-de-teste.md`](modelo-visao-pontos-de-teste.md) | o que testar no ST-GCN antes de entregá-lo ao app |
 | [`riscos-demo-2026-09-13.md`](riscos-demo-2026-09-13.md) | o diagnóstico que originou o plano (fotografia datada) |
+
+## Integração do modelo no app (rodadas de 16–17/09/2026)
+
+Registros de execução da branch `feat/integracao-modelo-app`, em ordem. Cada um descreve o
+estado de então; onde um posterior contradiz um anterior, **vale o mais recente**.
+
+| Documento | O que registra |
+|---|---|
+| [`etapa2-camera-consentimento-economia-2026-09-16.md`](etapa2-camera-consentimento-economia-2026-09-16.md) | posse da câmera, permissão e serviço por dono, consentimento e economia de bateria |
+| [`etapa3-atendimento-classificador-privado-2026-09-16.md`](etapa3-atendimento-classificador-privado-2026-09-16.md) | atendimento com o pacote privado no APK final, sem injetar glosas |
+| [`etapa4-persistencia-recusado-2026-09-16.md`](etapa4-persistencia-recusado-2026-09-16.md) | limiar relido entre processos e recusa por segmento com pacote inválido |
+| [`etapa5-regressao-apk-privado-2026-09-17.md`](etapa5-regressao-apk-privado-2026-09-17.md) | oito fases de empacotamento: conteúdo e bloqueios, não runtime |
+| [`integracao-infraestrutura-fechamento-2026-09-17.md`](integracao-infraestrutura-fechamento-2026-09-17.md) | fechamento da rodada de infraestrutura, com os limites de cada etapa |
+| [`integracao-checkpoint-retomada-2026-09-17.md`](integracao-checkpoint-retomada-2026-09-17.md) | checkpoint intermediário e o que ficou pendente para a retomada |
+| [`integracao-publicacao-artefatos-2026-09-17.md`](integracao-publicacao-artefatos-2026-09-17.md) | escopo e limites da publicação do baseline e das evidências, sem APKs |
+| [`integracao-video-minds-e-calibracao-2026-09-17.md`](integracao-video-minds-e-calibracao-2026-09-17.md) | `dev` mesclada, clipes reais do MINDS na pipeline, `pausaMs` calibrada, TTS/STT artificiais e as duas decisões de produto que faltavam |
 
 ## Investigações e relatórios datados
 

@@ -163,8 +163,8 @@ Duas ressalvas que precisam acompanhar qualquer citação desses números:
 | App base: conexão com os óculos, câmera, gravação | pronto (herdado do sample da Meta) |
 | Extração de landmarks on-device (Pose + Hands, 57 pontos) | pronto |
 | Normalização e imputação de lacunas, com paridade testada contra o Python | pronto |
-| Detecção de fronteiras entre sinais | implementada, **parâmetros não calibrados** |
-| Classificação de sinal no app | infraestrutura de carregamento **pronta e testada** (pacote privado, hash/identidade conferidos, três modos — SIMULADO/REAL_EXPERIMENTAL/RECUSADO — sem fallback silencioso); o checkpoint treinado (`final-s20260917-v1`) é privado e não está neste clone; **vídeo com sinais reais ainda não foi validado** |
+| Detecção de fronteiras entre sinais | implementada; **`pausaMs` calibrada com vídeo real** (500 → 800 ms, senão um sinal se parte em dois), limiares de velocidade e teto de oclusão **ainda não calibrados** (dependem de gravação com os óculos) |
+| Classificação de sinal no app | **funcionando ponta a ponta com vídeo real no emulador**: os seis clipes da sinalizante 08 do MINDS viram glosa pelo caminho de produção (decoder HEVC → MediaPipe → segmentador → `.tflite`), com o pacote baseline `final-s20260917-v1` já neste clone. Carregamento com hash/identidade e três modos (SIMULADO/REAL_EXPERIMENTAL/RECUSADO), sem fallback silencioso. **Os clipes usados estão no treino do baseline** — mede o caminho, não generalização; o modelo segue `experimental=true`, sem calibração e sem aprovação de entrega |
 | Contextualização glosa → português | pronta, integrada e versionada (`.tflite` sob guarda, template como piso; carimbo de proveniência testado); **modelo desligado por padrão** — não bateu o template em F1 na validação sintética |
 | Fala (TTS Piper/sherpa-onnx) e transcrição (Vosk pt-BR) | prontas |
 | Avatar em Libras para a pessoa surda (VLibras em WebView) | implementado, da transcrição à tela; **depende de rede** e não medido em aparelho ARM |
@@ -174,11 +174,13 @@ Duas ressalvas que precisam acompanhar qualquer citação desses números:
 | Coleta própria no cenário de balcão | pendente |
 | Validação de vocabulário com consultor de Libras | pendente |
 
-O maior bloqueio técnico é **ter o checkpoint treinado disponível fora da máquina
-que o treinou**: o export e o carregamento privado no app (hash, identidade, os
-três modos acima) já existem e passam nos testes automatizados; o que falta é
-esse checkpoint específico chegar a mais gente do time e ser validado com vídeo
-de sinais reais, não a engenharia de integração em si. O app normaliza x, y **e**
+O bloqueio de **ter o checkpoint fora da máquina que o treinou** saiu do caminho em
+17/09: o pacote baseline está no repositório
+([escopo e limites](./docs/integracao-publicacao-artefatos-2026-09-17.md)) e foi exercitado
+com vídeo real. O maior bloqueio agora é **hardware** — nada acima foi medido com os óculos
+— e, do lado do modelo, **generalização**: os clipes que passaram no app são os mesmos que
+treinaram o baseline, então dizem que a integração funciona, não que o reconhecimento
+funciona com quem o modelo nunca viu. O app normaliza x, y **e**
 z desde a PoC das três coordenadas
 ([`docs/poc-tres-coordenadas.md`](./docs/poc-tres-coordenadas.md)).
 

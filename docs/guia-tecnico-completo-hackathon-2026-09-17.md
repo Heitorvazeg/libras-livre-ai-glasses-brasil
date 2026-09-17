@@ -191,12 +191,16 @@ descrevem isso como pendência. Os dois READMEs da própria trilha de visão est
 nesse ponto específico — **vale confirmar com quem mexeu nisso por último antes de afirmar
 isso na apresentação**, mas a evidência de código pesa para "já resolvido".
 
-**O que continua faltando, isso sim confirmado em três lugares (`mobile-app-companion`
-README §6, §4, e o `libras/README.md`):** o **checkpoint treinado** da configuração de
-entrega (`--arquitetura gcn --ossos --com-z --z-recentrado`), batizado
-`final-s20260917-v1`, é **privado e não está no clone** — e **vídeo com sinais reais ainda
-não foi usado para validar** o classificador de ponta a ponta no app (só o placeholder e um
-pacote "recusado" fabricado foram exercitados até agora).
+**Atualizado no fim de 17/09:** o que este trecho dava como faltando foi resolvido no mesmo
+dia. O pacote baseline de `final-s20260917-v1` está no repositório
+(`experimentos-privados/app-baseline-v1`,
+[escopo e limites](integracao-publicacao-artefatos-2026-09-17.md)) e **vídeo com sinais reais
+já validou o classificador de ponta a ponta no app**: os seis clipes da sinalizante 08 do
+MINDS viram a glosa certa pelo caminho de produção no emulador
+([rodada de 17/09](integracao-video-minds-e-calibracao-2026-09-17.md)). Ressalva que não pode
+sumir do pitch: **esses clipes estão no treino do baseline**, então isso mede a integração,
+não generalização. O que continua faltando é hardware (óculos) e avaliação com pessoas que o
+modelo nunca viu.
 
 ### 1.8 Por que 20 sinais, e por que eles não são "o produto"
 
@@ -599,9 +603,10 @@ enum class ModoClassificador { SIMULADO, REAL_EXPERIMENTAL, RECUSADO }
   nativa/ABI ausente) vira `ClassificadorRecusado`, nunca um crash nem um fallback silencioso
   para SIMULADO.
 
-Essa infraestrutura está **pronta e testada** (`mobile-app-companion/README.md` §4, §6). O
-que falta é só o **checkpoint em si** (`final-s20260917-v1`, privado, fora do git) e a
-validação com vídeo real — a engenharia de carregamento não é o gargalo.
+Essa infraestrutura está **pronta e testada** (`mobile-app-companion/README.md` §4, §6), e
+desde 17/09 o pacote baseline está no repositório e foi exercitado com vídeo real do MINDS
+no emulador ([rodada de 17/09](integracao-video-minds-e-calibracao-2026-09-17.md)). O que
+falta é hardware e generalização, não a engenharia de carregamento.
 
 ### 4.5 `SignBoundaryDetector` — fronteiras entre sinais, em detalhe
 
@@ -748,7 +753,7 @@ atualizados em 2026-09-16):
 | Extração de landmarks on-device (Pose+Hands, 57 pontos) | pronto |
 | Normalização e imputação, paridade testada contra Python | pronto |
 | Detecção de fronteiras entre sinais | implementada, **parâmetros não calibrados** |
-| Classificação de sinal no app | infraestrutura de carregamento pronta e testada (3 modos, hash/identidade); **checkpoint treinado é privado, não está neste clone**; vídeo real ainda não validado |
+| Classificação de sinal no app | pronta e exercitada com **vídeo real** no emulador (6 clipes do MINDS, glosa certa nos 6, pacote baseline no repositório, 3 modos com hash/identidade); **os clipes estão no treino do baseline** — não mede generalização, e o modelo segue experimental |
 | Contextualização glosa → português | pronta, integrada, versionada; **modelo desligado por padrão** (não bateu template em F1 sintético) |
 | Fala (Piper/sherpa-onnx) e transcrição (Vosk) | prontas |
 | Avatar em Libras (VLibras/WebView) | implementado; **depende de rede**; não medido em ARM |

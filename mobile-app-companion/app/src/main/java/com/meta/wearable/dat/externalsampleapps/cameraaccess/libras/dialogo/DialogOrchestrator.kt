@@ -24,7 +24,7 @@
 //    (Transicoes.estadoAposDecisao): mostra pro SURDO (via playAvatar, o mesmo do ⑦) a frase que
 //    o sistema entendeu, e espera o botão do operador — confirmarReconhecimento() fala pro
 //    atendente e segue; corrigirReconhecimento() descarta e reabre a captura (reaproveita
-//    beginSignSession()/iniciarCaptura()). Um timeout de segurança confirma sozinho.
+//    beginSignSession()/iniciarCaptura()). Um timeout de segurança descarta a frase sem falar.
 //  - ③.5 PEDINDO_REPETICAO, entre o aviso de "repita" falado ao atendente e a nova captura: o
 //    mesmo pedido é apresentado em Libras a quem sinalizou (playAvatar) e a captura só reabre no
 //    "Capturar de novo" (repetirCaptura). Antes ela reabria sozinha, e a pessoa surda via a câmera
@@ -833,8 +833,9 @@ class DialogOrchestrator(
    * sinais do zero, reaproveitando o mesmo caminho de [beginSignSession] (religa a câmera, avisa
    * [aoIniciarCaptura] pro avatar caído recarregar, arma o timeout de ② normal). Em modo economia
    * de bateria (§2) a câmera não religa — [ensureCameraActive] devolve
-   * `FalhaCamera.BATERIA_BAIXA` do mesmo jeito que bloquearia um "iniciar" comum, e o fallback é
-   * falar o que já foi reconhecido (melhor esforço) em vez de deixar o botão sem efeito.
+   * `FalhaCamera.BATERIA_BAIXA` do mesmo jeito que bloquearia um "iniciar" comum. Nesse caso a
+   * frase pendente **não** é falada: o atendimento fica em ②.5 com o aviso da falha, e quem
+   * decide é o operador (tentar de novo, confirmar de propósito ou cancelar).
    */
   fun corrigirReconhecimento() {
     if (_state.value != DialogState.CONFIRMANDO_RECONHECIMENTO) return

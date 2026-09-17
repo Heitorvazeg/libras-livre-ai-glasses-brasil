@@ -200,9 +200,11 @@ comprova aprovação, acurácia linguística nem valida o JSON perdido da execu�
   janelas de observação de 1,5 s. São limites **do teste**, não ajustes do reconhecimento.
   O histórico de três classificações em VideoClassificadorPrivadoTest é referência,
   não promessa de repetir número/confiança no stream DAT.
-- Cancelar foi escolhido em vez de Corrigir: o fallback atual de Corrigir pode falar
-  quando a câmera não reabre. Também existe **autoconfirmação após 60 s**, preservada
-  da produção. Este teste verifica ausência de TTS na janela observada e cancela antes;
+- Cancelar foi escolhido em vez de Corrigir: o fallback de Corrigir, **nesta rodada**, podia
+  falar quando a câmera não reabria, e o teto de 60 s **confirmava sozinho**. Os dois
+  comportamentos mudaram depois, em 17/09 (não falam mais; ver
+  [rodada de 17/09](integracao-video-minds-e-calibracao-2026-09-17.md)); a escolha deste teste
+  descreve o estado de então. Este teste verifica ausência de TTS na janela observada e cancela antes;
   **não certifica confirmação exclusivamente explícita por tempo ilimitado**. Essa
   garantia exigiria uma mudança de produto fora do escopo. Não deixa o timeout expirar
   nem simula um clique Confirmar para fabricar cobertura.

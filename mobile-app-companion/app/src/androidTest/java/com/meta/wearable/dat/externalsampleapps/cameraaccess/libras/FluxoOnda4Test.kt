@@ -36,6 +36,7 @@ import com.meta.wearable.dat.mockdevice.api.MockDeviceKitConfig
 import com.meta.wearable.dat.mockdevice.api.MockGlasses
 import java.io.File
 import org.junit.After
+import org.junit.Assert.assertTrue
 import org.junit.Assume.assumeTrue
 import org.junit.Before
 import org.junit.Rule
@@ -107,14 +108,24 @@ class FluxoOnda4Test {
   }
 
   @Test
-  fun cameraQueNaoSobeMostraACausaNaFaixa() {
-    // Permissão de câmera negada e ninguém confirma o pedido: o stream não sobe em 8 s.
+  fun cameraQueNaoSobeMostraACausaNaFaixaEEsperaADecisaoDoOperador() {
+    // Permissão de câmera negada e ninguém confirma o pedido. [MUDOU] O app não desiste no prazo
+    // técnico das outras fases: a decisão humana sobre a permissão espera o tempo que precisar
+    // (decisão de produto de 17/09). A causa vai para a faixa na hora, e só um "Cancelar
+    // atendimento" — ou a queda do stream — tira o atendimento de ①.5.
     parearOculos(permissaoConcedida = false)
     iniciarSessao()
     esperarAquecimento()
     composeTestRule.onNodeWithTag("botao_principal").performClick()
     aceitarConsentimento()
     composeTestRule.waitUntilAtLeastOneExists(hasText(targetContext.getString(R.string.falha_camera_permissao)), TIMEOUT)
+    // Sem resposta ao pedido, o atendimento não volta sozinho ao ① só porque o prazo técnico passou.
+    assertTrue(
+        "voltou ao ① sem ninguém decidir a permissão",
+        composeTestRule.onAllNodesWithText(targetContext.getString(R.string.estado_aguardando_sinal))
+            .fetchSemanticsNodes().isEmpty())
+
+    composeTestRule.onNodeWithTag("cancelar_atendimento_button").performClick()
     esperarTexto(R.string.estado_aguardando_sinal)
   }
 

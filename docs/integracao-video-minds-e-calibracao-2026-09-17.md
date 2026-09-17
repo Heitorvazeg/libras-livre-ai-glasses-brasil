@@ -128,8 +128,60 @@ aberta**: depende de revisão humana e de pessoas usuárias de Libras, não de c
 - **Python:** 78 testes, 70 aprovados; os 7 erros restantes são `ModuleNotFoundError: numpy` nos
   scripts da trilha de treino (`auditar_m9_loso`, `avaliar_*`, `extrair_*`, `investigar_filho`,
   `download_libras_gap_videos`, `fixture_paridade_classificador`), que não rodam nesta máquina.
-- **Instrumentado:** `VideoMindsPipelineTest` aprovado com os 6 clipes; `TtsSttArtificialTest`
-  aprovado. Resultados da suíte completa e o que ela ainda não cobre ficam registrados abaixo.
+- **Instrumentado, build com o pacote privado:** `VideoMindsPipelineTest` aprovado com os 6
+  clipes (duas execuções em `pausaMs=800`); `TtsSttArtificialTest` aprovado (2 testes);
+  `AtendimentoClassificadorPrivadoTest`, `RealExperimentalEntreProcessosTest` e
+  `RecusadoVideoOrquestradorTest` seguem sendo opt-in por argumento.
+- **Instrumentado, suíte sem filtro:** 61 testes executados. Sobram **duas** falhas, as duas
+  dependentes do avatar (`abrirResumoDoAquecimento` espera "Pronto", que não aparece porque o
+  avatar VLibras não carrega neste emulador — sem WebGL): `aquecimentoLibera…` e
+  `avatarDerrubado…`. **Ambas falham igual na `dev` pura**, confirmado em worktree separado, com
+  a mesma exceção e na mesma linha: são ambientais, não do merge.
+  `teclaDeVolumeFazOMesmoQueOBotaoPrincipal` falhou na suíte cheia e **passa isolado** — carga
+  do emulador, não defeito. `FluxoOnda2Test` é falha pré-existente da `dev` (ver abaixo).
+
+## Uma regressão do merge que ninguém tinha visto
+
+Rodar a suíte inteira expôs um defeito que vinha da branch de integração e estava invisível
+porque o androidTest não compilava: **quando a permissão de câmera dos óculos ficava pendente, o
+atendente recebia o diagnóstico errado.**
+
+A política de câmera da integração invalida a abertura quando o stream cai
+(`invalidarAberturaCamera`), e isso apagava o pedido de permissão junto. O diagnóstico então caía
+no genérico `STREAM_NAO_SUBIU` ("não foi possível ligar a câmera") em vez de `PERMISSAO_PENDENTE`
+("permissão de câmera dos óculos pendente") — a única mensagem que diz ao atendente o que fazer.
+Confirmado comparando com a `dev` pura em worktree separado: lá o teste passa, na integração
+falhava de forma consistente (2 de 2 execuções).
+
+Correção: a causa "permissão pendente" passa a sobreviver à invalidação da abertura
+(`permissaoPendenteNaUltimaTentativa`), e o aviso vai para a faixa **assim que o pedido
+aparece**, não só no fim da espera — porque a espera pela decisão humana é ilimitada de propósito
+e, sem isso, a faixa ficava muda enquanto o operador lia o pedido.
+
+**Decisão de produto associada (17/09):** se ninguém responde ao pedido de permissão, o app
+**espera indefinidamente** em vez de desistir no prazo técnico das outras fases (8 s, como na
+`dev`). O atendimento sai de ①.5 por "Cancelar atendimento" ou pela queda do stream. O teste
+`FluxoOnda4Test` foi reescrito para esse contrato: antes ele fixava o prazo de 8 s.
+
+`FluxoOnda2Test#sessaoGeraOverlayDeMetricasECsvComLinhasDeFrameEMetrica` também falha, **mas
+falha igual na `dev` pura** — é defeito pré-existente, não do merge, e não foi tocado aqui.
+
+## A suíte instrumentada tem duas famílias que se excluem
+
+Rodar tudo sem filtro (`am instrument -e package …`) revelou o motivo de a suíte completa
+nunca ter fechado: **os testes de tela se dividem em dois grupos incompatíveis no mesmo APK.**
+
+- Com o pacote privado selecionado no build, o app carrega `REAL_EXPERIMENTAL`. Os testes que
+  afirmam o cartão de diagnóstico mostrando `SIMULADO` falham — corretamente, porque o app está
+  no outro modo. Exemplo: `DiagnosticoClassificadorTelaCompletaTest` falha com
+  "The component with Text … 'SIMULADO' … is not displayed".
+- Sem o pacote, os testes que exigem o classificador real são ignorados por pré-condição
+  (`assumeTrue`) ou falham por exigi-lo.
+
+Ou seja: **não existe uma execução única que valide as duas famílias.** A verificação honesta
+é rodar a suíte duas vezes, uma por configuração de build, e é assim que os números abaixo
+foram obtidos. Isso não é defeito do app; é consequência de o modo de carregamento ser fixado
+no build (por desenho, para não haver fallback silencioso em release).
 
 ## Ainda pendente
 

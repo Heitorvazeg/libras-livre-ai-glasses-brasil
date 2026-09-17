@@ -156,11 +156,19 @@ mas são necessários para comprovar a captura física e seu encerramento.
 confirmação explícita/Corrigir/timeout seguidos de TTS/STT reais; recuperação após
 crash provocado; layout por toque normal e sessões prolongadas. O teste privado
 atual cancela antes de falar e não comprova o atendimento bidirecional inteiro.
+**Atualização de 17/09:** a suíte instrumentada completa passou a rodar (um arquivo de
+androidTest não compilava), e TTS/STT passaram a ser exercitados de forma artificial no
+emulador — ver [rodada de 17/09](integracao-video-minds-e-calibracao-2026-09-17.md).
+Áudio acústico, hardware e crash provocado seguem pendentes.
 
 **Produto (preservado, não decidido aqui):** texto de consentimento provisório,
 fallback sem avatar, autoconfirmação e fala da frase anterior quando Corrigir não
 consegue reabrir câmera, eventual entrada de modo somente voz. Não transformar
 esses comportamentos em aprovação de uso com pessoas por testes de infraestrutura.
+**Atualização de 17/09:** a autoconfirmação por teto e a fala da frase anterior no Corrigir
+foram resolvidas depois desta rodada — nenhuma das duas fala mais
+([rodada de 17/09](integracao-video-minds-e-calibracao-2026-09-17.md)). Consentimento,
+fallback sem avatar e modo somente voz continuam abertos.
 
 **Modelo:** seleção do modelo final, qualidade linguística, generalização e rejeição
 de desconhecidos são outra frente. Não são pré-requisitos para concluir os testes
