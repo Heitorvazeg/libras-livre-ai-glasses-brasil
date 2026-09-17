@@ -14,6 +14,7 @@ import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.isEnabled
 import androidx.compose.ui.test.junit4.createEmptyComposeRule
+import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
@@ -88,6 +89,8 @@ class DiagnosticoClassificadorReaberturaTest {
   fun modoELimiarDoClassificadorPersistemAoFecharEReabrirOApp() {
     ActivityScenario.launch(MainActivity::class.java).use {
       esperarAquecimento()
+      // 10.3: o cartão de diagnóstico mora na gaveta, fechada por padrão a cada Activity nova.
+      abrirDiagnostico()
 
       // Volta ao padrão: execuções anteriores não podem vazar limiar para o valor esperado aqui. A
       // folha modal de configurações não é fechada (ver nota em abrirConfiguracoesDemo); as consultas
@@ -105,6 +108,7 @@ class DiagnosticoClassificadorReaberturaTest {
 
     ActivityScenario.launch(MainActivity::class.java).use {
       esperarAquecimento()
+      abrirDiagnostico()
       // Modo recomputado do zero (novo CameraViewModel/classificador) chega ao mesmo resultado.
       composeTestRule.onNodeWithText("SIMULADO", substring = true).assertIsDisplayed()
       // Limiar não é recomputado: vem do SharedPreferences gravado antes de fechar o app.
@@ -114,6 +118,14 @@ class DiagnosticoClassificadorReaberturaTest {
 
   private fun esperarAquecimento() =
       composeTestRule.waitUntilExactlyOneExists(hasTestTag("botao_principal").and(isEnabled()), TIMEOUT_AQUECIMENTO)
+
+  // 10.3: o cartão de diagnóstico (SIMULADO/REAL_EXPERIMENTAL) mora na gaveta, fechada por padrão.
+  private fun abrirDiagnostico() {
+    composeTestRule.waitUntilAtLeastOneExists(hasTestTag("mais_diagnostico"), TIMEOUT)
+    if (composeTestRule.onAllNodesWithTag("diagnostico-classificador").fetchSemanticsNodes().isEmpty()) {
+      composeTestRule.onNodeWithTag("mais_diagnostico").performClick()
+    }
+  }
 
   /**
    * Abre o menu de debug (FAB) e a seção "Configurações de demo" dentro dele. Não fecha a folha

@@ -54,7 +54,7 @@ Organizado em 5 subpacotes, por domínio (não por tipo de arquivo):
 | Arquivo | Papel |
 |---|---|
 | `DialogOrchestrator.kt` | dono da sessão: decide quando capturar, falar e escutar; liga/desliga câmera e stream via callbacks do `CameraViewModel`; acumula as glosas |
-| `DialogState.kt` | os 7 estados da sessão |
+| `DialogState.kt` | os estados da sessão, dos sete do plano original aos passos ①.5, ②.5 e ③.5 em que a pessoa surda decide ou é avisada |
 
 ### `contextualizacao/`
 

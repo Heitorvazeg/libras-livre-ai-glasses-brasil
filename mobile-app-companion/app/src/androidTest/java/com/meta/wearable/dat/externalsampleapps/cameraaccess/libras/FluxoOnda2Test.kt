@@ -106,7 +106,8 @@ class FluxoOnda2Test {
     // O "iniciar" espera o aquecimento (6.4): a primeira abertura copia os modelos para o disco.
     composeTestRule.waitUntilExactlyOneExists(hasTestTag("botao_principal").and(isEnabled()), TIMEOUT_AQUECIMENTO)
 
-    // O overlay aparece com a sessão e o painel ligado.
+    // O overlay aparece com a sessão e o painel ligado — dentro da gaveta de diagnóstico (10.3).
+    abrirDiagnostico()
     composeTestRule.waitUntilExactlyOneExists(hasTestTag("painel_metricas"), TIMEOUT)
 
     composeTestRule.onNodeWithTag("botao_principal").performClick()
@@ -148,6 +149,14 @@ class FluxoOnda2Test {
         "sem fps_recebido nas métricas",
         linhas.any { it.startsWith("metrica,") && it.contains(",fps_recebido,") })
     android.util.Log.i("FluxoOnda2Test", "CSV ${csv.absolutePath}: $tipos")
+  }
+
+  // 10.3: o painel de métricas mora na gaveta de diagnóstico, fechada por padrão.
+  private fun abrirDiagnostico() {
+    composeTestRule.waitUntilAtLeastOneExists(hasTestTag("mais_diagnostico"), TIMEOUT)
+    if (composeTestRule.onAllNodesWithTag("painel_metricas").fetchSemanticsNodes().isEmpty()) {
+      composeTestRule.onNodeWithTag("mais_diagnostico").performClick()
+    }
   }
 
   // 10.3: os controles do sample ficam numa área recolhível.

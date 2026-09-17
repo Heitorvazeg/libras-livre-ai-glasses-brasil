@@ -60,6 +60,7 @@ Escritos antes do código. Cada um tem um estado de implementação.
 
 | Documento | Assunto |
 |---|---|
+| [`guia-tecnico-completo-hackathon-2026-09-17.md`](guia-tecnico-completo-hackathon-2026-09-17.md) | leitura única antes de apresentar: como cada trilha funciona (visão, contextualização, wake word, app), checklist operacional e como coletar métricas |
 | [`prontidao-demo/`](prontidao-demo/README.md) | **plano de implementação**: decisões do time ponto a ponto, prioridades (P0/P1/P2) e ondas |
 | [`guia-de-testes-mock-e-oculos.md`](guia-de-testes-mock-e-oculos.md) | como testar o app com o `MockDeviceKit` e com os óculos em mãos; ensaio geral |
 | [`modelo-visao-pontos-de-teste.md`](modelo-visao-pontos-de-teste.md) | o que testar no ST-GCN antes de entregá-lo ao app |

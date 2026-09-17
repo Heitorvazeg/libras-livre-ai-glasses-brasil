@@ -28,6 +28,24 @@ import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.dialogo.Dial
 import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.reconhecimento.LibrasState
 import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.reconhecimento.DiagnosticoClassificador
 
+/**
+ * Libras Livre — de que passo é o texto que está na legenda do avatar, e portanto qual rótulo vai
+ * acima dele. Fica GRAVADO junto com a legenda, em vez de ser derivado do [DialogState] na hora de
+ * desenhar: os dois andam juntos só enquanto o avatar está no ar, e o texto sobrevive à mudança de
+ * estado (a frase confirmada em ②.5 continua na tela durante ③⑤, e passaria a ser anunciada como
+ * "O atendente disse").
+ */
+enum class AssuntoAvatar {
+  /** ①.5 — a explicação do consentimento. */
+  CONSENTIMENTO,
+  /** ②.5 — a frase que o sistema entendeu de quem sinalizou. */
+  CONFIRMACAO,
+  /** ③.5 — o pedido de repetição. */
+  REPETICAO,
+  /** ⑦ — a resposta do atendente. */
+  RESPOSTA,
+}
+
 /** A capture awaiting preview/share — a still photo or a recorded video file. */
 sealed interface CapturePreview {
   data class Photo(val bitmap: Bitmap) : CapturePreview
@@ -44,10 +62,9 @@ data class CameraUiState(
     // tem o que mostrar no ⑦, e fora dele seguraria ~300 MB à toa.
     val avatarVisivel: Boolean = false,
     val avatarLegenda: String? = null,
-    // Libras Livre — confirmação de reconhecimento (docs/confirmacao-e-modo-economia-plano.md
-    // §1). true quando o avatar/legenda em tela é a frase que o SISTEMA ENTENDEU do surdo (②.5),
-    // não a resposta do atendente (⑦) — muda só o rótulo acima da legenda.
-    val avatarConfirmacaoDoSurdo: Boolean = false,
+    // De que passo é [avatarLegenda] — só o rótulo acima do texto depende disto. Null quando não há
+    // legenda.
+    val avatarAssunto: AssuntoAvatar? = null,
     // Libras Livre — modo economia de bateria (docs/confirmacao-e-modo-economia-plano.md §2).
     // Espelha DialogOrchestrator.economiaBateria: liga sozinho quando o DAT reporta
     // BATTERY_LOW/BATTERY_CRITICAL, nunca desliga sozinho (o SDK não expõe "bateria

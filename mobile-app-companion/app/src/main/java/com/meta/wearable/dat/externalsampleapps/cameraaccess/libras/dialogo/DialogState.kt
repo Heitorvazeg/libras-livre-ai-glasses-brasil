@@ -46,6 +46,15 @@ enum class DialogState {
   /** ③ Falando (TTS) a frase reconhecida na sessão. Wake word pausada. */
   FALANDO,
 
+  /**
+   * ③.5 Pedido de repetição (2.8) apresentado à PESSOA SURDA no avatar, depois de o aviso ter sido
+   * falado ao atendente. Antes a captura reabria sozinha, e quem sinalizou nunca via por que: o
+   * avatar dizia algo só para o atendente ouvir. Aqui a captura fica fechada (câmera desligada,
+   * como em ②.5) até o operador tocar "Capturar de novo" — ninguém repete um sinal que não sabe
+   * que precisou repetir. Não volta a pedir consentimento: é o mesmo atendimento.
+   */
+  PEDINDO_REPETICAO,
+
   /** ④ TTS terminou — esperando "Libras Livre, iniciar" pra escutar a resposta do atendente. */
   AGUARDANDO_RESPOSTA,
 
