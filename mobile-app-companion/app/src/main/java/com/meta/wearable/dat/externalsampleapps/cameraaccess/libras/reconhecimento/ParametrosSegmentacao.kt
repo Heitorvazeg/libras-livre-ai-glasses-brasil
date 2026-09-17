@@ -18,8 +18,12 @@ data class ParametrosSegmentacao(
     val janelaVelocidadeMs: Long = 110L,
     /** Peso do valor novo na média móvel exponencial da velocidade. */
     val alfaSuavizacao: Float = 0.5f,
-    /** Pausa (mãos visíveis, abaixo do limiar de saída) que fecha o sinal. */
-    val pausaMs: Long = 500L,
+    /**
+     * Pausa (mãos visíveis, abaixo do limiar de saída) que fecha o sinal. 800 ms, e não os 500 ms
+     * sugeridos pelo plano, porque holds internos dos clipes do MINDS acumularam ~480 ms e
+     * partiam um sinal em dois — ver docs/integracao-video-minds-e-calibracao-2026-09-17.md.
+     */
+    val pausaMs: Long = 800L,
     /** Ausência das duas mãos que fecha o sinal. Antes disso, o relógio da pausa não anda. */
     val tetoOclusaoMs: Long = 900L,
     /** Movimento mais curto que isto é espasmo: descartado sem classificar e sem contar falha. */

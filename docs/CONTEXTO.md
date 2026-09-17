@@ -13,13 +13,17 @@ abaixo — ver a nota logo adiante sobre o que mudou desde então nas outras dua
 > READMEs de `computer-vision-model/`, `contextualization-model/` e
 > `mobile-app-companion/`.
 
-> **O que este documento NÃO cobre (atualizado até 2026-09-16):** as trilhas de
+> **O que este documento NÃO cobre (atualizado até 2026-09-17):** as trilhas de
 > Contextualização e App avançaram bastante depois de 12/09 — classificador de
 > sinal integrado no app com pacote privado e três modos de carregamento
 > (`docs/integracao-modelo-app-plano-2026-09-15.md`), confirmação do
 > reconhecimento pro surdo e modo economia de bateria
 > (`docs/confirmacao-e-modo-economia-plano.md`), consentimento por atendimento
-> (`docs/consentimento-por-atendimento-plano.md`). A trilha de Visão também
+> (`docs/consentimento-por-atendimento-plano.md`). Em 17/09 o pacote baseline passou a
+> estar no repositório e os clipes reais do MINDS passaram pela pipeline do app no
+> emulador (`docs/integracao-video-minds-e-calibracao-2026-09-17.md`) — sobre clipes que
+> estão no treino do baseline, portanto sem dizer nada sobre generalização.
+> A trilha de Visão também
 > teve trabalho depois de 12/09 (checkpoint final exportado e calibração
 > tentada em `docs/exportacao-e-calibracao-final-s20260917-v1-2026-09-15.md`,
 > diagnóstico de domínio e augmentação em `docs/diagnostico-dominio-minds-externo-2026-09-15.md`

@@ -200,13 +200,19 @@ pelo script. Sem ele, o `AvatarPlayer` reporta falha e o app cai na legenda.
 - **Esquerda/direita das mãos** vêm da *handedness* do MediaPipe ("Left"/"Right").
 - **Rotação do feed** assumida como 0. Se o vídeo dos óculos vier girado, ajustar a
   rotação no `LandmarkExtractor` (`ImageProcessingOptions`).
-- **Parâmetros do `SignBoundaryDetector` não calibrados** (`LIMIAR_VELOCIDADE`,
-  `JANELA_SUSTENTACAO_MS` e os demais). As fases de calibração
-  (`docs/sign-boundary-detector-plano.md` §7) exigem device e dataset que não
-  estavam disponíveis quando isto foi implementado; os valores em uso são os
-  "pontos de partida sugeridos" do plano, marcados como tal no código.
-- **A classificação é um placeholder.** O `.tflite` real depende do export do
-  ST-GCN, que `computer-vision-model/treino/exportar.py` ainda não cobre.
+- **Parâmetros do `SignBoundaryDetector` só parcialmente calibrados.** Hoje eles vivem em
+  `ParametrosSegmentacao` (as constantes `LIMIAR_VELOCIDADE`/`JANELA_SUSTENTACAO_MS` citadas
+  antes deixaram de existir) e são editáveis nas configurações de demo. `pausaMs` foi
+  calibrada com vídeo real em 17/09 (500 → 800 ms, senão um sinal se parte em dois:
+  `docs/integracao-video-minds-e-calibracao-2026-09-17.md`); `limiarEntrada`, `limiarSaida` e
+  `tetoOclusaoMs` continuam nos "pontos de partida sugeridos" do plano, porque calibrá-los
+  exige o protocolo R1/R2 com os óculos (`docs/sign-boundary-detector-plano.md` §7).
+- **A classificação já roda com o `.tflite` real, em modo experimental.**
+  `treino/exportar.py --arquitetura gcn` cobre o export, e o pacote baseline
+  (`experimentos-privados/app-baseline-v1`) é selecionado no build por
+  `-PlibrasLivre.classificadorPrivado=<pasta>`; sem pacote, o app usa o placeholder
+  (SIMULADO) e diz isso na tela. O modelo segue `experimental=true`, sem calibração de
+  confiança e sem aprovação de entrega.
 - **O avatar depende de rede para traduzir e para buscar os sinais.** É a única
   peça online do fluxo; o cache de glosa cobre repetições, e o espelho local do
   dicionário (Fase 3.5 do plano) ainda não existe.

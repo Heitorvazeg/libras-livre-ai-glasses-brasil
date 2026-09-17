@@ -27,6 +27,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withContext
 import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.diagnostico.FormatoCsv
 import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.diagnostico.GravadorSessao
 import org.junit.Assert.assertEquals
@@ -79,7 +80,7 @@ class LandmarkPipelineTurnosTest {
       val video = lerVideoAnnexB("pessoa.mp4", maxAmostras = 45)
 
       for (turno in 1..3) {
-        pipeline.startSession()
+        withContext(Dispatchers.Main.immediate) { pipeline.startSession() }
         synchronized(lock) {
           assertTrue("turno $turno: a coleta não ligou", estado.isCollecting)
           assertNull("turno $turno: erro ao abrir a sessão", estado.error)
@@ -102,8 +103,10 @@ class LandmarkPipelineTurnosTest {
         }
         synchronized(lock) { assertTrue("turno $turno: nenhuma pose normalizável", estado.podeSinalizar) }
 
-        pipeline.endSession()
-        pipeline.stop() // fim do stream, como o CameraViewModel faz a cada turno
+        withContext(Dispatchers.Main.immediate) {
+          pipeline.endSession()
+          pipeline.stop() // fim do stream, como o CameraViewModel faz a cada turno
+        }
         // O stop() não espera o frame que já estava no MediaPipe: lê o contador depois que ele para.
         var anterior = -1
         val limiteEstavel = SystemClock.elapsedRealtime() + 3_000

@@ -348,4 +348,6 @@ dependencies {
   // computer-vision-model/treino) — puro JVM, sem Android, não precisa de emulador.
   testImplementation(libs.junit)
   testImplementation(libs.org.json)
+  // Relógio virtual e suspensões controladas: corridas de câmera/diálogo sem Android ou sleeps.
+  testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.10.2")
 }

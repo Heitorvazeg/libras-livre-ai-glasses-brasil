@@ -130,11 +130,18 @@ calibrados**, com referência a este arquivo.
 | `limiarSaida` | 0,4 ombros/s |
 | `janelaVelocidadeMs` | 100–120 ms |
 | α da média móvel | 0,5 |
-| `pausaMs` (fecha o sinal) | 500 ms |
+| `pausaMs` (fecha o sinal) | 500 ms → **800 ms** (calibrado, ver nota) |
 | `tetoOclusaoMs` | 900 ms |
 | `duracaoMinimaMs` (do movimento) | 250 ms |
 | `duracaoMaximaMs` | 3.500 ms |
 | `preRollMs` / `posRollMs` | 250 / 150 ms |
+
+**Calibração de `pausaMs` (17/09/2026).** O valor inicial de 500 ms partia um sinal em dois nos
+clipes reais do MINDS: holds internos acumulam ~480 ms com `limiarSaida` em 0,4, e o relógio da
+pausa não zera nos frames sem mão (só não avança). Passou a 800 ms, medido nos traços do gravador
+e confirmado nos seis clipes — [rodada de 17/09](../integracao-video-minds-e-calibracao-2026-09-17.md).
+Os limiares de velocidade e o teto de oclusão **não** foram calibrados: dependem do protocolo
+R1/R2 com os óculos, porque o piso de ruído do emulador não é o do hardware.
 
 **Mudança (P1).** Os parâmetros ficam num `ParametrosSegmentacao` (data class) lido das
 [configurações de demo](10-tela.md#106-configurações-de-demo). Assim a calibração rápida com os

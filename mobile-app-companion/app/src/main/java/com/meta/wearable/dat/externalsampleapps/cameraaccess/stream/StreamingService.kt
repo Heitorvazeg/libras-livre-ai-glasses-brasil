@@ -22,6 +22,7 @@ import android.os.Binder
 import android.os.IBinder
 import android.os.PowerManager
 import android.util.Log
+import androidx.annotation.MainThread
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
 import com.meta.wearable.dat.externalsampleapps.cameraaccess.MainActivity
@@ -50,11 +51,14 @@ class StreamingService : Service() {
     private const val WAKELOCK_TIMEOUT_MS = 60L * 60L * 1000L
     private const val ACTION_STOP =
         "com.meta.wearable.dat.externalsampleapps.cameraaccess.stream.STOP"
+    private const val EXTRA_OWNER = "stream_owner"
+    private const val EXTRA_REVISION = "stream_revision"
+    // Não pertence à instância Service: precisa sobreviver a destroy/create e intents tardios.
+    private val ownership = ControleDonoStreaming()
 
-    fun start(context: Context) {
-      val intent =
-          Intent(context, StreamingService::class.java).apply { `package` = context.packageName }
-      context.startForegroundService(intent)
+    @MainThread
+    fun start(context: Context, owner: String) {
+      ownership.iniciar(owner) { enviar(context, it) }
     }
 
     /**
@@ -66,9 +70,16 @@ class StreamingService : Service() {
      * ficaria sem a proteção de foreground service pro mic até a PRÓXIMA vez que o stream
      * reiniciar.
      */
-    fun refreshForegroundServiceType(context: Context) = start(context)
+    @MainThread
+    fun refreshForegroundServiceType(context: Context, owner: String) = start(context, owner)
 
-    fun stop(context: Context) {
+    @MainThread
+    fun stop(context: Context, owner: String) {
+      // A drenagem de um VM antigo pode terminar depois do start de outro VM.
+      ownership.parar(owner) { enviar(context, it) }
+    }
+
+    private fun enviar(context: Context, comando: ControleDonoStreaming.Comando) {
       // Route the stop through onStartCommand (a STOP-action start) rather than stopService(). Once
       // startForegroundService() is called the system requires startForeground() to follow; calling
       // stopService() while that start is still pending tears the service down with the foreground
@@ -78,7 +89,9 @@ class StreamingService : Service() {
       val intent =
           Intent(context, StreamingService::class.java).apply {
             `package` = context.packageName
-            action = ACTION_STOP
+            if (!comando.iniciar) action = ACTION_STOP
+            putExtra(EXTRA_OWNER, comando.dono)
+            putExtra(EXTRA_REVISION, comando.revisao)
           }
       context.startForegroundService(intent)
     }
@@ -131,21 +144,32 @@ class StreamingService : Service() {
       )
     } catch (e: Exception) {
       Log.e(TAG, "Failed to enter foreground; stopping service", e)
-      stopSelf()
+      // Não encerrar um start mais recente já entregue pelo sistema.
+      if (stopSelfResult(startId)) releaseWakeLock()
       return START_NOT_STICKY
     }
 
-    if (intent?.action == ACTION_STOP) {
+    val comando = intent?.let { recebido ->
+      recebido.getStringExtra(EXTRA_OWNER)?.let { owner ->
+        ControleDonoStreaming.Comando(
+            recebido.getLongExtra(EXTRA_REVISION, -1L), owner, recebido.action != ACTION_STOP,
+        )
+      }
+    }
+    val decisao = ownership.receber(comando)
+    if (decisao.intentDesatualizado) Log.d(TAG, "Late/unknown intent; reconciling current owner")
+    if (decisao.donoAtivo == null) {
       Log.d(TAG, "Service stopping")
       releaseWakeLock()
-      stopForeground(STOP_FOREGROUND_REMOVE)
-      stopSelf()
+      // Se há outro startId pendente, manter foreground até que ele satisfaça o contrato.
+      if (stopSelfResult(startId)) stopForeground(STOP_FOREGROUND_REMOVE)
       return START_NOT_STICKY
     }
 
     Log.d(TAG, "Service started")
     acquireWakeLock()
-    return START_STICKY
+    // Um processo novo não tem VM/stream dono. Não ressuscitar câmera/serviço por intent nulo.
+    return START_NOT_STICKY
   }
 
   override fun onDestroy() {

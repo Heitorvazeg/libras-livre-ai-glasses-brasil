@@ -30,6 +30,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
 import org.json.JSONArray
 import org.json.JSONObject
@@ -137,7 +138,8 @@ class VideoClassificadorPrivadoTest {
       val inicio = SystemClock.elapsedRealtime()
       metricas.novoTurno(SystemClock.uptimeMillis())
       metricas.amostrar(inicio, LeituraSistema(), 0)
-      pipeline.startSession() // Mesma ordem do app: sessão antes do primeiro frame.
+      // Mesmo dispatcher e ordem do app: sessão antes do primeiro frame.
+      withContext(Dispatchers.Main.immediate) { pipeline.startSession() }
       iniciada = true
       for ((bytes, ptsUs) in video.amostras) {
         // Preserva a cadência do vídeo; a pipeline mede velocidade com o relógio real.
@@ -155,9 +157,9 @@ class VideoClassificadorPrivadoTest {
         do { delay(100) }
         while (SystemClock.elapsedRealtime() - maxOf(fimEnvio, ultimoFrame.get()) < 1_500)
       }
-      withTimeout(30_000) { pipeline.endSession() }
+      withTimeout(30_000) { withContext(Dispatchers.Main.immediate) { pipeline.endSession() } }
       encerrada = true
-      pipeline.stop()
+      withContext(Dispatchers.Main.immediate) { pipeline.stop() }
       val resultado = ResultadoSessao(classificacoes.toList(), falhas.get(), MotivoEncerramento.MANUAL)
       decisao = AvaliadorDeFrase(lexico.glosas).avaliar(resultado)
         val conhecidas = resultado.classificacoes.map { it.glosa }.filter { it in lexico.glosas }
@@ -202,7 +204,7 @@ class VideoClassificadorPrivadoTest {
         val errosLimpeza = mutableListOf<Throwable>()
         runCatching { destino.writeText(relatorio.toString(2)) }.onFailure { errosLimpeza.add(it) }
         if (iniciada && !encerrada) {
-          runCatching { withTimeout(30_000) { pipeline.endSession() } }
+          runCatching { withTimeout(30_000) { withContext(Dispatchers.Main.immediate) { pipeline.endSession() } } }
               .onFailure { errosLimpeza.add(it) }
         }
         runCatching { pipeline.dispose() }.onFailure { errosLimpeza.add(it) }

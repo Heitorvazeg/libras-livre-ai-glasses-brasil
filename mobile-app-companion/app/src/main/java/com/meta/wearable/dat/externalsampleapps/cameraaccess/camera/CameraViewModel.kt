@@ -64,7 +64,9 @@ import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.audio.WakeWo
 import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.audio.WakeWordDetector
 import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.contextualizacao.criarGlossContextualizer
 import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.dialogo.DialogOrchestrator
+import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.dialogo.CapturaDialogo
 import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.dialogo.DialogState
+import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.dialogo.MotivoConfirmacaoNaoConcluida
 import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.reconhecimento.LandmarkPipeline
 import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.reconhecimento.PlaceholderSignClassifier
 import com.meta.wearable.dat.externalsampleapps.cameraaccess.stream.HevcDecoder
@@ -72,12 +74,21 @@ import com.meta.wearable.dat.externalsampleapps.cameraaccess.stream.HevcParamete
 import com.meta.wearable.dat.externalsampleapps.cameraaccess.stream.RecordingResult
 import com.meta.wearable.dat.externalsampleapps.cameraaccess.stream.StreamingService
 import com.meta.wearable.dat.externalsampleapps.cameraaccess.stream.VideoRecorder
+import com.meta.wearable.dat.externalsampleapps.cameraaccess.stream.drenarVideoAntesDeLimpar
 import com.meta.wearable.dat.externalsampleapps.cameraaccess.wearables.WearablesViewModel
 import java.io.ByteArrayInputStream
 import java.io.IOException
 import java.nio.ByteBuffer
+import java.util.UUID
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -155,6 +166,8 @@ class CameraViewModel(
   }
 
   private val deviceSelector: DeviceSelector = wearablesViewModel.deviceSelector
+  // Identidade do VM, não do Service global nem do Stream que será drenado em onCleared.
+  private val donoServico = UUID.randomUUID().toString()
 
   private val _uiState = MutableStateFlow(CameraUiState())
   val uiState: StateFlow<CameraUiState> = _uiState.asStateFlow()
@@ -162,6 +175,21 @@ class CameraViewModel(
   private var session: DeviceSession? = null
   private var camera: Camera? = null
   private var stream: Stream? = null
+  private val politicaCamera = PoliticaCamera()
+  private var aberturaCameraJob: Job? = null
+  private var permissaoPendenteToken: Long? = null
+  // Inclui confirmação local, fila do launcher e decisão no app Meta; não tem prazo humano.
+  private val aguardandoPermissaoCamera = MutableStateFlow(false)
+  // A causa "permissão da câmera pendente" sobrevive à invalidação da abertura: o stream que cai
+  // enquanto o pedido está na tela apaga o pedido e invalida a geração, e sem isto o diagnóstico
+  // que chega à faixa de estado viraria o genérico "stream não subiu".
+  private var permissaoPendenteNaUltimaTentativa = false
+  private var streamEncerrando: Stream? = null
+  // O viewModelScope já está cancelado em onCleared. A limpeza precisa sobreviver para drenar
+  // o frame/IO em voo sem runBlocking na main, que também recebe callbacks do recorder.
+  private val encerramentoScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+  private var encerramentoStreamJob: Job? = null
+  private val gravacaoMutex = Mutex()
 
   // Recording pieces. The single compressed-HEVC stream feeds both the on-screen decoder and the
   // passthrough MP4 writer. Video-only (ver stream/VideoRecorder.kt) — o mic do celular não é
@@ -356,6 +384,8 @@ class CameraViewModel(
   // @Volatile: single refs shared by the frame-collector and main threads, nulled at teardown.
   @Volatile private var hevcDecoder: HevcDecoder? = null
   @Volatile private var decoderSurface: Surface? = null
+  // Protegido por decoderLock; não perder a barreira ao remover/trocar o Surface.
+  private val decodersPreviewParados = mutableSetOf<HevcDecoder>()
 
   // Accumulates the stream's HEVC parameter sets (VPS/SPS/PPS) so a recording (or decoder) started
   // mid-stream can be primed with a complete format. The SDK emits the VPS once at stream start, so
@@ -386,8 +416,13 @@ class CameraViewModel(
     dialogOrchestrator =
         DialogOrchestrator(
             scope = viewModelScope,
-            landmarkPipeline = landmarkPipeline,
-            speaker = speaker,
+          landmarkPipeline = CapturaDialogo(
+            landmarkPipeline::startSession,
+            landmarkPipeline::endSession,
+            landmarkPipeline::retomarDepoisDePausa,
+          ),
+          speaker = vozEmCadeia,
+          politicaCamera = politicaCamera,
             sttEngine = sttEngine,
             contextualizer = glossContextualizer,
             ensureCameraActive = ::ensureCameraActiveForLibras,
@@ -441,6 +476,14 @@ class CameraViewModel(
             },
             onConsentimentoRecusado = { definirAviso(TipoAviso.CONSENTIMENTO_RECUSADO, textos.consentimentoRecusado) },
             onConsentimentoSemLibras = { definirAviso(TipoAviso.CONSENTIMENTO_SEM_LIBRAS, textos.consentimentoSemLibras) },
+            onConfirmacaoNaoConcluida = { motivo ->
+              definirAviso(
+                  TipoAviso.CONFIRMACAO_NAO_CONCLUIDA,
+                  when (motivo) {
+                    MotivoConfirmacaoNaoConcluida.TETO_EXPIRADO -> textos.confirmacaoExpirada
+                    MotivoConfirmacaoNaoConcluida.CORRECAO_SEM_CAMERA -> textos.correcaoSemCamera
+                  })
+            },
         )
     dialogOrchestrator.attachWakeWordDetector(wakeWordDetector)
     AcoesDeDemo.simularQuedaDoAvatar = simularQuedaDoAvatar
@@ -728,16 +771,10 @@ class CameraViewModel(
     _uiState.update { it.copy(avisos = it.avisos - tipo) }
   }
 
-  // Libras Livre — modo economia de bateria (docs/confirmacao-e-modo-economia-plano.md §2).
-  // Ligado uma vez por onBateriaBaixa(), nunca desligado sozinho (o DAT não expõe "bateria
-  // recuperada", só os dois limiares de baixa/crítica). Checado por ensureCameraActiveForLibras()
-  // pra bloquear "iniciar"/"corrigir" pelo mesmo caminho de qualquer outra falha de câmera
-  // (FalhaCamera.BATERIA_BAIXA).
-  private var economiaBateria = false
-
   private fun onBateriaBaixa() {
-    if (economiaBateria) return
-    economiaBateria = true
+    if (politicaCamera.economia) return
+    politicaCamera.ativarEconomia()
+    _uiState.update { it.copy(bateriaBaixa = true) }
     Log.w(TAG, "Bateria baixa/crítica nos óculos — modo economia ligado")
     // Persistente (ao contrário do ERRO_OCULOS acima, que é um evento único): o operador precisa
     // lembrar que a captura de sinais ficou desligada pelo resto do atendimento, não só no
@@ -904,9 +941,24 @@ class CameraViewModel(
     synchronized(decoderLock) {
       decoderSurface = surface
       if (surface == null) {
-        hevcDecoder?.stop()
-        hevcDecoder = null
+        aposentarDecoderPreviewLocked()
       }
+    }
+    if (surface == null) encerramentoScope.launch { drenarDecodersPreviewParados() }
+  }
+
+  private fun aposentarDecoderPreviewLocked() {
+    val parado = hevcDecoder ?: return
+    hevcDecoder = null
+    decodersPreviewParados.add(parado)
+    parado.stop()
+  }
+
+  private suspend fun drenarDecodersPreviewParados() {
+    val pendentes = synchronized(decoderLock) { decodersPreviewParados.toList() }
+    for (parado in pendentes) {
+      parado.stopAndDrain()
+      synchronized(decoderLock) { decodersPreviewParados.remove(parado) }
     }
   }
 
@@ -932,9 +984,9 @@ class CameraViewModel(
 
   /**
    * Ends the device session. The stream and any in-progress recording are not torn down here
-   * directly — stopping the session drives the SDK's stream to a terminal state, which the
-   * stream-state collector observes (see [onStreamTerminated]) to stop recording and release stream
-   * resources.
+  * directly by the SDK alone: canceling the dialogue first invalidates opening/permission work
+  * and stops the camera, then [onStreamTerminated] finalizes recording and releases stream
+  * resources.
    *
    * Libras Livre: encerra o ATENDIMENTO junto. São duas coisas diferentes — a [DeviceSession] é o
    * vínculo com os óculos, o atendimento é a máquina de estados do diálogo —, mas quem toca
@@ -953,6 +1005,7 @@ class CameraViewModel(
   private fun observeSession(session: DeviceSession) {
     sessionStateJob = viewModelScope.launch {
       session.state.collect { state ->
+        if (this@CameraViewModel.session !== session) return@collect
         _uiState.update { it.copy(sessionState = state) }
         if (state == DeviceSessionState.STOPPED) {
           cleanupSession()
@@ -961,6 +1014,7 @@ class CameraViewModel(
     }
     sessionErrorJob = viewModelScope.launch {
       session.errors.collect { error ->
+        if (this@CameraViewModel.session !== session) return@collect
         // All session errors surface through the snackbar, including
         // DAT_APP_ON_THE_GLASSES_UPDATE_REQUIRED, which the SDK delivers as a one-shot event.
         Log.e(TAG, "Session error: ${error.description}")
@@ -975,6 +1029,7 @@ class CameraViewModel(
   }
 
   private fun cleanupSession() {
+    stopStreaming() // Invalida também uma espera de sessão/permissão sem Camera criada.
     sessionStateJob?.cancel()
     sessionStateJob = null
     sessionErrorJob?.cancel()
@@ -990,30 +1045,55 @@ class CameraViewModel(
    * Meta AI app — is deferred to [confirmCameraPermissionRedirect] so the app-switch is confirmed.
    */
   fun startStreaming() {
+    if (politicaCamera.economia) {
+      definirAviso(TipoAviso.BATERIA_OCULOS_BAIXA, textos.falhaCamera(FalhaCamera.BATERIA_BAIXA))
+      return
+    }
+    // O botão do sample não é uma autorização implícita de câmera. O Aceitar abre só preview,
+    // sem iniciar o pipeline; o Iniciar de Libras continua abrindo captura após consentimento.
+    val token = politicaCamera.token()
+    if (token == null) {
+      dialogOrchestrator.pedirPreview()
+      return
+    }
+    startStreaming(token)
+  }
+
+  private fun startStreaming(token: Long) {
+    if (!politicaCamera.valida(token)) return
     if (!_uiState.value.isSessionActive) {
       wearablesViewModel.setRecentError(
           getApplication<Application>().getString(R.string.error_start_session_first)
       )
       return
     }
-    if (stream != null || _uiState.value.isStartingStream) return
+    if (stream != null || aberturaCameraJob?.isActive == true || permissaoPendenteToken != null) return
+    permissaoPendenteNaUltimaTentativa = false
     _uiState.update { it.copy(isStartingStream = true) }
-    viewModelScope.launch {
+    aberturaCameraJob = viewModelScope.launch {
       try {
         Wearables.checkPermissionStatus(Permission.CAMERA)
             .onSuccess { status ->
+              if (!politicaCamera.valida(token) || !_uiState.value.isSessionActive) return@onSuccess
               if (status == PermissionStatus.Granted) {
-                beginStream()
+                beginStream(token)
               } else {
+                permissaoPendenteToken = token
+                aguardandoPermissaoCamera.value = true
+                permissaoPendenteNaUltimaTentativa = true
+                // A espera pela decisão humana é ilimitada de propósito, então a causa vai para a
+                // faixa agora: sem isto o atendente fica sem explicação até o stream cair.
+                definirAviso(TipoAviso.CAMERA_NAO_SUBIU, textos.falhaCamera(FalhaCamera.PERMISSAO_PENDENTE))
                 _uiState.update { it.copy(showCameraPermissionRedirectConfirm = true) }
               }
             }
             .onFailure { error, _ ->
+              if (!politicaCamera.valida(token)) return@onFailure
               Log.e(TAG, "Failed to check camera permission: ${error.description}")
               wearablesViewModel.setRecentError(error.getLocalizedDescription(getApplication()))
             }
       } finally {
-        _uiState.update { it.copy(isStartingStream = false) }
+        if (politicaCamera.valida(token)) _uiState.update { it.copy(isStartingStream = false) }
       }
     }
   }
@@ -1022,29 +1102,42 @@ class CameraViewModel(
   fun confirmCameraPermissionRedirect(
       requestPermission: suspend (Permission) -> PermissionStatus,
   ) {
+    // Consome o pedido original uma vez; nunca cria uma geração nova para um redirect atrasado.
+    val token = permissaoPendenteToken ?: return
+    permissaoPendenteToken = null
+    permissaoPendenteNaUltimaTentativa = false
     _uiState.update { it.copy(showCameraPermissionRedirectConfirm = false) }
-    if (!_uiState.value.isSessionActive || stream != null) return
-    viewModelScope.launch {
-      val status = requestPermission(Permission.CAMERA)
-      if (status == PermissionStatus.Granted) {
-        beginStream()
-      } else {
-        wearablesViewModel.setRecentError(
-            getApplication<Application>().getString(R.string.error_camera_permission_denied)
-        )
+    if (!politicaCamera.valida(token) || !_uiState.value.isSessionActive || stream != null) return
+    _uiState.update { it.copy(isStartingStream = true) }
+    aberturaCameraJob = viewModelScope.launch {
+      try {
+        val status = requestPermission(Permission.CAMERA)
+        if (!politicaCamera.valida(token) || !_uiState.value.isSessionActive) return@launch
+        aguardandoPermissaoCamera.value = false
+        if (status == PermissionStatus.Granted) {
+          beginStream(token)
+        } else {
+          wearablesViewModel.setRecentError(
+              getApplication<Application>().getString(R.string.error_camera_permission_denied)
+          )
+        }
+      } finally {
+        if (politicaCamera.valida(token)) {
+          aguardandoPermissaoCamera.value = false
+          _uiState.update { it.copy(isStartingStream = false) }
+        }
       }
     }
   }
 
   fun cancelCameraPermissionRedirect() {
-    _uiState.update { it.copy(showCameraPermissionRedirectConfirm = false) }
+    stopStreaming()
   }
 
-  private fun beginStream() {
+  private fun beginStream(token: Long) {
+    if (!politicaCamera.valida(token) || !_uiState.value.isSessionActive) return
     val current = session ?: return
     if (stream != null) return
-    // Foreground service keeps the stream/recording alive while backgrounded.
-    StreamingService.start(getApplication())
     current
         .addCamera(
             StreamConfiguration(
@@ -1056,33 +1149,57 @@ class CameraViewModel(
             )
         )
         .onSuccess { addedCamera ->
+          if (!politicaCamera.valida(token) || session !== current || !_uiState.value.isSessionActive) {
+            stopCamera(addedCamera)
+            return@onSuccess
+          }
+          // Só depois da validação: não deixa serviço ligado se addCamera chegar cancelado.
+          StreamingService.start(getApplication(), donoServico)
           camera = addedCamera
           val added = addedCamera.stream
           stream = added
           // Subscribe before start() so no initial transitions are missed.
           setupStreamListeners(added)
+          // Collectors na Main.immediate podem receber bateria/terminal já no subscribe.
+          if (!politicaCamera.valida(token) || stream !== added) {
+            stopCamera(addedCamera)
+            return@onSuccess
+          }
           _uiState.update { it.copy(streamState = StreamState.STARTING) }
           added.start().onFailure { error, _ ->
+            if (stream !== added || !politicaCamera.valida(token)) return@onFailure
             Log.e(TAG, "Failed to start stream: ${error.description}")
             wearablesViewModel.setRecentError(error.getLocalizedDescription(getApplication()))
             // A failed start leaves the stream attached and the FGS running — tear both down so the
             // UI doesn't stick at STARTING, matching the addCamera() failure path below.
-            clearStreamResources()
+            onStreamTerminated(added)
           }
         }
         .onFailure { error, _ ->
+          if (!politicaCamera.valida(token)) return@onFailure
           Log.e(TAG, "Failed to add camera: ${error.description}")
-          StreamingService.stop(getApplication())
           wearablesViewModel.setRecentError(error.getLocalizedDescription(getApplication()))
         }
   }
 
   /** Stops the camera stream but keeps the [DeviceSession] connected. */
   fun stopStreaming() {
+    invalidarAberturaCamera()
     val current = camera ?: return
     _uiState.update { it.copy(streamState = StreamState.STOPPING) }
+    videoJob?.cancel()
     current.stop()
-    // The stream-state collector converges teardown when STOPPED/CLOSED arrives.
+    // Também fecha uma Camera parada ainda no STARTING, sem depender de uma transição do SDK.
+    stream?.let { onStreamTerminated(it) }
+  }
+
+  private fun invalidarAberturaCamera() {
+    politicaCamera.invalidarAbertura()
+    aberturaCameraJob?.cancel()
+    aberturaCameraJob = null
+    permissaoPendenteToken = null
+    aguardandoPermissaoCamera.value = false
+    _uiState.update { it.copy(isStartingStream = false, showCameraPermissionRedirectConfirm = false) }
   }
 
   private fun setupStreamListeners(stream: Stream) {
@@ -1094,18 +1211,20 @@ class CameraViewModel(
       // state replays its current value (STOPPED) on subscribe, and we subscribe before start().
       var hasBeenActive = false
       stream.state.collect { state ->
+        if (this@CameraViewModel.stream !== stream || streamEncerrando === stream) return@collect
         _uiState.update { it.copy(streamState = state) }
         val isTerminal = state == StreamState.STOPPED || state == StreamState.CLOSED
         if (!isTerminal) {
           hasBeenActive = true
         } else if (hasBeenActive) {
           hasBeenActive = false
-          onStreamTerminated()
+          onStreamTerminated(stream)
         }
       }
     }
     streamErrorJob = viewModelScope.launch {
       stream.errorStream.collect { error ->
+        if (this@CameraViewModel.stream !== stream) return@collect
         Log.e(TAG, "Stream error: ${error.description}")
         val mensagem = error.getLocalizedDescription(getApplication())
         wearablesViewModel.setRecentError(mensagem)
@@ -1176,39 +1295,53 @@ class CameraViewModel(
     }
   }
 
-  private fun onStreamTerminated() {
+  private fun onStreamTerminated(terminated: Stream) {
+    if (stream !== terminated || streamEncerrando === terminated) return
+    streamEncerrando = terminated
+    invalidarAberturaCamera()
+    _uiState.update { it.copy(streamState = StreamState.STOPPING) }
+    val produtor = videoJob
+    produtor?.cancel()
     // Finalize an in-progress recording before releasing the foreground service / wake lock, so the
     // MP4 mux on Dispatchers.IO isn't cut off when the stream stops while backgrounded.
-    viewModelScope.launch {
-      if (_uiState.value.isRecording) {
-        stopVideoRecording()
+    // stream permanece ocupado até acabar a drenagem E a limpeza. Nenhum sucessor pode
+    // reutilizar os consumidores nesse intervalo. Nunca fazemos join sob decoderLock/muxerLock.
+    encerramentoStreamJob = encerramentoScope.launch(start = CoroutineStart.LAZY) {
+      drenarVideoAntesDeLimpar(produtor) {
+        try {
+          stopVideoRecording(aguardarKeyframe = false)
+        } finally {
+          if (stream === terminated) clearStreamResources()
+        }
       }
-      clearStreamResources()
     }
+    encerramentoStreamJob?.start()
   }
 
-  private fun clearStreamResources() {
-    videoJob?.cancel()
+  /** Só após drenar o produtor; não chamar diretamente de callback de erro/stop do DAT. */
+  private suspend fun clearStreamResources() = withContext(NonCancellable) {
     videoJob = null
     streamStateJob?.cancel()
     streamStateJob = null
     streamErrorJob?.cancel()
     streamErrorJob = null
     synchronized(decoderLock) {
-      hevcDecoder?.stop()
-      hevcDecoder = null
+      aposentarDecoderPreviewLocked()
     }
+    drenarDecodersPreviewParados()
     // Libras: solta o decoder/ImageReader do pipeline de reconhecimento junto com o stream. O
     // MediaPipe fica carregado para o próximo "iniciar" (docs/prontidao-demo/03 §3.1).
-    landmarkPipeline.stop()
+    landmarkPipeline.stopAndDrain()
+    // streamEncerrando/stream continuam ocupados até os callbacks e reportFailures terminarem.
     csdCollector.reset()
-    StreamingService.stop(getApplication())
+    StreamingService.stop(getApplication(), donoServico)
     // STOPPED is restartable, so only stop() detaches the capability; without it the next
     // addCamera() fails with "a capability of this type is already active". Stopping the camera
     // cascades to its stream child.
     stopCamera(camera)
     camera = null
     stream = null
+    streamEncerrando = null
     _uiState.update { it.copy(streamState = StreamState.STOPPED, hasReceivedFirstFrame = false) }
   }
 
@@ -1265,21 +1398,26 @@ class CameraViewModel(
   fun startVideoRecording() {
     if (!_uiState.value.isStreaming || _uiState.value.isRecording) return
     viewModelScope.launch {
-      if (!_uiState.value.isStreaming || _uiState.value.isRecording) return@launch
-      videoRecorder.startRecording(csdCollector.complete())
+      gravacaoMutex.withLock {
+        if (!_uiState.value.isStreaming || streamEncerrando != null || videoRecorder.isRecording.value) return@withLock
+        // startRecording faz IO antes de retornar. Cancelar o dono não pode soltar a exclusão
+        // enquanto esse IO ainda prepara um muxer que o teardown já teria fechado.
+        withContext(NonCancellable) { videoRecorder.startRecording(csdCollector.complete()) }
+      }
     }
   }
 
-  suspend fun stopVideoRecording() {
-    if (!_uiState.value.isRecording) return
+  suspend fun stopVideoRecording(aguardarKeyframe: Boolean = true) = gravacaoMutex.withLock {
+    if (!videoRecorder.isRecording.value) return@withLock
     // The writer starts on the first keyframe. If stop lands just before that frame, wait briefly
     // so even a quick recording finalizes to a file instead of being discarded.
     var waited = 0L
-    while (!videoRecorder.hasStartedWriting.value && waited < KEYFRAME_WAIT_MAX_MS) {
+    while (aguardarKeyframe && streamEncerrando == null &&
+      !videoRecorder.hasStartedWriting.value && waited < KEYFRAME_WAIT_MAX_MS) {
       delay(KEYFRAME_WAIT_STEP_MS)
       waited += KEYFRAME_WAIT_STEP_MS
     }
-    when (val result = videoRecorder.stopRecording()) {
+    when (val result = withContext(NonCancellable) { videoRecorder.stopRecording() }) {
       is RecordingResult.Completed ->
           _uiState.update { it.copy(activePreview = CapturePreview.Video(result.uri)) }
       RecordingResult.NoRecording ->
@@ -1314,7 +1452,7 @@ class CameraViewModel(
         // RECORD_AUDIO acabou de ser concedido (ou já estava) — garante que o foreground
         // service já está anunciado como tipo "microphone" antes de escutar de verdade (ver
         // StreamingService.refreshForegroundServiceType).
-        StreamingService.refreshForegroundServiceType(getApplication())
+        StreamingService.refreshForegroundServiceType(getApplication(), donoServico)
         dialogOrchestrator.onBotaoPrincipal(acao)
       } else {
         wearablesViewModel.setRecentError(
@@ -1342,49 +1480,73 @@ class CameraViewModel(
   /**
    * Liga câmera+stream sob demanda pro DialogOrchestrator (①→②, ver docs/orquestracao-dialogo-audio-plano.md)
    * — reaproveita startSession()/startStreaming() já existentes, só espera o resultado via
-   * [uiState] em vez do fluxo orientado a toque na tela. Devolve false sem lançar se a sessão ou o
-   * stream não ficarem prontos a tempo (sem óculos pareados, permissão de câmera pendente etc.).
+  * [uiState] e a geração da política. Devolve a falha se a sessão/stream não ficarem prontos;
+  * cancelamento continua sendo cancelamento de coroutine (não é convertido em falha).
    */
   private suspend fun ensureCameraActiveForLibras(): FalhaCamera? {
-    // Libras Livre — modo economia de bateria (docs/confirmacao-e-modo-economia-plano.md §2):
-    // checado antes de tudo, inclusive do atalho de stream já ativo — bateria crítica bloqueia
-    // qualquer nova captura de sinais dali em diante, mesmo que o stream ainda estivesse de pé
-    // por algum motivo.
-    if (economiaBateria) return FalhaCamera.BATERIA_BAIXA
-    if (_uiState.value.isStreaming) return null
-    // 3.2: stream pausado nos óculos — startStreaming() sairia cedo e o "iniciar" desistiria em
-    // silêncio. Mostra a mensagem e espera a retomada até o teto da pausa.
-    if (_uiState.value.isPaused) {
-      definirAviso(TipoAviso.STREAM_PAUSADO, textos.streamPausado)
-      val retomou =
-          withTimeoutOrNull(DialogOrchestrator.TETO_PAUSA_MS) { uiState.first { it.isStreaming } }
-      return if (retomou != null) null else FalhaCamera.PAUSA_LONGA
-    }
-    // 3.4: a causa vai para a faixa de estado.
-    val wearables = wearablesViewModel.uiState.value
-    FalhaCamera.antesDeTentar(wearables.hasActiveDevice, wearables.isFirmwareUpdateRequired)?.let { return it }
-    if (!_uiState.value.hasSession) {
-      startSession()
-      val sessionReady =
-          withTimeoutOrNull(CAMERA_SESSION_READY_TIMEOUT_MS) {
-            uiState.first { it.isSessionActive }
-          }
-      if (sessionReady == null) {
-        Log.w(TAG, "Sessão com os óculos não ficou pronta a tempo — câmera não ligada")
-        return FalhaCamera.depoisDeEsperar(sessaoPronta = false, streamPronto = false, permissaoPendente = false)
+    val token = politicaCamera.token() ?: return falhaDaPoliticaCamera()
+    var pronta = false
+    try {
+      if (_uiState.value.isStreaming) {
+        pronta = true
+        return null
       }
+      if (_uiState.value.isPaused) {
+        definirAviso(TipoAviso.STREAM_PAUSADO, textos.streamPausado)
+        val retomou = aguardarCamera(token, DialogOrchestrator.TETO_PAUSA_MS) { it.isStreaming }
+        if (!politicaCamera.valida(token)) return falhaDaPoliticaCamera()
+        pronta = retomou != null
+        return if (pronta) null else FalhaCamera.PAUSA_LONGA
+      }
+      val wearables = wearablesViewModel.uiState.value
+      FalhaCamera.antesDeTentar(wearables.hasActiveDevice, wearables.isFirmwareUpdateRequired)?.let { return it }
+      if (!_uiState.value.hasSession) startSession()
+      val sessionReady = aguardarCamera(token, CAMERA_SESSION_READY_TIMEOUT_MS) { it.isSessionActive }
+      if (!politicaCamera.valida(token)) return falhaDaPoliticaCamera()
+      if (sessionReady == null) return FalhaCamera.SESSAO_SEM_RESPOSTA
+
+      // Corrigir pode chegar enquanto o stream anterior finaliza a gravação/teardown.
+      val livre = aguardarCamera(token, CAMERA_STREAM_READY_TIMEOUT_MS) {
+        stream == null || (streamEncerrando == null && it.isStreaming)
+      }
+      if (!politicaCamera.valida(token)) return falhaDaPoliticaCamera()
+      if (livre == null) return FalhaCamera.STREAM_NAO_SUBIU
+      startStreaming(token)
+      val streamReady = aguardarCameraSemContarPermissao(
+          estados = combine(uiState, politicaCamera.geracao, aguardandoPermissaoCamera) { ui, _, humana -> ui to humana },
+          timeoutTecnicoMs = CAMERA_STREAM_READY_TIMEOUT_MS,
+          aguardandoPermissao = { it.second },
+          concluida = { !politicaCamera.valida(token) || it.first.isStreaming },
+      )
+      if (!politicaCamera.valida(token)) return falhaDaPoliticaCamera()
+      pronta = streamReady != null
+      return FalhaCamera.depoisDeEsperar(
+          sessaoPronta = true,
+          streamPronto = pronta,
+          permissaoPendente = _uiState.value.showCameraPermissionRedirectConfirm ||
+              permissaoPendenteNaUltimaTentativa,
+      )
+    } finally {
+      // Timeout/cancelamento também cancela permissão pendente. Uma espera antiga nunca para
+      // a câmera de um novo Aceitar, nem apaga flags pertencentes à nova geração.
+      if (!pronta && politicaCamera.valida(token)) stopStreaming()
     }
-    startStreaming()
-    val streamReady =
-        withTimeoutOrNull(CAMERA_STREAM_READY_TIMEOUT_MS) { uiState.first { it.isStreaming } }
-    if (streamReady == null) {
-      Log.w(TAG, "Stream não ficou pronto a tempo (permissão pendente ou falha) — câmera não ligada")
-    }
-    return FalhaCamera.depoisDeEsperar(
-        sessaoPronta = true,
-        streamPronto = streamReady != null,
-        permissaoPendente = _uiState.value.showCameraPermissionRedirectConfirm,
-    )
+  }
+
+  private fun falhaDaPoliticaCamera(): FalhaCamera = when {
+    politicaCamera.economia -> FalhaCamera.BATERIA_BAIXA
+    // O pedido de permissão sumiu da tela junto com a invalidação, mas a causa é ele.
+    permissaoPendenteNaUltimaTentativa -> FalhaCamera.PERMISSAO_PENDENTE
+    else -> FalhaCamera.STREAM_NAO_SUBIU
+  }
+
+  private suspend fun aguardarCamera(
+      token: Long,
+      timeoutMs: Long,
+      pronta: (CameraUiState) -> Boolean,
+  ): CameraUiState? = withTimeoutOrNull(timeoutMs) {
+    combine(uiState, politicaCamera.geracao) { ui, _ -> ui }
+        .first { !politicaCamera.valida(token) || pronta(it) }
   }
 
   /**
@@ -1393,7 +1555,7 @@ class CameraViewModel(
    * inteiro, só o de religar o stream.
    */
   private fun deactivateCameraForLibras() {
-    if (_uiState.value.hasStream) stopStreaming()
+    stopStreaming()
   }
 
   // MARK: - Dismissers
@@ -1484,12 +1646,25 @@ class CameraViewModel(
 
   override fun onCleared() {
     super.onCleared()
-    clearStreamResources()
+    politicaCamera.revogarConsentimento()
+    stopStreaming()
     session?.stop()
     cleanupSession()
-    videoRecorder.close()
-    landmarkPipeline.dispose()
-    gravador.encerrar()
+    encerramentoScope.launch {
+      try {
+        encerramentoStreamJob?.join()
+        drenarVideoAntesDeLimpar(videoJob) {
+          clearStreamResources()
+          gravacaoMutex.withLock { videoRecorder.close() }
+          // dispose drena também decoders aposentados e seus reportFailures. Não segurar lock:
+          // onFrameProcessado/onEvento ainda podem enfileirar no GravadorSessao até terminar.
+          withContext(Dispatchers.Default) { landmarkPipeline.dispose() }
+          gravador.encerrar()
+        }
+      } finally {
+        encerramentoScope.cancel()
+      }
+    }
     avatarPlayer.release()
     glossContextualizer.close()
     speaker.shutdown()

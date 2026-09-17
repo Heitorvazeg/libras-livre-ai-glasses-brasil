@@ -22,6 +22,8 @@ class TextosLibras(context: Context) {
   val avatarNaoCarregou = c.getString(R.string.aquecimento_avatar_falhou)
   val consentimentoRecusado = c.getString(R.string.aviso_consentimento_recusado)
   val consentimentoSemLibras = c.getString(R.string.aviso_consentimento_sem_libras)
+  val confirmacaoExpirada = c.getString(R.string.aviso_confirmacao_expirada)
+  val correcaoSemCamera = c.getString(R.string.aviso_correcao_sem_camera)
 
   val etapaMediaPipe = c.getString(R.string.aquecimento_etapa_mediapipe)
   val etapaClassificador = c.getString(R.string.aquecimento_etapa_classificador)

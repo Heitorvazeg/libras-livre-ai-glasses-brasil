@@ -203,7 +203,8 @@ class InstrumentationTest {
     )
     composeTestRule.onNodeWithTag("start_preview_button").performClick()
 
-    // Camera is denied, so previewing surfaces the redirect confirm; tap Continue.
+    aceitarConsentimentoDoPreview()
+    // Só após consentimento: câmera negada oferece o redirect; tap Continue.
     val continueLabel = targetContext.getString(R.string.camera_permission_continue)
     composeTestRule.waitUntilExactlyOneExists(
         hasText(continueLabel),
@@ -494,8 +495,8 @@ class InstrumentationTest {
     )
   }
 
-  // Starts a session, then the preview, confirms the camera-permission redirect, and waits until it
-  // is actively streaming (Stop Preview shown).
+  // Starts a session, consents to preview, confirms the wearable permission redirect and waits
+  // for streaming. Preview does not start sign recognition or require model warmup.
   private fun startSessionAndStream() {
     waitForActiveDevice()
     composeTestRule.onNodeWithTag("start_session_button").performClick()
@@ -506,6 +507,7 @@ class InstrumentationTest {
     )
     composeTestRule.onNodeWithTag("start_preview_button").performClick()
 
+    aceitarConsentimentoDoPreview()
     // Camera is denied by default, so the first preview surfaces the permission-redirect confirm.
     // Tap Continue → the mock grants the request and persists it (later previews skip the dialog).
     val continueLabel = targetContext.getString(R.string.camera_permission_continue)
@@ -524,6 +526,41 @@ class InstrumentationTest {
         hasTestTag("capture_button").and(isEnabled()),
         timeoutMillis = STREAM_TIMEOUT,
     )
+  }
+
+  private fun aceitarConsentimentoDoPreview() {
+    composeTestRule.waitUntilExactlyOneExists(
+        hasTestTag("consentimento_aceitar_button"), timeoutMillis = STREAM_TIMEOUT,
+    )
+    composeTestRule.onNodeWithTag("stop_preview_button").assertDoesNotExist()
+    composeTestRule.onNodeWithTag("capture_button").assertIsNotEnabled()
+    composeTestRule.onNodeWithTag("consentimento_aceitar_button").performClick()
+  }
+
+  @Test
+  fun previewSemConsentimentoNaoPedePermissaoENaoCaptura() {
+    pairActiveDevice(withCameraFeed = true, withCapturedImage = false)
+    waitForActiveDevice()
+    composeTestRule.onNodeWithTag("start_session_button").performClick()
+    composeTestRule.waitUntilExactlyOneExists(
+        hasTestTag("start_preview_button").and(isEnabled()), timeoutMillis = STREAM_TIMEOUT,
+    )
+    composeTestRule.onNodeWithTag("start_preview_button").performClick()
+    composeTestRule.waitUntilExactlyOneExists(
+        hasTestTag("consentimento_recusar_button"), timeoutMillis = STREAM_TIMEOUT,
+    )
+    composeTestRule.onNodeWithText(targetContext.getString(R.string.camera_permission_continue)).assertDoesNotExist()
+    composeTestRule.onNodeWithTag("stop_preview_button").assertDoesNotExist()
+    composeTestRule.onNodeWithTag("capture_button").assertIsNotEnabled()
+    composeTestRule.onNodeWithTag("consentimento_recusar_button").performClick()
+    composeTestRule.waitUntilExactlyOneExists(
+        hasTestTag("start_preview_button").and(isEnabled()), timeoutMillis = STREAM_TIMEOUT,
+    )
+    composeTestRule.onNodeWithTag("start_preview_button").performClick()
+    composeTestRule.waitUntilExactlyOneExists(
+        hasTestTag("consentimento_aceitar_button"), timeoutMillis = STREAM_TIMEOUT,
+    )
+    composeTestRule.onNodeWithTag("stop_preview_button").assertDoesNotExist()
   }
 
   // Starts recording (always video-only now — see stream/VideoRecorder.kt) and waits for the

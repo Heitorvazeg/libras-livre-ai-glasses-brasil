@@ -38,8 +38,8 @@ enum class DialogState {
    * ②.5 [NOVO — docs/confirmacao-e-modo-economia-plano.md §1] Mostra a frase reconhecida pro
    * SURDO (mesmo avatar do ⑦, mais a legenda) e espera o botão do operador: "Confirmar" fala pro
    * atendente e segue o ciclo; "Corrigir" descarta e reabre CAPTURANDO_SINAIS. Um timeout de
-   * segurança confirma sozinho se nenhum dos dois for apertado. Câmera desligada, wake word
-   * pausada, como ③⑥⑦.
+   * segurança descarta a frase, sem falar, se nenhum dos dois for apertado. Câmera desligada,
+   * wake word pausada, como ③⑥⑦.
    */
   CONFIRMANDO_RECONHECIMENTO,
 
@@ -66,4 +66,15 @@ enum class DialogState {
 
   /** ⑦ Entregando o texto pro pipeline do avatar (docs/vlibras-webview-plano.md). Wake word pausada. */
   GERANDO_AVATAR,
+}
+
+/**
+ * Por que a frase mostrada em ②.5 foi descartada sem ser falada. Nos dois casos a decisão fica com
+ * o operador — nenhum deles fala automaticamente o que não foi conferido.
+ */
+enum class MotivoConfirmacaoNaoConcluida {
+  /** O teto de ②.5 expirou sem "Confirmar" nem "Corrigir": o atendimento voltou ao ①. */
+  TETO_EXPIRADO,
+  /** "Corrigir" não conseguiu religar a câmera: a frase pendente segue em ②.5, sem ser falada. */
+  CORRECAO_SEM_CAMERA,
 }

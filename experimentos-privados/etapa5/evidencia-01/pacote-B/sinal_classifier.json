@@ -1,0 +1,345 @@
+{
+  "args": {
+    "arquitetura": "gcn",
+    "backend": "ai-edge",
+    "checkpoint": "/home/walisson/libras-livre-ai-glasses-brasil/experimentos-privados/final-s20260917-v1/modelo_final/modelo_final.pt",
+    "frames": 96,
+    "layout": {
+      "coordenadas": [
+        "x",
+        "y",
+        "z"
+      ],
+      "dimensoes": 3,
+      "fonte_layout": "checkpoint",
+      "limite_escala": 2.0,
+      "maos": [
+        {
+          "indices": [
+            0,
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8,
+            9,
+            10,
+            11,
+            12,
+            13,
+            14,
+            15,
+            16,
+            17,
+            18,
+            19,
+            20
+          ],
+          "lado": "esquerda"
+        },
+        {
+          "indices": [
+            0,
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8,
+            9,
+            10,
+            11,
+            12,
+            13,
+            14,
+            15,
+            16,
+            17,
+            18,
+            19,
+            20
+          ],
+          "lado": "direita"
+        }
+      ],
+      "pontos": 57,
+      "pose_ordenada": [
+        {
+          "indice_mediapipe_pose": 0,
+          "nome": "nariz"
+        },
+        {
+          "indice_mediapipe_pose": 2,
+          "nome": "olho_esq"
+        },
+        {
+          "indice_mediapipe_pose": 5,
+          "nome": "olho_dir"
+        },
+        {
+          "indice_mediapipe_pose": 7,
+          "nome": "orelha_esq"
+        },
+        {
+          "indice_mediapipe_pose": 8,
+          "nome": "orelha_dir"
+        },
+        {
+          "indice_mediapipe_pose": 9,
+          "nome": "boca_esq"
+        },
+        {
+          "indice_mediapipe_pose": 10,
+          "nome": "boca_dir"
+        },
+        {
+          "indice_mediapipe_pose": 11,
+          "nome": "ombro_esq"
+        },
+        {
+          "indice_mediapipe_pose": 12,
+          "nome": "ombro_dir"
+        },
+        {
+          "indice_mediapipe_pose": 13,
+          "nome": "cotovelo_esq"
+        },
+        {
+          "indice_mediapipe_pose": 14,
+          "nome": "cotovelo_dir"
+        },
+        {
+          "indice_mediapipe_pose": 15,
+          "nome": "pulso_esq"
+        },
+        {
+          "indice_mediapipe_pose": 16,
+          "nome": "pulso_dir"
+        },
+        {
+          "indice_mediapipe_pose": 23,
+          "nome": "quadril_esq"
+        },
+        {
+          "indice_mediapipe_pose": 24,
+          "nome": "quadril_dir"
+        }
+      ]
+    },
+    "modo": "landmarks",
+    "pontos": 57,
+    "quantizacao": "nenhuma",
+    "saida": "/home/walisson/libras-livre-ai-glasses-brasil/experimentos-privados/export-final-s20260917-v1/sinal_classifier",
+    "smoke": false
+  },
+  "codigo": {
+    "sha256": "0848cc37232ec5daf636a6fdc52c0840d854ac7a74f9bf918b4a060dda90dba7"
+  },
+  "contrato_entrada": {
+    "descricao": "landmarks normalizados em unidades de ombro (origem no ponto m\u00e9dio dos ombros, escala = dist\u00e2ncia entre eles), ordem [pose | m\u00e3o esquerda 21 | m\u00e3o direita 21]; m\u00e3o ausente = zeros. O pr\u00e9-processamento do ST-GCN (recentragem do z, imputa\u00e7\u00e3o de lacunas curtas, ossos, reamostragem temporal) est\u00e1 dentro do grafo.",
+    "dtype": "float32",
+    "frames_fixos": 96,
+    "imputacao_embutida": true,
+    "layout_landmarks": {
+      "coordenadas": [
+        "x",
+        "y",
+        "z"
+      ],
+      "dimensoes": 3,
+      "fonte_layout": "checkpoint",
+      "limite_escala": 2.0,
+      "maos": [
+        {
+          "indices": [
+            0,
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8,
+            9,
+            10,
+            11,
+            12,
+            13,
+            14,
+            15,
+            16,
+            17,
+            18,
+            19,
+            20
+          ],
+          "lado": "esquerda"
+        },
+        {
+          "indices": [
+            0,
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8,
+            9,
+            10,
+            11,
+            12,
+            13,
+            14,
+            15,
+            16,
+            17,
+            18,
+            19,
+            20
+          ],
+          "lado": "direita"
+        }
+      ],
+      "pontos": 57,
+      "pose_ordenada": [
+        {
+          "indice_mediapipe_pose": 0,
+          "nome": "nariz"
+        },
+        {
+          "indice_mediapipe_pose": 2,
+          "nome": "olho_esq"
+        },
+        {
+          "indice_mediapipe_pose": 5,
+          "nome": "olho_dir"
+        },
+        {
+          "indice_mediapipe_pose": 7,
+          "nome": "orelha_esq"
+        },
+        {
+          "indice_mediapipe_pose": 8,
+          "nome": "orelha_dir"
+        },
+        {
+          "indice_mediapipe_pose": 9,
+          "nome": "boca_esq"
+        },
+        {
+          "indice_mediapipe_pose": 10,
+          "nome": "boca_dir"
+        },
+        {
+          "indice_mediapipe_pose": 11,
+          "nome": "ombro_esq"
+        },
+        {
+          "indice_mediapipe_pose": 12,
+          "nome": "ombro_dir"
+        },
+        {
+          "indice_mediapipe_pose": 13,
+          "nome": "cotovelo_esq"
+        },
+        {
+          "indice_mediapipe_pose": 14,
+          "nome": "cotovelo_dir"
+        },
+        {
+          "indice_mediapipe_pose": 15,
+          "nome": "pulso_esq"
+        },
+        {
+          "indice_mediapipe_pose": 16,
+          "nome": "pulso_dir"
+        },
+        {
+          "indice_mediapipe_pose": 23,
+          "nome": "quadril_esq"
+        },
+        {
+          "indice_mediapipe_pose": 24,
+          "nome": "quadril_dir"
+        }
+      ]
+    },
+    "normalizacao_embutida": false,
+    "shape": [
+      1,
+      96,
+      57,
+      3
+    ],
+    "temporal": {
+      "dinamico": false,
+      "frames": 96,
+      "politica_app": "exigir_shape_exato; adapta\u00e7\u00e3o temporal a validar com dados reais",
+      "reamostragem_alvo": 64,
+      "reamostragem_embutida": true
+    }
+  },
+  "modelo": "sinal_classifier",
+  "modo": "landmarks",
+  "origem": {
+    "sha256": "1139d377c7e269f87228a44f127c902e802e2ab081733c883a35c92e4290e6f9",
+    "tipo": "sintetica_sem_checkpoint"
+  },
+  "paridade_pytorch": {
+    "amostras": 8,
+    "discordancias_top1": 0,
+    "dtype_entrada": "float32",
+    "max_dif_logit": 0.0001068115234375,
+    "precisao": {
+      "tamanho_mb": 2.0,
+      "tipos_tensores": {
+        "bool": 9,
+        "float32": 133,
+        "int32": 22,
+        "int64": 2
+      }
+    },
+    "shape_entrada": [
+      1,
+      96,
+      57,
+      3
+    ],
+    "shape_saida": [
+      1,
+      20
+    ]
+  },
+  "rotulos": [
+    "etapa5_nao_linguistico_00",
+    "etapa5_nao_linguistico_01",
+    "etapa5_nao_linguistico_02",
+    "etapa5_nao_linguistico_03",
+    "etapa5_nao_linguistico_04",
+    "etapa5_nao_linguistico_05",
+    "etapa5_nao_linguistico_06",
+    "etapa5_nao_linguistico_07",
+    "etapa5_nao_linguistico_08",
+    "etapa5_nao_linguistico_09",
+    "etapa5_nao_linguistico_10",
+    "etapa5_nao_linguistico_11",
+    "etapa5_nao_linguistico_12",
+    "etapa5_nao_linguistico_13",
+    "etapa5_nao_linguistico_14",
+    "etapa5_nao_linguistico_15",
+    "etapa5_nao_linguistico_16",
+    "etapa5_nao_linguistico_17",
+    "etapa5_nao_linguistico_18",
+    "etapa5_nao_linguistico_19"
+  ],
+  "schema": 1,
+  "sha256": "2edf00c9c38dbbd34e7a5959978dbef8ed1642293864dd3ab9e14e799c03fddb"
+}

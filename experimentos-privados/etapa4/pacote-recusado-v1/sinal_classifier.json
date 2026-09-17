@@ -1,0 +1,91 @@
+{
+  "contrato_entrada": {
+    "dtype": "float32",
+    "frames_fixos": 96,
+    "imputacao_embutida": false,
+    "layout_landmarks": {
+      "pose_ordenada": [
+        {
+          "indice_mediapipe_pose": 0
+        },
+        {
+          "indice_mediapipe_pose": 2
+        },
+        {
+          "indice_mediapipe_pose": 5
+        },
+        {
+          "indice_mediapipe_pose": 7
+        },
+        {
+          "indice_mediapipe_pose": 8
+        },
+        {
+          "indice_mediapipe_pose": 9
+        },
+        {
+          "indice_mediapipe_pose": 10
+        },
+        {
+          "indice_mediapipe_pose": 11
+        },
+        {
+          "indice_mediapipe_pose": 12
+        },
+        {
+          "indice_mediapipe_pose": 13
+        },
+        {
+          "indice_mediapipe_pose": 14
+        },
+        {
+          "indice_mediapipe_pose": 15
+        },
+        {
+          "indice_mediapipe_pose": 16
+        },
+        {
+          "indice_mediapipe_pose": 23
+        },
+        {
+          "indice_mediapipe_pose": 24
+        }
+      ]
+    },
+    "shape": [
+      1,
+      96,
+      57,
+      3
+    ]
+  },
+  "modo": "landmarks",
+  "origem": {
+    "sha256": "5c7fb56e96dc3e3be17b856baafeeceeeb328e8b42c8017a12e34c0bfd45e833",
+    "tipo": "sintetica_sem_checkpoint"
+  },
+  "rotulos": [
+    "fixture_nao_linguistica_00",
+    "fixture_nao_linguistica_01",
+    "fixture_nao_linguistica_02",
+    "fixture_nao_linguistica_03",
+    "fixture_nao_linguistica_04",
+    "fixture_nao_linguistica_05",
+    "fixture_nao_linguistica_06",
+    "fixture_nao_linguistica_07",
+    "fixture_nao_linguistica_08",
+    "fixture_nao_linguistica_09",
+    "fixture_nao_linguistica_10",
+    "fixture_nao_linguistica_11",
+    "fixture_nao_linguistica_12",
+    "fixture_nao_linguistica_13",
+    "fixture_nao_linguistica_14",
+    "fixture_nao_linguistica_15",
+    "fixture_nao_linguistica_16",
+    "fixture_nao_linguistica_17",
+    "fixture_nao_linguistica_18",
+    "fixture_nao_linguistica_19"
+  ],
+  "schema": 1,
+  "sha256": "b945321665129b9dc645a8ed2bc859641513ea4bb1df8a06e9d3f7137b0f7c45"
+}

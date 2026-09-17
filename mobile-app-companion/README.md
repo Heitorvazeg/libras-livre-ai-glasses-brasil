@@ -132,6 +132,46 @@ emulador.
 ./gradlew connectedAndroidTest   # instrumentados, exigem emulador/dispositivo
 ```
 
+**A suíte instrumentada não fecha numa única execução, e isso é por desenho.** O modo de
+carregamento do classificador é fixado no build (não há fallback silencioso), então os testes
+de tela se dividem em duas famílias incompatíveis: uns afirmam o cartão de diagnóstico em
+`SIMULADO` (build padrão), outros exigem `REAL_EXPERIMENTAL` (build com pacote privado). Rode
+duas vezes, uma por configuração — detalhes e resultados na
+[rodada de 17/09](../docs/integracao-video-minds-e-calibracao-2026-09-17.md).
+
+Alguns testes são **opt-in** e ficam ignorados (`assumeTrue`) sem os argumentos. Os que rodam
+vídeo real precisam do pacote privado no build, dos clipes num diretório do aparelho e de
+`am instrument` em vez de `connectedAndroidTest` — este desinstala o app no fim e leva embora
+os relatórios:
+
+```bash
+PKG=com.meta.wearable.dat.externalsampleapps.cameraaccess
+# 1. build com o pacote do classificador (caminho absoluto)
+./gradlew :app:assembleDebug :app:assembleDebugAndroidTest \
+    -PlibrasLivre.classificadorPrivado=$PWD/../experimentos-privados/app-baseline-v1
+adb install -r -t app/build/outputs/apk/debug/app-debug.apk
+adb install -r -t app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
+
+# 2. clipes onde o app lê sem permissão de armazenamento
+adb shell mkdir -p /sdcard/Android/media/$PKG/minds
+adb push meus-clipes/*.mp4 /sdcard/Android/media/$PKG/minds/
+
+# 3. vídeo real pela pipeline inteira (transcodifica AVC -> HEVC no aparelho)
+adb shell am instrument -w -r -e videoMinds true \
+    -e videoMindsDir /sdcard/Android/media/$PKG/minds \
+    -e class $PKG.libras.reconhecimento.VideoMindsPipelineTest \
+    $PKG.test/androidx.test.runner.AndroidJUnitRunner
+
+# relatório e CSVs da sessão (para scripts/calibracao_fronteiras.py)
+adb exec-out run-as $PKG tar c files/video-minds > video-minds.tar
+```
+
+Qualquer parâmetro de `ParametrosSegmentacao` pode ser sobrescrito na execução com
+`-e seg.<nome> <valor>` (ex.: `-e seg.pausaMs 800`), que é como a pausa foi calibrada.
+`TtsSttArtificialTest` exercita TTS e STT sem alto-falante nem microfone: o TTS do app
+sintetiza e o PCM entra no STT pelo mesmo callback da captura — precisa de
+`adb shell pm grant $PKG android.permission.RECORD_AUDIO`.
+
 Os testes de unidade cobrem a paridade numérica de `LandmarkNormalizer` e
 `HandGapImputer` contra o pipeline Python de `../computer-vision-model/treino`,
 além do `SignBoundaryDetector`, das guardas da contextualização e dos contratos dos
@@ -339,9 +379,15 @@ Detalhes do lado do treino:
 - [x] Infraestrutura de carregamento privado do classificador real — pacote com
       hash/identidade, três modos (SIMULADO/REAL_EXPERIMENTAL/RECUSADO), cartão
       de diagnóstico na tela, sem fallback silencioso
-- [ ] Checkpoint treinado do ST-GCN **neste clone** (existe como `final-s20260917-v1`,
-      privado, fora do git) e vídeo com sinais reais em REAL_EXPERIMENTAL
-- [ ] Calibração dos parâmetros do `SignBoundaryDetector` com dado real
+- [x] Pacote baseline do ST-GCN **neste clone** (`experimentos-privados/app-baseline-v1`,
+      `final-s20260917-v1`, publicado em 17/09) e vídeo com sinais reais em
+      REAL_EXPERIMENTAL — os seis clipes da sinalizante 08 do MINDS reconhecidos ponta a
+      ponta no emulador. **Os clipes estão no treino do baseline**: isso valida o caminho,
+      não generalização
+      ([rodada de 17/09](../docs/integracao-video-minds-e-calibracao-2026-09-17.md))
+- [ ] Calibração dos parâmetros do `SignBoundaryDetector` com dado real — **`pausaMs`
+      calibrada** (500 → 800 ms, com os clipes do MINDS); limiares de velocidade e teto de
+      oclusão ainda dependem do protocolo R1/R2 com os óculos
 - [x] Treino dos classificadores pt-BR de wake word, versionados e carregando no app
 - [ ] Validação do wake word offline em hardware e ativação do `OpenWakeWordDetector`
       (motor ativo por padrão ainda é o `SpeechRecognizer`, ver §4)
