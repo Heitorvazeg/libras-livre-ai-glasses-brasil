@@ -168,8 +168,17 @@ class FluxoOnda4Test {
     composeTestRule.onNodeWithTag("start_session_button").performClick()
   }
 
-  /** Espera o aquecimento terminar (o cartão vira "Pronto…" e se recolhe) e abre a lista. */
+  /**
+   * Espera o aquecimento terminar e abre a lista ✓/✗. O cartão do aquecimento só fica na tela
+   * principal ENQUANTO aquece (10.3) — terminado, ele sai de lá e passa a existir só dentro da
+   * gaveta de diagnóstico, onde continua sendo desenhado do início ao fim. Por isso a gaveta abre
+   * primeiro, e é dentro dela que se espera o resumo "Pronto…".
+   */
   private fun abrirResumoDoAquecimento() {
+    composeTestRule.waitUntilAtLeastOneExists(hasTestTag("mais_diagnostico"), TIMEOUT)
+    if (composeTestRule.onAllNodesWithTag("cartao_aquecimento").fetchSemanticsNodes().isEmpty()) {
+      composeTestRule.onNodeWithTag("mais_diagnostico").performClick()
+    }
     composeTestRule.waitUntilAtLeastOneExists(hasText("Pronto", substring = true), 60_000L)
     composeTestRule.onNodeWithTag("cartao_aquecimento").performClick()
     composeTestRule.waitUntilAtLeastOneExists(

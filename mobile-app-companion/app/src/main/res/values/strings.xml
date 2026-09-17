@@ -111,6 +111,7 @@
     <string name="estado_avatar" description="Dialog state in Portuguese: showing the answer">Mostrando a resposta</string>
     <string name="comando_de_voz" description="Switch on the main screen that turns voice commands on or off">Comando de voz</string>
     <string name="mais_controles" description="Toggle that shows the sample's session, preview, photo and recording controls">Controles da sessão</string>
+    <string name="mais_diagnostico" description="Libras Livre: toggle that shows the classifier identity card, warmup summary, SDK session/stream chips and the metrics panel — diagnostic info kept off the main screen (docs/prontidao-demo/10-tela.md §10.3)">Diagnóstico</string>
     <string name="botao_preparando" description="Main button, disabled, while the app warms up its models">Preparando…</string>
 
     <!-- Libras Livre: aquecimento (docs/prontidao-demo/06-latencia.md §6.4) -->

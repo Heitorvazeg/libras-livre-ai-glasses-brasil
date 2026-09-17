@@ -80,7 +80,9 @@ class DiagnosticoClassificadorTelaCompletaTest {
     iniciarSessao()
     esperarAquecimento()
 
-    // 1. O cartão aparece na tela de câmera real (não isolado num teste Compose de unidade).
+    // 1. O cartão aparece na tela de câmera real (não isolado num teste Compose de unidade) —
+    // dentro da gaveta de diagnóstico (10.3): SIMULADO não é bloqueio, só some do topo da tela.
+    abrirDiagnostico()
     composeTestRule.onNodeWithTag("diagnostico-classificador").assertExists()
     composeTestRule.onNodeWithText("SIMULADO", substring = true).assertIsDisplayed()
 
@@ -136,6 +138,14 @@ class DiagnosticoClassificadorTelaCompletaTest {
     if (composeTestRule.onAllNodesWithTag("start_session_button").fetchSemanticsNodes().isEmpty() &&
         composeTestRule.onAllNodesWithTag("end_session_button").fetchSemanticsNodes().isEmpty()) {
       composeTestRule.onNodeWithTag("mais_controles").performClick()
+    }
+  }
+
+  // 10.3: o cartão de diagnóstico (SIMULADO/REAL_EXPERIMENTAL) mora na gaveta, fechada por padrão.
+  private fun abrirDiagnostico() {
+    composeTestRule.waitUntilAtLeastOneExists(hasTestTag("mais_diagnostico"), TIMEOUT)
+    if (composeTestRule.onAllNodesWithTag("diagnostico-classificador").fetchSemanticsNodes().isEmpty()) {
+      composeTestRule.onNodeWithTag("mais_diagnostico").performClick()
     }
   }
 
