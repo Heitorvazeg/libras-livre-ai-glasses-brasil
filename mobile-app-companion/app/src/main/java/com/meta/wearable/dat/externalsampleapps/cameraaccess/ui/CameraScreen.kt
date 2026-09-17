@@ -267,6 +267,7 @@ fun CameraScreen(
       AvatarScreen(
           estado = ui.avatarState,
           legenda = ui.avatarLegenda,
+          assunto = ui.avatarAssunto,
           webView = { cameraViewModel.avatarView },
           onFechar = cameraViewModel::fecharAvatar,
           onTentarDeNovo = cameraViewModel::abrirAvatar,
@@ -909,6 +910,7 @@ internal fun rotuloDoBotao(rotulo: RotuloBotao): Int =
       RotuloBotao.TRANSCREVENDO -> R.string.botao_transcrevendo
       RotuloBotao.PULAR -> R.string.avatar_pular
       RotuloBotao.CONFIRMAR -> R.string.avatar_confirmacao_confirmar
+      RotuloBotao.REPETIR -> R.string.botao_repetir
       // Inerte (ação null, §2.2 do plano de consentimento) — nunca chega a aparecer como texto
       // clicável, mas precisa de um recurso pra rotuloDoEstado/depuração não quebrarem.
       RotuloBotao.CONSENTIMENTO_PENDENTE -> R.string.botao_consentimento_pendente
@@ -995,6 +997,7 @@ internal fun rotuloDoEstado(estado: DialogState): Int =
       DialogState.CAPTURANDO_SINAIS -> R.string.estado_capturando
       DialogState.CONFIRMANDO_RECONHECIMENTO -> R.string.estado_confirmando
       DialogState.FALANDO -> R.string.estado_falando
+      DialogState.PEDINDO_REPETICAO -> R.string.estado_pedindo_repeticao
       DialogState.AGUARDANDO_RESPOSTA -> R.string.estado_aguardando_resposta
       DialogState.ESCUTANDO_ATENDENTE -> R.string.estado_ouvindo
       DialogState.TRANSCREVENDO -> R.string.estado_transcrevendo

@@ -105,13 +105,17 @@ class FluxoOnda1Test {
     esperarEstado("capturando_sinais")
     conferirIndicadorDaCaptura()
 
-    // 2.8: sem nenhum sinal, "Encerrar agora" pede repetição e a captura reabre (duas vezes)...
+    // 2.8: sem nenhum sinal, "Encerrar agora" pede repetição (duas vezes)...
     val repita = targetContext.getString(R.string.conversa_decisao_repita)
     for (vez in 1..2) {
       composeTestRule.onNodeWithTag("botao_principal").performClick()
       composeTestRule.waitUntil(TIMEOUT_FALA) {
         composeTestRule.onAllNodesWithText(repita).fetchSemanticsNodes().size == vez
       }
+      // ③.5: o pedido vai ao avatar antes de mais nada — a captura NÃO reabre sozinha, quem
+      // sinalizou precisa ver por que está sendo pedido que repita.
+      esperarEstado("pedindo_repeticao", TIMEOUT_FALA)
+      composeTestRule.onNodeWithTag("botao_principal_avatar").performClick()
       esperarEstado("capturando_sinais", TIMEOUT_FALA)
     }
     // ...e a terceira rejeição seguida desiste e volta ao ①.
@@ -223,6 +227,7 @@ class FluxoOnda1Test {
             "aguardando_sinal" -> R.string.estado_aguardando_sinal
             "capturando_sinais" -> R.string.estado_capturando
             "falando" -> R.string.estado_falando
+            "pedindo_repeticao" -> R.string.estado_pedindo_repeticao
             "aguardando_resposta" -> R.string.estado_aguardando_resposta
             "escutando_atendente" -> R.string.estado_ouvindo
             "transcrevendo" -> R.string.estado_transcrevendo

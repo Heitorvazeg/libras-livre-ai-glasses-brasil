@@ -11,7 +11,7 @@ import org.junit.Test
 class TransicoesTest {
 
   @Test
-  fun `wake word ouve em 1, 2 e 4 e fica pausada em 1,5, 2,5, 3, 5, 6 e 7`() {
+  fun `wake word ouve em 1, 2 e 4 e fica pausada em 1,5, 2,5, 3, 3,5, 5, 6 e 7`() {
     val esperado =
         mapOf(
             DialogState.AGUARDANDO_SINAL to true,
@@ -22,6 +22,9 @@ class TransicoesTest {
             // [NOVO] docs/confirmacao-e-modo-economia-plano.md §1.4 — mesmo padrão de ③⑥⑦.
             DialogState.CONFIRMANDO_RECONHECIMENTO to false,
             DialogState.FALANDO to false,
+            // ③.5 — mesmo padrão de ①.5/②.5: quem reabre a captura é o toque do operador, não uma
+            // palavra ouvida enquanto o avatar ainda está explicando o pedido de repetição.
+            DialogState.PEDINDO_REPETICAO to false,
             DialogState.AGUARDANDO_RESPOSTA to true,
             DialogState.ESCUTANDO_ATENDENTE to false,
             DialogState.TRANSCREVENDO to false,
@@ -58,10 +61,12 @@ class TransicoesTest {
   }
 
   @Test
-  fun `pedir repeticao volta ao 2 e falar vai pra confirmacao do surdo antes do 5`() {
+  fun `pedir repeticao passa pelo avatar antes do 2 e falar vai pra confirmacao do surdo antes do 5`() {
     // [MUDOU] docs/confirmacao-e-modo-economia-plano.md §1.4: Falar não pula mais direto pra
     // ESCUTANDO_ATENDENTE — passa por ②.5 CONFIRMANDO_RECONHECIMENTO primeiro.
-    assertEquals(DialogState.CAPTURANDO_SINAIS, Transicoes.estadoAposDecisao(DecisaoFrase.PedirRepeticao))
+    // [MUDOU] "repita" também não volta mais direto pro ②: o pedido é apresentado a quem sinalizou
+    // em ③.5 e a captura só reabre no "Capturar de novo".
+    assertEquals(DialogState.PEDINDO_REPETICAO, Transicoes.estadoAposDecisao(DecisaoFrase.PedirRepeticao))
     assertEquals(
         DialogState.CONFIRMANDO_RECONHECIMENTO, Transicoes.estadoAposDecisao(DecisaoFrase.Falar(listOf("filho"))))
     assertEquals(DialogState.AGUARDANDO_SINAL, Transicoes.estadoAposDecisao(DecisaoFrase.Desistir))
@@ -81,6 +86,8 @@ class TransicoesTest {
             // pequeno à parte, fora do modelo de botão principal (ver AcaoBotao.CONFIRMAR).
             DialogState.CONFIRMANDO_RECONHECIMENTO to BotaoPrincipal(RotuloBotao.CONFIRMAR, AcaoBotao.CONFIRMAR),
             DialogState.FALANDO to BotaoPrincipal(RotuloBotao.FALANDO, null),
+            // ③.5: reabre a captura sem passar por ①.5 — ação própria, não INICIAR.
+            DialogState.PEDINDO_REPETICAO to BotaoPrincipal(RotuloBotao.REPETIR, AcaoBotao.REPETIR),
             DialogState.AGUARDANDO_RESPOSTA to BotaoPrincipal(RotuloBotao.OUVIR_RESPOSTA, AcaoBotao.OUVIR),
             DialogState.ESCUTANDO_ATENDENTE to BotaoPrincipal(RotuloBotao.ENCERRAR_AGORA, AcaoBotao.ENCERRAR_ESCUTA),
             DialogState.TRANSCREVENDO to BotaoPrincipal(RotuloBotao.TRANSCREVENDO, null),

@@ -59,6 +59,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.meta.wearable.dat.externalsampleapps.cameraaccess.R
+import com.meta.wearable.dat.externalsampleapps.cameraaccess.camera.AssuntoAvatar
 import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.avatar.AvatarState
 
 /**
@@ -70,6 +71,9 @@ import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.avatar.Avata
 fun AvatarScreen(
     estado: AvatarState,
     legenda: String?,
+    // De que passo é a [legenda] — o rótulo acima dela. Vem gravado com o texto, e não do
+    // DialogState atual: a frase confirmada em ②.5 fica na tela durante ③⑤ e continua sendo dela.
+    assunto: AssuntoAvatar?,
     webView: () -> WebView?,
     onFechar: () -> Unit,
     onTentarDeNovo: () -> Unit,
@@ -122,7 +126,7 @@ fun AvatarScreen(
           AvatarStatus(estado = estado, onTentarDeNovo = onTentarDeNovo)
         }
 
-        Legenda(texto = legenda, confirmacaoDoSurdo = confirmacaoDoSurdo, pedindoConsentimento = pedindoConsentimento)
+        Legenda(texto = legenda, assunto = assunto)
 
         if (pedindoConsentimento) {
           // §2.2 do plano: dois botões do mesmo componente, mesmo tamanho — nenhum é "o padrão".
@@ -269,7 +273,7 @@ private fun AvatarStatus(estado: AvatarState, onTentarDeNovo: () -> Unit) {
  * degradado sem precisar trocar o layout no pior momento.
  */
 @Composable
-private fun Legenda(texto: String?, confirmacaoDoSurdo: Boolean, pedindoConsentimento: Boolean = false) {
+private fun Legenda(texto: String?, assunto: AssuntoAvatar?) {
   if (texto.isNullOrBlank()) return
   Column(
       modifier =
@@ -284,10 +288,12 @@ private fun Legenda(texto: String?, confirmacaoDoSurdo: Boolean, pedindoConsenti
     Text(
         text =
             stringResource(
-                when {
-                  pedindoConsentimento -> R.string.avatar_caption_label_consentimento
-                  confirmacaoDoSurdo -> R.string.avatar_caption_label_confirmacao
-                  else -> R.string.avatar_caption_label
+                when (assunto) {
+                  AssuntoAvatar.CONSENTIMENTO -> R.string.avatar_caption_label_consentimento
+                  AssuntoAvatar.CONFIRMACAO -> R.string.avatar_caption_label_confirmacao
+                  AssuntoAvatar.REPETICAO -> R.string.avatar_caption_label_repeticao
+                  AssuntoAvatar.RESPOSTA,
+                  null -> R.string.avatar_caption_label
                 }
             ),
         color = Color.White.copy(alpha = 0.6f),

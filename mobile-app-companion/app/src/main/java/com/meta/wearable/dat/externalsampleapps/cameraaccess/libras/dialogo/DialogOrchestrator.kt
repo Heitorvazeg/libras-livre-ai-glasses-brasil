@@ -25,6 +25,10 @@
 //    o sistema entendeu, e espera o botão do operador — confirmarReconhecimento() fala pro
 //    atendente e segue; corrigirReconhecimento() descarta e reabre a captura (reaproveita
 //    beginSignSession()/iniciarCaptura()). Um timeout de segurança confirma sozinho.
+//  - ③.5 PEDINDO_REPETICAO, entre o aviso de "repita" falado ao atendente e a nova captura: o
+//    mesmo pedido é apresentado em Libras a quem sinalizou (playAvatar) e a captura só reabre no
+//    "Capturar de novo" (repetirCaptura). Antes ela reabria sozinha, e a pessoa surda via a câmera
+//    voltar sem nunca saber que o sistema não tinha entendido — o "repita" era só voz.
 //  - onBateriaBaixa(): chamado pelo CameraViewModel quando o DAT reporta bateria baixa/crítica
 //    dos óculos. Encerra a captura em curso (mesmo padrão de encerrarCapturaPorPausaLonga) e
 //    marca a flag que faz ensureCameraActive() (dono: CameraViewModel) devolver
@@ -131,6 +135,17 @@ class DialogOrchestrator(
     // Avisos do fluxo "repita" (2.8), falados ao atendente no ③.
     const val AVISO_REPITA = "Não consegui entender. Peça para repetir, com uma pausa entre os sinais."
     const val AVISO_DESISTIR = "Não foi possível entender. Tente outro meio de comunicação."
+
+    // O mesmo pedido de repetição, agora dito a QUEM SINALIZOU (③.5). O [AVISO_REPITA] acima fala
+    // com o atendente ("peça para repetir"); este é o texto que vai para o avatar, na segunda
+    // pessoa. Frase curta e direta de propósito: passa pelo tradutor de glosa antes de virar
+    // animação, e período longo vira glosa ruim.
+    const val TEXTO_REPITA_PARA_O_SURDO = "Não entendi. Pode repetir devagar, com uma pausa entre cada sinal?"
+
+    // Teto de ③.5, mesma escala e mesmo motivo do [TETO_CONFIRMACAO_MS]: o estado espera um toque
+    // do operador e não pode prender o atendimento se a tela for largada. Aqui não decide por
+    // ninguém — só devolve ao ①, porque a câmera já está desligada e nada foi captado.
+    const val TETO_REPETICAO_MS = 60_000L
 
     // [NOVO — docs/consentimento-por-atendimento-plano.md §2.1] PLACEHOLDER: este texto NÃO foi
     // revisado juridicamente nem pela comunidade surda (o plano é explícito: "este plano não
@@ -306,6 +321,9 @@ class DialogOrchestrator(
       DialogState.PEDINDO_CONSENTIMENTO,
       DialogState.CONFIRMANDO_RECONHECIMENTO,
       DialogState.FALANDO,
+      // ③.5 fica de fora pelo mesmo motivo de ①.5/②.5: a decisão de reabrir a captura é um toque
+      // do operador, não uma palavra ouvida enquanto o avatar ainda está explicando.
+      DialogState.PEDINDO_REPETICAO,
       DialogState.TRANSCREVENDO,
       DialogState.GERANDO_AVATAR ->
           Log.w(TAG, "Wake word '$word' ignorada em ${_state.value} (deveria estar pausada)")
@@ -329,6 +347,7 @@ class DialogOrchestrator(
       AcaoBotao.ENCERRAR_ESCUTA -> endListening()
       AcaoBotao.PULAR -> pularAvatar()
       AcaoBotao.CONFIRMAR -> confirmarReconhecimento()
+      AcaoBotao.REPETIR -> repetirCaptura()
     }
   }
 
@@ -409,10 +428,10 @@ class DialogOrchestrator(
     falhas = 0
     confirmacaoPendente = null
     deactivateCamera()
-    // ①.5/②.5 também podem ter o avatar animando (aguardando consentimento/confirmação) — mesmo
-    // tratamento do ⑦.
+    // ①.5/②.5/③.5 também podem ter o avatar animando (aguardando consentimento, confirmação ou o
+    // reinício da captura) — mesmo tratamento do ⑦.
     if (anterior == DialogState.GERANDO_AVATAR || anterior == DialogState.CONFIRMANDO_RECONHECIMENTO ||
-        anterior == DialogState.PEDINDO_CONSENTIMENTO) {
+        anterior == DialogState.PEDINDO_CONSENTIMENTO || anterior == DialogState.PEDINDO_REPETICAO) {
       pularAvatar()
     }
     esconderAvatar()
@@ -518,7 +537,8 @@ class DialogOrchestrator(
     voltarAoInicio()
   }
 
-  // Abre uma captura: no "iniciar" e, com a câmera ainda ligada, depois de um "repita" (2.8).
+  // Abre uma captura: no "iniciar" (depois do consentimento), no "Corrigir" de ②.5 e no "Capturar
+  // de novo" de ③.5 — nos três a câmera já foi religada por quem chama.
   private fun iniciarCaptura() {
     classificacoes.clear()
     falhas = 0
@@ -565,28 +585,98 @@ class DialogOrchestrator(
               "falhas=$falhas,rejeicoes_seguidas=${avaliador.rejeicoesSeguidas}")
       onConversa(EventoConversa.DecisaoTomada(Conversas.decisaoNaConversa(decisao)))
 
-      // Efeitos da decisão no ③. Na repetição a câmera continua ligada: é o mesmo turno de captura.
-      // [MUDOU] Falar não fala mais direto: contextualiza e mostra pro SURDO em ②.5 primeiro
-      // (docs/confirmacao-e-modo-economia-plano.md §1) — iniciarConfirmacao cuida do resto do
-      // turno (fala e escuta, se confirmado; nova captura, se corrigido), por isso o early return.
+      // Efeitos da decisão no ③. [MUDOU] A câmera desliga em TODOS os caminhos: depois desta
+      // decisão nenhum deles volta a captar sem um toque do operador (②.5 "Corrigir", ③.5
+      // "Capturar de novo") ou um "iniciar" novo. Antes a repetição era a exceção — mantinha a
+      // câmera ligada porque reabria a captura no mesmo instante.
+      deactivateCamera()
       when (decisao) {
+        // [MUDOU] Falar não fala mais direto: contextualiza e mostra pro SURDO em ②.5 primeiro
+        // (docs/confirmacao-e-modo-economia-plano.md §1) — iniciarConfirmacao cuida do resto do
+        // turno (fala e escuta, se confirmado; nova captura, se corrigido), por isso o early return.
         is DecisaoFrase.Falar -> {
-          deactivateCamera()
           iniciarConfirmacao(decisao.glosas, minhaGeracao)
           return@launch
         }
         DecisaoFrase.PedirRepeticao -> speaker.speakAndAwait(AVISO_REPITA)
-        DecisaoFrase.Desistir -> {
-          deactivateCamera()
-          speaker.speakAndAwait(AVISO_DESISTIR)
-        }
-        DecisaoFrase.Ignorar -> deactivateCamera()
+        DecisaoFrase.Desistir -> speaker.speakAndAwait(AVISO_DESISTIR)
+        DecisaoFrase.Ignorar -> Unit
       }
       if (minhaGeracao != geracao || _state.value != DialogState.FALANDO) return@launch
 
       when (Transicoes.estadoAposDecisao(decisao)) {
-        DialogState.CAPTURANDO_SINAIS -> iniciarCaptura()
+        // ③.5: o aviso acabou de ser falado ao atendente; o mesmo pedido vai agora a quem
+        // sinalizou, e a captura só reabre no "Capturar de novo".
+        DialogState.PEDINDO_REPETICAO -> pedirRepeticaoAoSurdo(minhaGeracao)
         else -> voltarAoInicio()
+      }
+    }
+  }
+
+  /**
+   * ③.5 PEDINDO_REPETICAO: mostra o pedido de repetição a QUEM SINALIZOU — o mesmo playAvatar() de
+   * ①.5/②.5/⑦ — e fica esperando [repetirCaptura]. Antes desta etapa o "repita" era só voz para o
+   * atendente e a captura reabria no mesmo instante: a pessoa surda via a câmera voltar sem saber
+   * que precisava repetir. Chamada de dentro do scope.launch de [endSignSession] (por isso é
+   * suspend, não abre um launch novo).
+   */
+  private suspend fun pedirRepeticaoAoSurdo(minhaGeracao: Int) {
+    setState(DialogState.PEDINDO_REPETICAO)
+    val desfecho = playAvatar(TEXTO_REPITA_PARA_O_SURDO)
+    if (minhaGeracao != geracao) return
+    // O operador pode ter tocado "Capturar de novo" (ou cancelado) durante a animação: quem já
+    // decidiu vale mais que o aviso de avatar indisponível e que o teto armado abaixo.
+    if (_state.value != DialogState.PEDINDO_REPETICAO) return
+    // playAvatar() já deixou a legenda na tela; o aviso é para o caso de o avatar não ter animado.
+    if (desfecho != DesfechoAvatar.ANIMOU && desfecho != DesfechoAvatar.PULADO) {
+      onAvatarUnavailable(TEXTO_REPITA_PARA_O_SURDO)
+    }
+    tetoJob?.cancel()
+    tetoJob =
+        scope.launch {
+          delay(TETO_REPETICAO_MS)
+          if (minhaGeracao == geracao && _state.value == DialogState.PEDINDO_REPETICAO) {
+            Log.i(TAG, "③.5 sem resposta do operador — voltando ao ①")
+            pularAvatar()
+            esconderAvatar()
+            voltarAoInicio()
+          }
+        }
+  }
+
+  /**
+   * Botão "Capturar de novo" em ③.5: o pedido de repetição já foi apresentado — religa a câmera e
+   * reabre a captura, sem passar por ①.5 (o consentimento é por atendimento, e este é o mesmo).
+   * Mesmo caminho de [corrigirReconhecimento]: em modo economia de bateria [ensureCameraActive]
+   * devolve `FalhaCamera.BATERIA_BAIXA` e o atendimento volta ao ① com o aviso, em vez de o botão
+   * ficar sem efeito. Tocar durante a animação do avatar vale como "pular".
+   */
+  fun repetirCaptura() {
+    if (_state.value != DialogState.PEDINDO_REPETICAO) return
+    if (startingSignSession) return
+    startingSignSession = true
+    tetoJob?.cancel()
+    val minhaGeracao = geracao
+    scope.launch {
+      try {
+        val falha = ensureCameraActive()
+        if (minhaGeracao != geracao) return@launch
+        if (falha != null) {
+          Log.w(TAG, "Câmera não religou para a repetição ($falha) — voltando ao ①")
+          onEvento("repetir_sem_camera", falha.name)
+          onFalhaCamera(falha)
+          pularAvatar()
+          esconderAvatar()
+          voltarAoInicio()
+          return@launch
+        }
+        if (_state.value != DialogState.PEDINDO_REPETICAO) return@launch
+        pularAvatar()
+        esconderAvatar()
+        aoIniciarCaptura()
+        iniciarCaptura()
+      } finally {
+        startingSignSession = false
       }
     }
   }
