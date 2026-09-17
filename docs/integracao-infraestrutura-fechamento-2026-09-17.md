@@ -3,6 +3,8 @@
 > Registro histórico da rodada validada. O estado posterior, com novas pendências
 > aprovadas e trabalho parcial salvo para push, está no
 > [checkpoint de retomada](integracao-checkpoint-retomada-2026-09-17.md).
+> Modelo e evidências sem APKs tiveram publicação pública posteriormente autorizada:
+> [escopo e limites](integracao-publicacao-artefatos-2026-09-17.md).
 
 ## Escopo e estado
 

@@ -1,5 +1,10 @@
 # Checkpoint para retomada — 17/09/2026
 
+> **Atualização posterior:** o responsável autorizou publicar modelo e evidências,
+> sem APKs, em commit separado. Escopo e limites na
+> [publicação pontual](integracao-publicacao-artefatos-2026-09-17.md).
+> As referências abaixo a artefatos não enviados descrevem o checkpoint `17b67ae`.
+
 Checkpoint solicitado pelo usuário para salvar e enviar o estado em andamento na
 branch `feat/integracao-modelo-app`. Não representa conclusão das novas pendências
 nem aprovação de modelo final. Nenhum artefato privado deve acompanhar o push.

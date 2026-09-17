@@ -7,7 +7,11 @@ data/landmarks/*
 .cache/
 
 # Artefatos treinados
+# Exceção pontual autorizada em 17/09/2026: arquivos já rastreados do baseline
+# e evidências etapas 4/5, sem APK. Novos experimentos continuam ignorados.
+# Ver docs/integracao-publicacao-artefatos-2026-09-17.md.
 experimentos-privados/
+*.apk
 models/*.keras
 models/*.tflite
 !models/.gitkeep

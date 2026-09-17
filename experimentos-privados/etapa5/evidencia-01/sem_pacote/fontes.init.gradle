@@ -1,0 +1,13 @@
+import groovy.json.JsonOutput
+
+gradle.projectsEvaluated {
+  def p = gradle.rootProject.project(':app')
+  def fontes = p.extensions.getByName('android').sourceSets.collectEntries { s ->
+    [(s.name): s.assets.srcDirs.collect { it.canonicalPath }.sort()]
+  }
+  def dados = [token: '9235f4f8-aa2f-43f1-9ff3-eefeda4489c3', fontes: fontes,
+    pacote: p.providers.gradleProperty('librasLivre.classificadorPrivado').orNull,
+    permitirAssetsFaltando: p.providers.gradleProperty('librasLivre.permitirAssetsFaltando').orNull]
+  new File('/home/walisson/libras-livre-integracao-modelo-app/experimentos-privados/etapa5/evidencia-01/sem_pacote/fontes.json').setText(JsonOutput.toJson(dados), 'UTF-8')
+  p.logger.lifecycle('ETAPA5_FONTES_9235f4f8-aa2f-43f1-9ff3-eefeda4489c3')
+}

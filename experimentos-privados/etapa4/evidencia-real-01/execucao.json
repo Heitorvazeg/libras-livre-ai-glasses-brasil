@@ -1,0 +1,167 @@
+{
+  "execucao": "d144d0e2-7387-46fc-9030-1dc994a58de9",
+  "modo": "real",
+  "serial": "emulator-5554",
+  "status": "FALHOU",
+  "identidade_sha256": "8f6ce7ae2539bc1e123f85ba197e4f45b2b0721cae7964e32e997a4da4897b63",
+  "comandos": [
+    [
+      "/home/walisson/android-sdk/platform-tools/adb",
+      "-s",
+      "emulator-5554",
+      "get-state"
+    ],
+    [
+      "/home/walisson/android-sdk/platform-tools/adb",
+      "-s",
+      "emulator-5554",
+      "get-serialno"
+    ],
+    [
+      "/home/walisson/android-sdk/platform-tools/adb",
+      "-s",
+      "emulator-5554",
+      "shell",
+      "getprop",
+      "ro.kernel.qemu"
+    ],
+    [
+      "/home/walisson/android-sdk/build-tools/36.0.0/aapt",
+      "dump",
+      "badging",
+      "/home/walisson/libras-livre-integracao-modelo-app/experimentos-privados/etapa4/evidencia-real-01/app-atual.apk"
+    ],
+    [
+      "/home/walisson/android-sdk/build-tools/36.0.0/aapt",
+      "dump",
+      "badging",
+      "/home/walisson/libras-livre-integracao-modelo-app/experimentos-privados/etapa4/evidencia-real-01/test-atual.apk"
+    ],
+    [
+      "/home/walisson/android-sdk/build-tools/36.0.0/aapt",
+      "dump",
+      "xmltree",
+      "/home/walisson/libras-livre-integracao-modelo-app/experimentos-privados/etapa4/evidencia-real-01/test-atual.apk",
+      "AndroidManifest.xml"
+    ],
+    [
+      "/home/walisson/android-sdk/platform-tools/adb",
+      "-s",
+      "emulator-5554",
+      "install",
+      "-r",
+      "-t",
+      "/home/walisson/libras-livre-integracao-modelo-app/experimentos-privados/etapa4/evidencia-real-01/app-atual.apk"
+    ],
+    [
+      "/home/walisson/android-sdk/platform-tools/adb",
+      "-s",
+      "emulator-5554",
+      "shell",
+      "pm",
+      "path",
+      "com.meta.wearable.dat.externalsampleapps.cameraaccess"
+    ],
+    [
+      "/home/walisson/android-sdk/platform-tools/adb",
+      "-s",
+      "emulator-5554",
+      "shell",
+      "sha256sum",
+      "/data/app/~~h2Kh3cXM7JdIYE3BPWLBSw==/com.meta.wearable.dat.externalsampleapps.cameraaccess-bdfyb6CghqJJx-UNTdGtpQ==/base.apk"
+    ],
+    [
+      "/home/walisson/android-sdk/platform-tools/adb",
+      "-s",
+      "emulator-5554",
+      "install",
+      "-r",
+      "-t",
+      "/home/walisson/libras-livre-integracao-modelo-app/experimentos-privados/etapa4/evidencia-real-01/test-atual.apk"
+    ],
+    [
+      "/home/walisson/android-sdk/platform-tools/adb",
+      "-s",
+      "emulator-5554",
+      "shell",
+      "pm",
+      "path",
+      "com.meta.wearable.dat.externalsampleapps.cameraaccess.test"
+    ],
+    [
+      "/home/walisson/android-sdk/platform-tools/adb",
+      "-s",
+      "emulator-5554",
+      "shell",
+      "sha256sum",
+      "/data/app/~~G0SWFv-xkRsaMa-WAegm2w==/com.meta.wearable.dat.externalsampleapps.cameraaccess.test-uQmkTkJGf1emcW865W5hMw==/base.apk"
+    ],
+    [
+      "/home/walisson/android-sdk/platform-tools/adb",
+      "-s",
+      "emulator-5554",
+      "get-state"
+    ],
+    [
+      "/home/walisson/android-sdk/platform-tools/adb",
+      "-s",
+      "emulator-5554",
+      "get-serialno"
+    ],
+    [
+      "/home/walisson/android-sdk/platform-tools/adb",
+      "-s",
+      "emulator-5554",
+      "shell",
+      "getprop",
+      "ro.kernel.qemu"
+    ],
+    [
+      "/home/walisson/android-sdk/platform-tools/adb",
+      "-s",
+      "emulator-5554",
+      "shell",
+      "am",
+      "force-stop",
+      "com.meta.wearable.dat.externalsampleapps.cameraaccess"
+    ],
+    [
+      "/home/walisson/android-sdk/platform-tools/adb",
+      "-s",
+      "emulator-5554",
+      "shell",
+      "am",
+      "instrument",
+      "-w",
+      "-r",
+      "-e",
+      "class",
+      "com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.RealExperimentalEntreProcessosTest#fase1Gravar",
+      "-e",
+      "etapa4RealPersistencia",
+      "true",
+      "-e",
+      "etapa4Execucao",
+      "d144d0e2-7387-46fc-9030-1dc994a58de9",
+      "-e",
+      "etapa4Marcador",
+      "113f23f4-f3aa-4b15-8321-6b47009ad988",
+      "-e",
+      "etapa4IdentidadeSha256",
+      "8f6ce7ae2539bc1e123f85ba197e4f45b2b0721cae7964e32e997a4da4897b63",
+      "com.meta.wearable.dat.externalsampleapps.cameraaccess.test/androidx.test.runner.AndroidJUnitRunner"
+    ]
+  ],
+  "provas": [],
+  "app-atual.apk": {
+    "origem": "/home/walisson/libras-livre-integracao-modelo-app/mobile-app-companion/app/build/outputs/apk/debug/app-debug.apk",
+    "snapshot": "/home/walisson/libras-livre-integracao-modelo-app/experimentos-privados/etapa4/evidencia-real-01/app-atual.apk",
+    "sha256": "cca5269daad7ee34469a6165474d9372d579650b97ab3c25eefedcccf065f8a9"
+  },
+  "test-atual.apk": {
+    "origem": "/home/walisson/libras-livre-integracao-modelo-app/mobile-app-companion/app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk",
+    "snapshot": "/home/walisson/libras-livre-integracao-modelo-app/experimentos-privados/etapa4/evidencia-real-01/test-atual.apk",
+    "sha256": "bc611d77b168f5010ed643f03259b7c0f3e1f6e310dd2e1ead8c29fc7847f450"
+  },
+  "erro": "ValueError('Instrumentation relatou falha/erro')"
+}

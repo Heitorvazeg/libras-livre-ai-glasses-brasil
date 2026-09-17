@@ -1,5 +1,11 @@
 # Decisão: quais datasets usamos, sob qual enquadramento legal
 
+> **Atualização de escopo em 17/09/2026:** foi autorizada a publicação pontual do
+> baseline experimental e de evidências de integração, sem APKs nem arquivos de
+> vídeos/landmarks. Ver [escopo e limites da publicação](integracao-publicacao-artefatos-2026-09-17.md).
+> Isso excepciona a afirmação histórica de que nenhum derivado é publicado; não
+> resolve as questões jurídicas e de licença discutidas neste documento.
+
 **Decidido em:** 2026-09-11 · **Decide:** Walisson · **Escopo:** hackathon (16/09/2026)
 
 Este documento existe porque a pergunta "podemos usar esse dataset?" foi respondida três

@@ -1,0 +1,24 @@
+INSTRUMENTATION_STATUS: class=com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.RealExperimentalEntreProcessosTest
+INSTRUMENTATION_STATUS: current=1
+INSTRUMENTATION_STATUS: id=AndroidJUnitRunner
+INSTRUMENTATION_STATUS: numtests=1
+INSTRUMENTATION_STATUS: stream=
+com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.RealExperimentalEntreProcessosTest:
+INSTRUMENTATION_STATUS: test=fase2VerificarAntesDeAlterar
+INSTRUMENTATION_STATUS_CODE: 1
+INSTRUMENTATION_STATUS: class=com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.RealExperimentalEntreProcessosTest
+INSTRUMENTATION_STATUS: current=1
+INSTRUMENTATION_STATUS: id=AndroidJUnitRunner
+INSTRUMENTATION_STATUS: numtests=1
+INSTRUMENTATION_STATUS: stream=.
+INSTRUMENTATION_STATUS: test=fase2VerificarAntesDeAlterar
+INSTRUMENTATION_STATUS_CODE: 0
+INSTRUMENTATION_RESULT: etapa4_prova={"pid":15384,"start_elapsed_ms":133574703,"processo_uuid":"fe630cdf-3833-43ed-bee7-7547e9eab62f","execucao":"0525c937-a1d6-43ee-a335-39b40a44eda8","fase":"fase2VerificarAntesDeAlterar","marcador":"ff4dfc77-909f-48e1-86c2-6cd8d11320a4","limiar":"0.83","identidade_sha256":"8f6ce7ae2539bc1e123f85ba197e4f45b2b0721cae7964e32e997a4da4897b63","identidade":{"aprovado_entrega":false,"calibracao":"ausente_nao_calibrado","checkpoint_sha256":"c7851d8ae9dd46b9aaf222ada2e02f158d69938cfd906aafda4d24779e2ef610","experimental":true,"experimento":"final-s20260917-v1","modelo_sha256":"616d1e1c91d4d081f39e25143c9781c18ee19f460ef7023a6b03e3eb0393da4c","schema":1,"sidecar_sha256":"392228a9302712992f8d6b970305e7f3701b0c739924d9f6db1c2b107454b4ed"},"processo_anterior":{"pid":15219,"start_elapsed_ms":133568078,"processo_uuid":"ec6496df-ad39-4460-90a2-58038c78b720"},"verificado_antes_de_alterar":true,"cleanup":true}
+INSTRUMENTATION_RESULT: stream=
+
+Time: 3.936
+
+OK (1 test)
+
+
+INSTRUMENTATION_CODE: -1
