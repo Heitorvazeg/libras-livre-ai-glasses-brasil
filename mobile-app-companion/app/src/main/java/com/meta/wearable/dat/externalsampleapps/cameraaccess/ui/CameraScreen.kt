@@ -26,6 +26,9 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -106,6 +109,7 @@ import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.dialogo.Text
 import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.dialogo.TipoAviso
 import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.reconhecimento.LandmarkPipeline
 import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.reconhecimento.ModeloRecusado
+import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.reconhecimento.ModoClassificador
 import androidx.compose.material3.Switch
 import androidx.compose.runtime.saveable.rememberSaveable
 import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.dialogo.BotaoPrincipal
@@ -202,7 +206,6 @@ fun CameraScreen(
 
     Column(modifier = Modifier.fillMaxSize()) {
       TopBar(
-          ui = ui,
           isDisconnectEnabled = wearablesUi.registrationState == RegistrationState.REGISTERED,
           showSettingsMenu = showSettingsMenu,
           onToggleSettings = { showSettingsMenu = !showSettingsMenu },
@@ -239,17 +242,28 @@ fun CameraScreen(
         modifier =
             Modifier.align(Alignment.TopCenter)
                 .statusBarsPadding()
-                .padding(top = 84.dp, start = 16.dp, end = 16.dp),
+                .padding(top = 56.dp, start = 16.dp, end = 16.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-      // 10.3: faixa de estado (médio), aquecimento e painel de conversa (grande).
-      CartaoClassificador(ui.classificador, ui.limiarClassificador)
+      // 10.3: no alto fica só o que serve ao atendimento — o diagnóstico (identidade do
+      // classificador, resumo do aquecimento, estados do SDK, métricas) mora na gaveta do rodapé.
+      // O classificador RECUSADO é a exceção: não é diagnóstico, é bloqueio, e bloqueio não se
+      // esconde atrás de um toque.
+      if (ui.classificador?.modo == ModoClassificador.RECUSADO) {
+        CartaoClassificador(ui.classificador, ui.limiarClassificador)
+      }
       FaixaDeEstado(ui = ui)
-      CartaoAquecimento(resultados = ui.aquecimento, pronto = ui.aquecido)
-      PainelConversa(conversa = ui.conversa)
-      if (ui.painelMetricas) {
-        PainelMetricas(amostra = ui.metricas, etapas = ui.etapasTurno, arquivoGravacao = ui.arquivoGravacao)
+      // Enquanto aquece, a lista ✓/✗ é a única coisa que diz que o app não travou (a primeira
+      // abertura copia modelos e leva minutos). Terminada, o resumo continua na gaveta.
+      if (!aquecimentoTerminou(ui.aquecimento)) {
+        CartaoAquecimento(resultados = ui.aquecimento)
+      }
+      // 10.5: durante a captura o centro é do preview — quem opera precisa ver o enquadramento.
+      // Os sinais reconhecidos vão para uma linha no rodapé, e o painel cheio volta quando a
+      // câmera desliga, que é quando ele tem o que mostrar.
+      if (ui.dialogState != DialogState.CAPTURANDO_SINAIS) {
+        PainelConversa(conversa = ui.conversa)
       }
     }
 
@@ -267,6 +281,7 @@ fun CameraScreen(
       AvatarScreen(
           estado = ui.avatarState,
           legenda = ui.avatarLegenda,
+          assunto = ui.avatarAssunto,
           webView = { cameraViewModel.avatarView },
           onFechar = cameraViewModel::fecharAvatar,
           onTentarDeNovo = cameraViewModel::abrirAvatar,
@@ -463,7 +478,6 @@ private fun StatusPlaceholder(
 
 @Composable
 private fun TopBar(
-    ui: CameraUiState,
     isDisconnectEnabled: Boolean,
     showSettingsMenu: Boolean,
     onToggleSettings: () -> Unit,
@@ -477,21 +491,8 @@ private fun TopBar(
               .padding(horizontal = 20.dp, vertical = 16.dp),
       verticalAlignment = Alignment.Top,
   ) {
-    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-      StatusChip(
-          label = stringResource(R.string.status_session),
-          value = ui.sessionStateText,
-          active = ui.isSessionActive,
-          present = ui.hasSession,
-      )
-      StatusChip(
-          label = stringResource(R.string.status_stream),
-          value = ui.streamStateText,
-          active = ui.isStreaming,
-          present = ui.hasStream,
-      )
-    }
-
+    // Os chips "Session/Stream" do app-exemplo saíram daqui: diziam em inglês e monoespaçado o
+    // que a faixa de estado já diz em português. Continuam na gaveta de diagnóstico.
     Spacer(modifier = Modifier.weight(1f))
 
     Box {
@@ -554,8 +555,9 @@ private fun BottomBar(
     onUpdateFirmware: () -> Unit,
 ) {
   // 10.3: os controles do sample (sessão, preview, foto, gravação) ficam numa área recolhível; o
-  // atendente só precisa do botão principal.
+  // atendente só precisa do botão principal. O diagnóstico tem a gaveta ao lado, pelo mesmo motivo.
   var controlesAbertos by rememberSaveable { mutableStateOf(false) }
+  var diagnosticoAberto by rememberSaveable { mutableStateOf(false) }
   Column(
       modifier =
           Modifier.fillMaxWidth()
@@ -571,23 +573,54 @@ private fun BottomBar(
           onClick = onUpdateFirmware,
       )
     } else {
+      // 10.5: durante a captura o painel cheio sai da tela (o preview toma o centro) — os sinais
+      // reconhecidos até agora aparecem aqui, compactos, sobre o scrim do rodapé.
+      if (ui.dialogState == DialogState.CAPTURANDO_SINAIS) {
+        LinhaDeSinais(turno = ui.conversa.atual)
+      }
       ControlesDoAtendimento(
           ui = ui,
           oculosDisponiveis = hasActiveDevice,
           onBotaoPrincipal = onBotaoPrincipal,
           onCancelarAtendimento = onCancelarAtendimento,
           onAbrirAvatar = onAbrirAvatar,
-          onComandoDeVoz = onComandoDeVoz,
       )
-      TextButton(
-          onClick = { controlesAbertos = !controlesAbertos },
-          modifier = Modifier.align(Alignment.CenterHorizontally).testTag("mais_controles"),
+      // 4.6: "Comando de voz" fica perto do botão (mesma linha visual, mas Row separada).
+      Row(
+          modifier = Modifier.fillMaxWidth(),
+          verticalAlignment = Alignment.CenterVertically,
+          horizontalArrangement = Arrangement.Center,
       ) {
-        Text(
-            text = stringResource(R.string.mais_controles) + if (controlesAbertos) " ▴" else " ▾",
-            color = Color.White.copy(alpha = 0.8f),
-            fontSize = 13.sp,
-        )
+        Text(text = stringResource(R.string.comando_de_voz), color = Color.White.copy(alpha = 0.85f), fontSize = 13.sp)
+        Spacer(modifier = Modifier.width(8.dp))
+        Switch(checked = ui.comandoDeVoz, onCheckedChange = onComandoDeVoz, modifier = Modifier.testTag("comando_de_voz"))
+      }
+      // Gavetas em linha separada embaixo, com espaço para expandir sem colidir.
+      Row(
+          modifier = Modifier.fillMaxWidth(),
+          verticalAlignment = Alignment.CenterVertically,
+          horizontalArrangement = Arrangement.spacedBy(16.dp, Alignment.CenterHorizontally),
+      ) {
+        TextButton(
+            onClick = { controlesAbertos = !controlesAbertos },
+            modifier = Modifier.testTag("mais_controles"),
+        ) {
+          Text(
+              text = stringResource(R.string.mais_controles) + if (controlesAbertos) " ▴" else " ▾",
+              color = Color.White.copy(alpha = 0.8f),
+              fontSize = 13.sp,
+          )
+        }
+        TextButton(
+            onClick = { diagnosticoAberto = !diagnosticoAberto },
+            modifier = Modifier.testTag("mais_diagnostico"),
+        ) {
+          Text(
+              text = stringResource(R.string.mais_diagnostico) + if (diagnosticoAberto) " ▴" else " ▾",
+              color = Color.White.copy(alpha = 0.8f),
+              fontSize = 13.sp,
+          )
+        }
       }
       if (controlesAbertos) {
         CaptureRow(
@@ -604,6 +637,63 @@ private fun BottomBar(
             onEndSession = onEndSession,
         )
       }
+      if (diagnosticoAberto) {
+        GavetaDeDiagnostico(ui = ui)
+      }
+    }
+  }
+}
+
+/**
+ * 10.5: os sinais do turno em curso, compactos, enquanto o painel cheio está fora da tela (o
+ * preview toma o centro durante a captura). Mesma formatação de [TurnoNoPainel] — extraída para
+ * [sinaisAnotados] para não duplicar as cores de "abaixo do limiar" e "fora do léxico".
+ */
+@Composable
+private fun LinhaDeSinais(turno: TurnoConversa?) {
+  if (turno == null || turno.sinais.isEmpty()) return
+  Text(
+      text = sinaisAnotados(turno),
+      color = Color.White,
+      fontSize = 18.sp,
+      fontWeight = FontWeight.Medium,
+      modifier = Modifier.fillMaxWidth().testTag("linha_de_sinais"),
+  )
+}
+
+/**
+ * 10.3: identidade do classificador, resumo do aquecimento, os estados do SDK e o painel de
+ * métricas — nada disto serve ao atendimento em curso, mas nada devia sumir do app. O
+ * classificador RECUSADO é a exceção: fica sempre visível (ver [CameraScreen]), porque é bloqueio.
+ */
+@Composable
+private fun GavetaDeDiagnostico(ui: CameraUiState) {
+  Column(
+      modifier = Modifier.fillMaxWidth(),
+      verticalArrangement = Arrangement.spacedBy(8.dp),
+  ) {
+    Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+      StatusChip(
+          label = stringResource(R.string.status_session),
+          value = ui.sessionStateText,
+          active = ui.isSessionActive,
+          present = ui.hasSession,
+      )
+      StatusChip(
+          label = stringResource(R.string.status_stream),
+          value = ui.streamStateText,
+          active = ui.isStreaming,
+          present = ui.hasStream,
+      )
+    }
+    if (ui.classificador != null && ui.classificador.modo != ModoClassificador.RECUSADO) {
+      CartaoClassificador(ui.classificador, ui.limiarClassificador)
+    }
+    if (ui.aquecimento.isNotEmpty()) {
+      CartaoAquecimento(resultados = ui.aquecimento)
+    }
+    if (ui.painelMetricas) {
+      PainelMetricas(amostra = ui.metricas, etapas = ui.etapasTurno, arquivoGravacao = ui.arquivoGravacao)
     }
   }
 }
@@ -826,7 +916,6 @@ private fun ControlesDoAtendimento(
     onBotaoPrincipal: (AcaoBotao) -> Unit,
     onCancelarAtendimento: () -> Unit,
     onAbrirAvatar: () -> Unit,
-    onComandoDeVoz: (Boolean) -> Unit,
 ) {
   Column(
       modifier = Modifier.fillMaxWidth(),
@@ -860,12 +949,6 @@ private fun ControlesDoAtendimento(
           enabled = true,
           onClick = onAbrirAvatar,
       )
-    }
-    // 4.6: "Comando de voz", perto do botão principal, salvo nas configurações de demo.
-    Row(verticalAlignment = Alignment.CenterVertically) {
-      Text(text = stringResource(R.string.comando_de_voz), color = Color.White.copy(alpha = 0.85f), fontSize = 14.sp)
-      Spacer(modifier = Modifier.width(8.dp))
-      Switch(checked = ui.comandoDeVoz, onCheckedChange = onComandoDeVoz, modifier = Modifier.testTag("comando_de_voz"))
     }
   }
 }
@@ -909,6 +992,7 @@ internal fun rotuloDoBotao(rotulo: RotuloBotao): Int =
       RotuloBotao.TRANSCREVENDO -> R.string.botao_transcrevendo
       RotuloBotao.PULAR -> R.string.avatar_pular
       RotuloBotao.CONFIRMAR -> R.string.avatar_confirmacao_confirmar
+      RotuloBotao.REPETIR -> R.string.botao_repetir
       // Inerte (ação null, §2.2 do plano de consentimento) — nunca chega a aparecer como texto
       // clicável, mas precisa de um recurso pra rotuloDoEstado/depuração não quebrarem.
       RotuloBotao.CONSENTIMENTO_PENDENTE -> R.string.botao_consentimento_pendente
@@ -955,7 +1039,7 @@ private fun FaixaDeEstado(ui: CameraUiState, modifier: Modifier = Modifier) {
     Text(
         text = stringResource(rotuloDoEstado(ui.dialogState)),
         color = Color.White,
-        fontSize = 14.sp,
+        fontSize = 16.sp,
         fontWeight = FontWeight.SemiBold,
         modifier =
             Modifier.clip(RoundedCornerShape(12.dp))
@@ -974,7 +1058,7 @@ private fun FaixaDeEstado(ui: CameraUiState, modifier: Modifier = Modifier) {
       Text(
           text = aviso.texto,
           color = cor,
-          fontSize = 16.sp,
+          fontSize = 18.sp,
           fontWeight = FontWeight.SemiBold,
           modifier =
               Modifier.weight(1f)
@@ -995,6 +1079,7 @@ internal fun rotuloDoEstado(estado: DialogState): Int =
       DialogState.CAPTURANDO_SINAIS -> R.string.estado_capturando
       DialogState.CONFIRMANDO_RECONHECIMENTO -> R.string.estado_confirmando
       DialogState.FALANDO -> R.string.estado_falando
+      DialogState.PEDINDO_REPETICAO -> R.string.estado_pedindo_repeticao
       DialogState.AGUARDANDO_RESPOSTA -> R.string.estado_aguardando_resposta
       DialogState.ESCUTANDO_ATENDENTE -> R.string.estado_ouvindo
       DialogState.TRANSCREVENDO -> R.string.estado_transcrevendo
@@ -1002,13 +1087,22 @@ internal fun rotuloDoEstado(estado: DialogState): Int =
     }
 
 /**
+ * Terminou de aquecer — todas as etapas resolvidas (✓ ou ✗), inclusive as que não bloqueiam o
+ * "iniciar" ([EtapaAquecimento.bloqueiaIniciar] = false, como o avatar). [CameraUiState.aquecido]
+ * não serve pra isto: vira true assim que as etapas bloqueantes terminam, mas o avatar pode ainda
+ * estar carregando — e a lista ✓/✗ é o que mostra isso.
+ */
+private fun aquecimentoTerminou(resultados: List<ResultadoEtapa>): Boolean =
+    resultados.isNotEmpty() && resultados.none { it.status == StatusEtapa.PENDENTE || it.status == StatusEtapa.EXECUTANDO }
+
+/**
  * Aquecimento (docs/prontidao-demo/06-latencia.md §6.4): a lista ✓/✗ enquanto prepara, que vira um
  * resumo recolhível no fim.
  */
 @Composable
-private fun CartaoAquecimento(resultados: List<ResultadoEtapa>, pronto: Boolean) {
+private fun CartaoAquecimento(resultados: List<ResultadoEtapa>) {
   if (resultados.isEmpty()) return
-  val terminou = resultados.none { it.status == StatusEtapa.PENDENTE || it.status == StatusEtapa.EXECUTANDO }
+  val terminou = aquecimentoTerminou(resultados)
   var aberto by rememberSaveable { mutableStateOf(true) }
   // Recolhe sozinho uma vez, quando tudo termina.
   LaunchedEffect(terminou) { if (terminou) aberto = false }
@@ -1069,7 +1163,13 @@ private fun PainelConversa(conversa: Conversa, modifier: Modifier = Modifier) {
               .clip(RoundedCornerShape(16.dp))
               .background(Color.Black.copy(alpha = 0.6f))
               .padding(horizontal = 16.dp, vertical = 12.dp)
-              .testTag("painel_conversa"),
+              .testTag("painel_conversa")
+              // A fonte do turno atual subiu (10.3, leitura a ~1,5 m): três turnos cheios agora
+              // podem passar da altura disponível numa tela pequena. Sem isto, o painel empurraria
+              // o botão principal para fora — aqui ele rola por dentro, sem mexer no que está
+              // embaixo dele.
+              .heightIn(max = 280.dp)
+              .verticalScroll(rememberScrollState()),
       verticalArrangement = Arrangement.spacedBy(12.dp),
   ) {
     for (turno in conversa.anteriores.filter { it.temConteudo }) TurnoNoPainel(turno, destaque = false)
@@ -1081,20 +1181,7 @@ private fun PainelConversa(conversa: Conversa, modifier: Modifier = Modifier) {
 private fun TurnoNoPainel(turno: TurnoConversa, destaque: Boolean) {
   Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
     if (turno.sinais.isNotEmpty()) {
-      // Abaixo do limiar em amarelo (2.8); fora do léxico riscado, porque não é falado (2.5).
-      val sinais = buildAnnotatedString {
-        turno.sinais.forEachIndexed { i, s ->
-          if (i > 0) append(" · ")
-          val estilo =
-              when {
-                s.foraDoLexico -> SpanStyle(color = Color.Gray, textDecoration = TextDecoration.LineThrough)
-                s.abaixoDoLimiar -> SpanStyle(color = AppColor.Yellow)
-                else -> SpanStyle()
-              }
-          withStyle(estilo) { append(TurnoConversa.textoDoSinal(s)) }
-        }
-      }
-      LinhaDoPainel(R.string.conversa_sinais, sinais, destaque)
+      LinhaDoPainel(R.string.conversa_sinais, sinaisAnotados(turno), destaque)
     }
     when (turno.decisao) {
       DecisaoNaConversa.REPITA ->
@@ -1105,6 +1192,24 @@ private fun TurnoNoPainel(turno: TurnoConversa, destaque: Boolean) {
     }
     turno.falado?.let { LinhaDoPainel(R.string.conversa_falado, AnnotatedString("“$it”"), destaque) }
     turno.resposta?.let { LinhaDoPainel(R.string.conversa_resposta, AnnotatedString("“$it”"), destaque) }
+  }
+}
+
+/**
+ * Os sinais de um turno como texto anotado: abaixo do limiar em amarelo (2.8), fora do léxico
+ * riscado, porque não é falado (2.5). Compartilhado por [TurnoNoPainel] (painel cheio) e
+ * [LinhaDeSinais] (durante a captura, 10.5), pra não ter duas cópias das mesmas cores.
+ */
+private fun sinaisAnotados(turno: TurnoConversa): AnnotatedString = buildAnnotatedString {
+  turno.sinais.forEachIndexed { i, s ->
+    if (i > 0) append(" · ")
+    val estilo =
+        when {
+          s.foraDoLexico -> SpanStyle(color = Color.Gray, textDecoration = TextDecoration.LineThrough)
+          s.abaixoDoLimiar -> SpanStyle(color = AppColor.Yellow)
+          else -> SpanStyle()
+        }
+    withStyle(estilo) { append(TurnoConversa.textoDoSinal(s)) }
   }
 }
 
@@ -1147,13 +1252,15 @@ private fun LinhaDoPainel(@StringRes rotulo: Int, texto: AnnotatedString, destaq
     Text(
         text = stringResource(rotulo),
         color = Color.White.copy(alpha = 0.6f * alpha),
-        fontSize = if (destaque) 13.sp else 11.sp,
-        modifier = Modifier.width(76.dp).padding(top = if (destaque) 4.dp else 1.dp),
+        fontSize = if (destaque) 14.sp else 11.sp,
+        modifier = Modifier.width(76.dp).padding(top = if (destaque) 5.dp else 1.dp),
     )
+    // 10.3 (leitura a ~1,5 m): o turno atual é a única coisa que a pessoa surda e a banca
+    // realmente precisam ler de longe — os anteriores continuam pequenos, só de contexto.
     Text(
         text = texto,
         color = cor.copy(alpha = alpha),
-        fontSize = if (destaque) 20.sp else 14.sp,
+        fontSize = if (destaque) 24.sp else 14.sp,
         fontWeight = if (destaque) FontWeight.SemiBold else FontWeight.Normal,
     )
   }

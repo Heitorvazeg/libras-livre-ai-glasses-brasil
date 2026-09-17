@@ -4,13 +4,29 @@ Este documento existe para quem chega no meio: outra pessoa do time, um assisten
 IA em outra sessão, ou nós mesmos daqui a duas semanas. Ele responde **o que já está
 resolvido, o que está em aberto e por quê** — sem exigir a leitura do histórico.
 
-**Última atualização:** 2026-09-12
+**Última atualização deste documento:** 2026-09-12 (só a trilha de Visão, §1-9
+abaixo — ver a nota logo adiante sobre o que mudou desde então nas outras duas).
 **Prazo do hackathon:** 16/09/2026
 **Branch de integração:** `dev`
 
 > Índice da documentação: [`README.md`](README.md). Como rodar cada trilha: os
 > READMEs de `computer-vision-model/`, `contextualization-model/` e
 > `mobile-app-companion/`.
+
+> **O que este documento NÃO cobre (atualizado até 2026-09-16):** as trilhas de
+> Contextualização e App avançaram bastante depois de 12/09 — classificador de
+> sinal integrado no app com pacote privado e três modos de carregamento
+> (`docs/integracao-modelo-app-plano-2026-09-15.md`), confirmação do
+> reconhecimento pro surdo e modo economia de bateria
+> (`docs/confirmacao-e-modo-economia-plano.md`), consentimento por atendimento
+> (`docs/consentimento-por-atendimento-plano.md`). A trilha de Visão também
+> teve trabalho depois de 12/09 (checkpoint final exportado e calibração
+> tentada em `docs/exportacao-e-calibracao-final-s20260917-v1-2026-09-15.md`,
+> diagnóstico de domínio e augmentação em `docs/diagnostico-dominio-minds-externo-2026-09-15.md`
+> e `docs/etapa2-augmentacao-dominio-protocolo-2026-09-15.md`) — os números do
+> §2 abaixo não foram reconferidos contra esse trabalho mais recente nesta
+> revisão; **use [`docs/README.md`](README.md) para achar o documento mais
+> novo de cada assunto antes de citar um número daqui.**
 
 ---
 
@@ -258,6 +274,9 @@ possível aqui, porque produz um número bonito e falso.
 | [`libras-livre-arquitetura.md`](libras-livre-arquitetura.md) | arquitetura de produto (visão longa) |
 | [`libras-livre-poc-plano.md`](libras-livre-poc-plano.md) | plano original da PoC |
 | [`contextualizacao-glosa-seq2seq-plano.md`](contextualizacao-glosa-seq2seq-plano.md) | contextualização glosa → português: decisões e guardas |
+| [`integracao-modelo-app-plano-2026-09-15.md`](integracao-modelo-app-plano-2026-09-15.md) | integração privada do classificador de sinal no app — modos SIMULADO/REAL_EXPERIMENTAL/RECUSADO |
+| [`confirmacao-e-modo-economia-plano.md`](confirmacao-e-modo-economia-plano.md) | confirmação do reconhecimento pro surdo (②.5) e modo economia de bateria — feedback da banca, mergeado |
+| [`consentimento-por-atendimento-plano.md`](consentimento-por-atendimento-plano.md) | consentimento por atendimento antes de ligar a câmera (①.5) — requisito de LGPD, mergeado |
 | [`README.md`](README.md) | índice de toda a documentação, com o estado de cada plano |
 | [`../computer-vision-model/treino/README.md`](../computer-vision-model/treino/README.md) | como rodar o treino |
 | [`../contextualization-model/README.md`](../contextualization-model/README.md) | como rodar a trilha de contextualização |

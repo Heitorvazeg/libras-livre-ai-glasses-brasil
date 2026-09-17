@@ -104,6 +104,11 @@ def contextualizar(glosas: list[str]) -> str:
         g.remove(estado); nucleo = ESTADOS[estado][pessoa]
 
     objetos = [OBJETOS[x] for x in g if x in OBJETOS]
+    # Roteiro da demo (docs/prontidao-demo/02 §2.9): querer/vontade + banheiro é ir ao banheiro,
+    # não "quero o banheiro". Já existe em TemplateGlossContextualizer.kt (regra só do app);
+    # replicado aqui pra este arquivo continuar sendo um espelho fiel do que roda no app.
+    if verbo in ("querer", "vontade") and "o banheiro" in objetos:
+        objetos[objetos.index("o banheiro")] = "ir ao banheiro"
     if verbo in REGENCIA and objetos:
         objetos = [_reger(REGENCIA[verbo], objetos[0])] + objetos[1:]
     if "ruim" in g and estado != "ruim":

@@ -180,7 +180,7 @@ padrão. Teste: `ConfiguracoesDemoTest` (JVM). A onda 4 acrescenta os outros sel
   quando ligado); embaixo, o botão principal grande, "Cancelar atendimento", o avatar e o interruptor
   "Comando de voz". Os controles do sample (preview, foto, gravação, iniciar/encerrar sessão) ficam em
   "Controles da sessão", recolhidos. O `InstrumentationTest` do sample abre essa área antes de usá-los.
-  **Pendente:** a leitura a ~1,5 m (manual).
+  **Pendente:** a leitura a ~1,5 m (manual). **Revisto na sessão de ajustes de usabilidade abaixo.**
 - Com a sessão aberta, o aviso central do sample ("Session started / Start the preview…") não aparece
   mais: ficava por baixo do painel de conversa e do botão principal (visto nas capturas do
   `FluxoCompletoTest`). Sem sessão, os avisos de conectar os óculos e de iniciar a sessão continuam.
@@ -193,3 +193,42 @@ padrão. Teste: `ConfiguracoesDemoTest` (JVM). A onda 4 acrescenta os outros sel
   folga, fator de memória, tetos do ⑦) e a ação "Simular queda do avatar". Os seletores dos itens P2
   (3.8b, 3.9, 5.7, 7.5, 8.2, 10.5b) ficam de fora. A seção abre e fecha no topo do menu de debug. Testes:
   `ConfiguracoesDemoTest`. **Pendente:** "mudar, fechar e reabrir o app" (manual, A20).
+
+## Ajustes de usabilidade (dev, pós-onda 4): tela menos poluída, sem perder informação
+
+Feedback direto de quem estava usando a demo no emulador: a tela do atendimento tinha virado um
+acúmulo de blocos permanentes — chips `Session`/`Stream` do SDK em inglês, cartão do classificador
+(que nasceu depois da onda 4 e nunca ganhou lugar na hierarquia do 10.3), cartão do aquecimento,
+painel de conversa e painel de métricas, tudo fixo o tempo todo, inclusive por cima do preview
+durante a captura — que é justamente quando o operador precisa conferir o enquadramento.
+
+**Princípio:** nada sai do app. Cada bloco passa a ter um momento (ou uma gaveta) em vez de ficar
+permanente; bloqueio nunca vai para a gaveta.
+
+- **`TopBar`:** os chips `Session`/`Stream` saem dali — duplicavam em inglês/monoespaçado o que a
+  faixa de estado já diz em português. Foram para a gaveta de diagnóstico (abaixo).
+- **Coluna do topo**, antes cinco blocos sempre visíveis, agora condicional: `CartaoClassificador`
+  só aparece quando `RECUSADO` (é bloqueio, não diagnóstico); `CartaoAquecimento` só enquanto há
+  etapa pendente/executando — terminado, sai para a gaveta; `PainelConversa` só fora de
+  `CAPTURANDO_SINAIS`, porque durante a captura o centro da tela é do preview.
+- **10.5, reforçado:** durante a captura, os sinais reconhecidos do turno em curso aparecem numa
+  linha compacta no rodapé (`LinhaDeSinais`, reaproveitando a formatação de cores de
+  `TurnoNoPainel` via a função extraída `sinaisAnotados`) — o painel cheio volta assim que a câmera
+  desliga.
+- **Gaveta "Diagnóstico"** (nova, ao lado de "Controles da sessão"): cartão do classificador (quando
+  não é `RECUSADO`), resumo do aquecimento, os chips do SDK e o painel de métricas. O interruptor
+  "Comando de voz" desceu da lista de "Cancelar atendimento"/"Avatar" para ficar ao lado das duas
+  gavetas — uma linha a menos no rodapé fixo.
+- **10.3, pendente resolvido:** leitura a ~1,5 m. A frase em destaque do painel de conversa foi de
+  20 para 24 sp, a faixa de estado de 14 para 16 sp e o aviso de 16 para 18 sp; diagnóstico e chips
+  continuam pequenos (11–12 sp), de propósito. `PainelConversa` ganhou `heightIn` com scroll interno
+  — com a fonte maior, três turnos cheios podiam empurrar o botão principal para fora em tela
+  pequena.
+- **Testes:** os 179 da JVM não tocam layout. Quatro instrumentados que alcançavam blocos movidos
+  para a gaveta ganharam um `abrirDiagnostico()` (mesmo padrão do `abrirControlesDaSessao()` que já
+  existia): `DiagnosticoClassificadorTelaCompletaTest`, `DiagnosticoClassificadorReaberturaTest`,
+  `DiagnosticoClassificadorRecusadoTelaCompletaTest` e `FluxoOnda4Test.abrirResumoDoAquecimento()`.
+  `DiagnosticoClassificadorRecusadoTelaCompletaTest` não muda a asserção do cartão `RECUSADO` em si
+  (continua na tela, é bloqueio) — só o resumo do aquecimento ao lado dele, que passou a estar na
+  gaveta. Não rodados nesta sessão por falta de emulador disponível; compilação instrumentada
+  limpa.

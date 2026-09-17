@@ -91,6 +91,16 @@ fun SecaoConfiguracoesDemo(modifier: Modifier = Modifier) {
         t.toFloatOrNull()?.takeIf { it in 0f..1f }?.let { x -> aplicar { it.copy(limiarConfianca = x) } } ?: false
       }
 
+      // Toggle de DEBUG: modelo neural de contextualização (sob guarda) no lugar do template.
+      // 11,9% de taxa de invenção medida (Guardas.kt) — nunca ligar num atendimento de verdade,
+      // só pra coletar dado real de quando erra. Vale a partir do próximo lançamento do app
+      // (o glossContextualizer nasce uma vez no CameraViewModel, não é recriado por sessão).
+      Interruptor(
+          stringResource(R.string.demo_config_modelo_contextualizacao),
+          v.modeloContextualizacaoAtivo,
+          "demo_modelo_contextualizacao",
+      ) { x -> aplicar { it.copy(modeloContextualizacaoAtivo = x) } }
+
       // 1.8
       Titulo(stringResource(R.string.demo_config_segmentacao))
       val s = v.segmentacao

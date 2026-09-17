@@ -164,18 +164,23 @@ Duas ressalvas que precisam acompanhar qualquer citação desses números:
 | Extração de landmarks on-device (Pose + Hands, 57 pontos) | pronto |
 | Normalização e imputação de lacunas, com paridade testada contra o Python | pronto |
 | Detecção de fronteiras entre sinais | implementada, **parâmetros não calibrados** |
-| Classificação de sinal no app | **placeholder** — o export do ST-GCN para TFLite existe (`treino/exportar.py --arquitetura gcn`), mas falta o checkpoint treinado e o classificador TFLite no app |
-| Contextualização glosa → português | pronta, integrada e versionada (`.tflite` sob guarda, template como piso; carimbo de proveniência testado) |
+| Classificação de sinal no app | infraestrutura de carregamento **pronta e testada** (pacote privado, hash/identidade conferidos, três modos — SIMULADO/REAL_EXPERIMENTAL/RECUSADO — sem fallback silencioso); o checkpoint treinado (`final-s20260917-v1`) é privado e não está neste clone; **vídeo com sinais reais ainda não foi validado** |
+| Contextualização glosa → português | pronta, integrada e versionada (`.tflite` sob guarda, template como piso; carimbo de proveniência testado); **modelo desligado por padrão** — não bateu o template em F1 na validação sintética |
 | Fala (TTS Piper/sherpa-onnx) e transcrição (Vosk pt-BR) | prontas |
 | Avatar em Libras para a pessoa surda (VLibras em WebView) | implementado, da transcrição à tela; **depende de rede** e não medido em aparelho ARM |
 | Wake word "Libras Livre, iniciar/encerrar" | classificadores pt-BR treinados e versionados (falso positivo ~0,5/h, meta 0,2/h); **motor ativo ainda é o fallback** (`SpeechRecognizer`), falta validar o offline em hardware |
+| Confirmação do reconhecimento pro surdo antes de falar pro atendente, modo economia de bateria dos óculos | prontos e testados — feedback da banca (2026-09-15), mergeados em `dev` |
+| Consentimento por atendimento antes de ligar a câmera | pronto e testado — requisito de LGPD (`docs/libras-livre-arquitetura.md` §7); **texto do consentimento é um placeholder**, não revisado juridicamente nem pela comunidade surda |
 | Coleta própria no cenário de balcão | pendente |
 | Validação de vocabulário com consultor de Libras | pendente |
 
-O maior bloqueio técnico é **levar o ST-GCN treinado até o app**: o export com o
-pré-processamento dentro do grafo já existe, mas falta o checkpoint da configuração
-de entrega (ossos + z) e o classificador TFLite no app — incluindo alinhar o contrato
-de entrada, porque o app hoje normaliza só x e y, e o modelo de entrega usa z.
+O maior bloqueio técnico é **ter o checkpoint treinado disponível fora da máquina
+que o treinou**: o export e o carregamento privado no app (hash, identidade, os
+três modos acima) já existem e passam nos testes automatizados; o que falta é
+esse checkpoint específico chegar a mais gente do time e ser validado com vídeo
+de sinais reais, não a engenharia de integração em si. O app normaliza x, y **e**
+z desde a PoC das três coordenadas
+([`docs/poc-tres-coordenadas.md`](./docs/poc-tres-coordenadas.md)).
 
 ---
 

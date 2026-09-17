@@ -154,15 +154,20 @@ class DialogOrchestratorCameraTest {
     c.dialogo.onWakeWord(WakeWord.ENCERRAR) // Sem sinais, fechamento manual pede repetição.
     runCurrent()
     assertEquals(DialogState.FALANDO, c.estado)
-    assertTrue(c.cameraAtiva)
+    // ③.5: a decisão já desligou a câmera; o turno só voltaria a captar no "Capturar de novo".
+    assertFalse(c.cameraAtiva)
     assertEquals(listOf(DialogOrchestrator.AVISO_REPITA), c.falas)
     c.dialogo.onBateriaBaixa()
     assertFalse(c.cameraAtiva)
     assertTrue(c.paradasVoz > 0)
     c.portaRepita!!.complete(Unit)
     runCurrent()
+    // Nem chega a ③.5: a bateria abortou o turno durante o aviso.
     assertEquals(1, c.capturas)
     assertEquals(DialogState.AGUARDANDO_SINAL, c.estado)
+    c.dialogo.repetirCaptura()
+    runCurrent()
+    assertEquals(1, c.capturas)
   }
 
   @Test
@@ -186,7 +191,7 @@ class DialogOrchestratorCameraTest {
   }
 
   @Test
-  fun `repeticao sem economia mantem captura e consentimento`() = runTest {
+  fun `repeticao sem economia religa camera no capturar de novo e mantem consentimento`() = runTest {
     val c = Cenario(backgroundScope)
     c.dialogo.onWakeWord(WakeWord.INICIAR)
     runCurrent()
@@ -194,10 +199,19 @@ class DialogOrchestratorCameraTest {
     runCurrent()
     c.dialogo.onWakeWord(WakeWord.ENCERRAR)
     runCurrent()
+    // ③.5 espera o operador: câmera desligada, sem captura nova e sem pedir consentimento de novo.
+    assertEquals(DialogState.PEDINDO_REPETICAO, c.estado)
+    assertEquals(1, c.capturas)
+    assertFalse(c.cameraAtiva)
+    assertTrue(c.politica.permitida)
+
+    c.dialogo.repetirCaptura()
+    runCurrent()
     assertEquals(2, c.capturas)
-    assertEquals(1, c.pedidosCamera)
+    assertEquals(2, c.pedidosCamera)
     assertTrue(c.politica.permitida)
     assertTrue(c.cameraAtiva)
+    assertEquals(DialogState.CAPTURANDO_SINAIS, c.estado)
   }
 
   @Test
@@ -213,8 +227,13 @@ class DialogOrchestratorCameraTest {
     c.politica.ativarEconomia() // VM já bloqueou; onBateriaBaixa do diálogo ainda não chegou.
     c.portaRepita!!.complete(Unit)
     runCurrent()
+    assertEquals(DialogState.PEDINDO_REPETICAO, c.estado)
+    // O "Capturar de novo" consulta a política antes de abrir: não capta e avisa a bateria.
+    c.dialogo.repetirCaptura()
+    runCurrent()
     assertEquals(1, c.capturas)
     assertFalse(c.cameraAtiva)
+    assertEquals(listOf(FalhaCamera.BATERIA_BAIXA), c.falhas)
     assertEquals(DialogState.AGUARDANDO_SINAL, c.estado)
   }
 

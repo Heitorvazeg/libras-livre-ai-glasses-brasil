@@ -318,7 +318,12 @@ class CameraViewModel(
 
   // Cadeia modelo -> guarda -> template -> passthrough (§3.3). Nasce uma vez e vive até
   // onCleared(): o Interpreter do .tflite não deve ser recriado por sessão (§7.1).
-  private val glossContextualizer = criarGlossContextualizer(application)
+  // usarModelo vem do toggle de DEBUG (ConfiguracoesDemo) — lido uma vez aqui, não reativo:
+  // trocar o toggle vale a partir do próximo lançamento do app, mesma semântica do
+  // classificador de sinal. Nunca exposto pro atendente fora do menu de debug (11,9% de
+  // taxa de invenção medida, ver Guardas.kt) — serve pra coletar dado real de quando erra.
+  private val glossContextualizer =
+      criarGlossContextualizer(application, usarModelo = configuracoes.valores.value.modeloContextualizacaoAtivo)
 
   // Motor real de STT: Vosk pt-BR local (§4 item 11, §8 item 2), sobre PCM cru. Pra voltar ao motor
   // nativo do Android (fallback, sem depender do asset vosk-model-small-pt-0.3/), troque por
@@ -444,7 +449,12 @@ class CameraViewModel(
                     glosasConhecidas = runCatching { LexicoGlosas.fromAssets(application).glosas }.getOrNull(),
                     limiar = { configuracoes.valores.value.limiarConfianca },
                 ),
-            esconderAvatar = { _uiState.update { it.copy(avatarVisivel = false) } },
+            // A legenda sai junto: ela é o texto do passo que acabou (consentimento, confirmação,
+            // pedido de repetição). Deixá-la para trás fazia o "Avatar" reaberto no meio da
+            // captura mostrar o consentimento do início do atendimento, sob o rótulo errado.
+            esconderAvatar = {
+              _uiState.update { it.copy(avatarVisivel = false, avatarLegenda = null, avatarAssunto = null) }
+            },
             pularAvatar = ::pularAvatar,
             onEvento = { nome, detalhe -> gravador.evento(SystemClock.uptimeMillis(), metricas.turno, nome, detalhe) },
             parametros = {
@@ -603,7 +613,10 @@ class CameraViewModel(
     // Abre a tela ANTES de traduzir, e com a legenda já preenchida: a pessoa surda vê o que foi
     // dito enquanto a glosa vem da rede, e os dois caminhos de falha (sem rede, player caído)
     // encontram a tela aberta mostrando o texto em vez de devolverem preto.
-    _uiState.update { it.copy(avatarVisivel = true, avatarLegenda = text) }
+    // O assunto vem do estado de AGORA porque o orquestrador sempre entra no passo antes de
+    // chamar playAvatar (①.5, ②.5, ③.5, ⑦); depois disso o estado anda e a legenda fica.
+    val assunto = assuntoDoEstado(dialogOrchestrator.state.value)
+    _uiState.update { it.copy(avatarVisivel = true, avatarLegenda = text, avatarAssunto = assunto) }
     inicioTextoAvatarMs = SystemClock.elapsedRealtime()
     val pulo = CompletableDeferred<Unit>().also { puloDoAvatar = it }
     return try {
@@ -623,6 +636,14 @@ class CameraViewModel(
       avatarAnimacaoTerminada = null
     }
   }
+
+  private fun assuntoDoEstado(estado: DialogState): AssuntoAvatar =
+      when (estado) {
+        DialogState.PEDINDO_CONSENTIMENTO -> AssuntoAvatar.CONSENTIMENTO
+        DialogState.CONFIRMANDO_RECONHECIMENTO -> AssuntoAvatar.CONFIRMACAO
+        DialogState.PEDINDO_REPETICAO -> AssuntoAvatar.REPETICAO
+        else -> AssuntoAvatar.RESPOSTA
+      }
 
   private suspend fun traduzirEAnimar(text: String, inicioMs: Long): DesfechoAvatar {
     if (avatarPlayer.state == AvatarState.FALHOU) return DesfechoAvatar.AVATAR_INDISPONIVEL
@@ -719,7 +740,7 @@ class CameraViewModel(
     avatarPlayer.release()
     // Por memória, a tela e a legenda ficam: a resposta escrita é o piso da pessoa surda (9.3), e só
     // a WebView precisa ir embora.
-    if (!porMemoria) _uiState.update { it.copy(avatarVisivel = false, avatarLegenda = null) }
+    if (!porMemoria) _uiState.update { it.copy(avatarVisivel = false, avatarLegenda = null, avatarAssunto = null) }
     if (porMemoria) {
       gravador.evento(SystemClock.uptimeMillis(), metricas.turno, "avatar_liberado_memoria", "")
       definirAviso(TipoAviso.AVATAR_LIBERADO_MEMORIA, textos.avatarLiberadoMemoria)
@@ -951,7 +972,15 @@ class CameraViewModel(
   /**
    * Ends the device session. The stream and any in-progress recording are not torn down here
   * directly by the SDK alone: canceling the dialogue first invalidates opening/permission work
-  * and stops the camera, then [onStreamTerminated] finalizes recording and releases resources.
+  * and stops the camera, then [onStreamTerminated] finalizes recording and releases stream
+  * resources.
+   *
+   * Libras Livre: encerra o ATENDIMENTO junto. São duas coisas diferentes — a [DeviceSession] é o
+   * vínculo com os óculos, o atendimento é a máquina de estados do diálogo —, mas quem toca
+   * "Encerrar sessão" está mandando parar, e o diálogo não tem como seguir sem câmera. Sem isto o
+   * orquestrador ficava capturando às cegas até o teto de ② expirar, com painel e avatar de pé.
+   * Só no toque do operador: uma sessão que cai sozinha (bateria, alcance) não cancela nada, porque
+   * a escuta da resposta usa o microfone do celular e continua valendo (5.2).
    */
   fun endSession() {
     dialogOrchestrator.cancelarAtendimento()

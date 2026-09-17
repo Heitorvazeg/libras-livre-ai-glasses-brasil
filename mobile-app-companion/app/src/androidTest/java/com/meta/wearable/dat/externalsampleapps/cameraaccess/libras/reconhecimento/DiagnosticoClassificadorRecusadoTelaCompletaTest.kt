@@ -84,6 +84,11 @@ class DiagnosticoClassificadorRecusadoTelaCompletaTest {
     parearOculos()
     iniciarSessao()
 
+    // 10.3: o resumo do aquecimento só fica na tela principal ENQUANTO aquece — terminado, sai de
+    // lá e passa a existir só na gaveta de diagnóstico (que continua desenhando o cartão do início
+    // ao fim). Abrir cedo não atrapalha: o cartão mostra "Aquecendo…" até terminar.
+    abrirDiagnostico()
+
     // O aquecimento termina (não fica pendente/executando), mas com falha: o classificador nunca
     // chega a aquecer, e o resumo recolhido mostra "falha(s)" em vez de "Pronto ✓".
     composeTestRule.waitUntilAtLeastOneExists(hasText("falha(s)", substring = true), TIMEOUT_AQUECIMENTO)
@@ -128,5 +133,12 @@ class DiagnosticoClassificadorRecusadoTelaCompletaTest {
     }
     composeTestRule.waitUntilExactlyOneExists(hasTestTag("start_session_button").and(isEnabled()), TIMEOUT)
     composeTestRule.onNodeWithTag("start_session_button").performClick()
+  }
+
+  // 10.3: o resumo do aquecimento (e o cartão do classificador, quando não é RECUSADO) mora na
+  // gaveta de diagnóstico, fechada por padrão.
+  private fun abrirDiagnostico() {
+    composeTestRule.waitUntilAtLeastOneExists(hasTestTag("mais_diagnostico"), TIMEOUT)
+    composeTestRule.onNodeWithTag("mais_diagnostico").performClick()
   }
 }

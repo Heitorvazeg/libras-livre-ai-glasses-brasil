@@ -19,6 +19,10 @@ enum class AcaoBotao {
   // (DialogOrchestrator.corrigirReconhecimento()), no mesmo padrão de "Cancelar atendimento":
   // um botão pequeno ao lado do principal, fora do modelo de uma ação só por estado.
   CONFIRMAR,
+  // ③.5: o pedido de repetição já foi mostrado à pessoa surda — reabre a captura sem repetir o
+  // consentimento (é o mesmo atendimento). Separado de INICIAR de propósito: INICIAR abre um
+  // atendimento novo e passa por ①.5.
+  REPETIR,
 }
 
 /** O texto do botão principal; a tela resolve para uma string. */
@@ -33,6 +37,8 @@ enum class RotuloBotao {
   PREPARANDO,
   // [NOVO] ②.5 — ver AcaoBotao.CONFIRMAR.
   CONFIRMAR,
+  // ③.5 — ver AcaoBotao.REPETIR.
+  REPETIR,
   // [NOVO — docs/consentimento-por-atendimento-plano.md §2.2] ①.5: rótulo inerte (ação null) — a
   // tela mostra "Aceitar"/"Recusar" à parte, dois botões de peso igual, fora do modelo de uma
   // ação principal só por estado. Ver DialogOrchestrator.aceitarConsentimento()/
@@ -93,13 +99,15 @@ object Transicoes {
   /**
    * Para onde a conversa vai depois do ③, conforme a decisão sobre a frase (2.8, 4.1): falada, a
    * pessoa surda confirma antes de a escuta abrir sozinha (②.5,
-   * docs/confirmacao-e-modo-economia-plano.md §1); "repita" volta ao ② sem passar pelo ⑤;
-   * desistência e sessão ignorada voltam ao ①.
+   * docs/confirmacao-e-modo-economia-plano.md §1); "repita" mostra o pedido no avatar e espera o
+   * operador reabrir a captura (③.5), sem passar pelo ⑤; desistência e sessão ignorada voltam ao ①.
    */
   fun estadoAposDecisao(decisao: DecisaoFrase): DialogState =
       when (decisao) {
         is DecisaoFrase.Falar -> DialogState.CONFIRMANDO_RECONHECIMENTO
-        DecisaoFrase.PedirRepeticao -> DialogState.CAPTURANDO_SINAIS
+        // [MUDOU] Antes: CAPTURANDO_SINAIS direto — a captura reabria sozinha e a pessoa surda
+        // não via o pedido de repetição, que só era falado ao atendente.
+        DecisaoFrase.PedirRepeticao -> DialogState.PEDINDO_REPETICAO
         DecisaoFrase.Desistir,
         DecisaoFrase.Ignorar -> DialogState.AGUARDANDO_SINAL
       }
@@ -124,6 +132,10 @@ object Transicoes {
         // (§2.2 do plano de consentimento); a tela desenha os dois botões à parte.
         DialogState.PEDINDO_CONSENTIMENTO -> BotaoPrincipal(RotuloBotao.CONSENTIMENTO_PENDENTE, null)
         DialogState.FALANDO -> BotaoPrincipal(RotuloBotao.FALANDO, null)
+        // ③.5: habilitado já durante a animação — tocar antes do fim pula o avatar e reabre a
+        // captura, mesmo efeito do "Pular" do ⑦. Não depende dos óculos pelo mesmo motivo do ④:
+        // quem cuida da câmera que pode não subir é o próprio [DialogOrchestrator.repetirCaptura].
+        DialogState.PEDINDO_REPETICAO -> BotaoPrincipal(RotuloBotao.REPETIR, AcaoBotao.REPETIR)
         DialogState.AGUARDANDO_RESPOSTA -> BotaoPrincipal(RotuloBotao.OUVIR_RESPOSTA, AcaoBotao.OUVIR)
         DialogState.ESCUTANDO_ATENDENTE -> BotaoPrincipal(RotuloBotao.ENCERRAR_AGORA, AcaoBotao.ENCERRAR_ESCUTA)
         DialogState.TRANSCREVENDO -> BotaoPrincipal(RotuloBotao.TRANSCREVENDO, null)

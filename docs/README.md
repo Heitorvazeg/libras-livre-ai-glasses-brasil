@@ -43,8 +43,9 @@ Escritos antes do código. Cada um tem um estado de implementação.
 
 | Documento | Estado |
 |---|---|
-| [consentimento por atendimento](consentimento-por-atendimento-plano.md) | Incorporado à base `07bc365`; correções locais de câmera e testes em [fechamento da infraestrutura](integracao-infraestrutura-fechamento-2026-09-17.md). Texto provisório e decisões de produto permanecem pendentes. |
-| [integração privada do modelo no app](integracao-modelo-app-plano-2026-09-15.md) | Transporte APK, atendimento privado focado, persistência entre processos e recusa por segmento validados no emulador; [resultados e limites em 17/09](integracao-infraestrutura-fechamento-2026-09-17.md). Hardware e atendimento bidirecional completo pendentes; não aprova o modelo final. |
+| [consentimento por atendimento](consentimento-por-atendimento-plano.md) | **implementado e testado, mergeado na `dev`** (PR #23) — correções locais de câmera e testes em [fechamento da infraestrutura](integracao-infraestrutura-fechamento-2026-09-17.md); texto do consentimento é placeholder não revisado e as decisões em aberto (avatar indisponível, timeout, auditoria) seguem sem resolução do time |
+| [confirmação de reconhecimento pro surdo + modo economia de bateria](confirmacao-e-modo-economia-plano.md) | **implementado e testado, mergeado na `dev`** (PR #22) — feedback da banca de 2026-09-15; sem teste em hardware real (os eventos de bateria não têm como ser forçados sem óculos reais ou um mock que os simule) |
+| [integração privada do modelo no app](integracao-modelo-app-plano-2026-09-15.md) | **mergeado na `dev`** (PR #21) e continuado nesta branch: transporte APK, atendimento privado focado, persistência entre processos e recusa por segmento validados no emulador — [resultados e limites em 17/09](integracao-infraestrutura-fechamento-2026-09-17.md). Hardware e atendimento bidirecional completo pendentes; não aprova o modelo final |
 | [`libras-livre-poc-plano.md`](libras-livre-poc-plano.md) | **concluído** — PoC executada; resultado em `computer-vision-model/PoC/results/relatorio.md` |
 | [`extracao-landmarks-plano.md`](extracao-landmarks-plano.md) | **implementado** — `libras/reconhecimento/LandmarkNormalizer.kt`, `HandGapImputer.kt`, com testes de paridade |
 | [`sign-boundary-detector-plano.md`](sign-boundary-detector-plano.md) | **implementado, não calibrado** — `libras/reconhecimento/SignBoundaryDetector.kt` roda com os valores sugeridos pelo plano |
@@ -59,6 +60,8 @@ Escritos antes do código. Cada um tem um estado de implementação.
 
 | Documento | Assunto |
 |---|---|
+| [`guia-tecnico-completo-hackathon-2026-09-17.md`](guia-tecnico-completo-hackathon-2026-09-17.md) | leitura única antes de apresentar: como cada trilha funciona (visão, contextualização, wake word, app), checklist operacional e como coletar métricas |
+| [`documento-de-negocio-e-pitch-2026-09-17.md`](documento-de-negocio-e-pitch-2026-09-17.md) | argumento de negócio pro pitch: problema, evidência, vocabulário/escopo, arranjo legal, diferenciação, riscos e perguntas prováveis da banca |
 | [`prontidao-demo/`](prontidao-demo/README.md) | **plano de implementação**: decisões do time ponto a ponto, prioridades (P0/P1/P2) e ondas |
 | [`guia-de-testes-mock-e-oculos.md`](guia-de-testes-mock-e-oculos.md) | como testar o app com o `MockDeviceKit` e com os óculos em mãos; ensaio geral |
 | [`modelo-visao-pontos-de-teste.md`](modelo-visao-pontos-de-teste.md) | o que testar no ST-GCN antes de entregá-lo ao app |

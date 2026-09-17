@@ -198,17 +198,38 @@ com o fluxo detalhado e as ressalvas de paridade.
 ### 3.2 A sessão de diálogo
 
 Uma sessão é aberta e fechada por duas frases-gatilho — "Libras Livre, iniciar" e
-"Libras Livre, encerrar" — e passa por sete estados (`dialogo/DialogState.kt`):
+"Libras Livre, encerrar" — e passa por nove estados (`dialogo/DialogState.kt`):
 
 ```
-① AGUARDANDO_SINAL -> ② CAPTURANDO_SINAIS -> ③ FALANDO -> ④ AGUARDANDO_RESPOSTA
+① AGUARDANDO_SINAL -> ①.5 PEDINDO_CONSENTIMENTO -> ② CAPTURANDO_SINAIS
+   -> ②.5 CONFIRMANDO_RECONHECIMENTO -> ③ FALANDO -> ④ AGUARDANDO_RESPOSTA
    -> ⑤ ESCUTANDO_ATENDENTE -> ⑥ TRANSCREVENDO -> ⑦ GERANDO_AVATAR
 ```
 
+Dois estados entraram depois do desenho original, dos dois pontos de feedback
+da banca (2026-09-15) — ambos reaproveitam o `playAvatar()` do ⑦, sem avatar novo:
+
+- **①.5 PEDINDO_CONSENTIMENTO** — antes de ligar a câmera, mostra pra pessoa
+  surda o que o sistema faz e espera o atendente decidir por ela: "Aceitar" liga
+  a câmera; "Recusar" volta ao ① sem captar nada, com aviso de bilhete/intérprete.
+  Plano: [`docs/consentimento-por-atendimento-plano.md`](../docs/consentimento-por-atendimento-plano.md).
+- **②.5 CONFIRMANDO_RECONHECIMENTO** — depois de decidir a frase, mostra pra
+  pessoa surda o que foi entendido antes de falar pro atendente: "Confirmar"
+  segue o ciclo; "Corrigir" descarta e reabre a captura. Plano:
+  [`docs/confirmacao-e-modo-economia-plano.md`](../docs/confirmacao-e-modo-economia-plano.md).
+
 Uma sessão pode conter vários sinais em sequência; onde cada um começa e termina
 é decidido pelo `SignBoundaryDetector`, não pela máquina de estados. Uma sessão
-ociosa se encerra sozinha após um minuto. O plano completo está em
+ociosa se encerra sozinha após um minuto. O plano original está em
 [`docs/orquestracao-dialogo-audio-plano.md`](../docs/orquestracao-dialogo-audio-plano.md).
+
+### 3.2.1 Modo economia de bateria
+
+Reage a `DeviceSessionError.BATTERY_CRITICAL`/`StreamError.BATTERY_LOW` do SDK
+real (API confirmada por inspeção do `.aar`, não suposição). Vira mais um caso
+de `FalhaCamera` — bloqueia "iniciar"/"corrigir" pelo mesmo caminho de qualquer
+outra falha de câmera, sem UI nova. Nunca desliga sozinho: o SDK não expõe
+"bateria recuperada". Mesmo plano do ②.5 acima, §2.
 
 ### 3.3 Os dois canais dos óculos
 
@@ -235,7 +256,7 @@ Todos rodam localmente. Nenhuma chamada de rede acontece no fluxo de tradução.
 | Função | Implementação ativa | Fallback |
 |---|---|---|
 | Landmarks | MediaPipe Pose + Hands (`tasks-vision`) | — (erro no banner se os `.task` faltarem) |
-| Classificação de sinal | **`PlaceholderSignClassifier`** | — |
+| Classificação de sinal | `TfliteSignClassifier`, com pacote privado opt-in (`librasLivre.classificadorPrivado`, hash/identidade conferidos em duas camadas) | `PlaceholderSignClassifier` — ativo no build padrão (nenhum `.tflite` de sinal nos assets versionados) |
 | Contextualização glosa → PT | `TfliteGlossContextualizer` sob guarda (LiteRT) | template, depois passthrough |
 | Síntese de voz | Piper/sherpa-onnx pt-BR | `AndroidTextToSpeechEngine` |
 | Transcrição | Vosk pt-BR | `AndroidSpeechRecognizerSttEngine` |
@@ -245,12 +266,15 @@ Todos rodam localmente. Nenhuma chamada de rede acontece no fluxo de tradução.
 
 Lacunas importantes, todas com trabalho conhecido pela frente:
 
-- **A classificação de sinal ainda é um placeholder.** O export do ST-GCN já existe
-  (`../computer-vision-model/treino/exportar.py --arquitetura gcn`, com o
-  pré-processamento dentro do grafo); falta o checkpoint treinado e o
-  `TfliteSignClassifier`, que substituirá a implementação atual sem mudar
-  `LandmarkPipeline` nem `DialogOrchestrator`. O contrato de entrada precisa ser
-  alinhado antes: o modelo de entrega usa z, e o `LandmarkNormalizer` hoje só entrega x e y.
+- **O classificador de sinal real não está neste clone.** `TfliteSignClassifier`
+  e a política de carregamento (`CarregadorClassificador`) já existem e são
+  testados — três modos (`SIMULADO`, `REAL_EXPERIMENTAL`, `RECUSADO`), hash e
+  identidade conferidos no build e no carregamento, sem fallback silencioso pra
+  um modelo errado. O que falta é o **checkpoint treinado em si** (exportado como
+  `final-s20260917-v1`, mas mantido fora do git por ser experimental e privado —
+  ver [`docs/integracao-modelo-app-plano-2026-09-15.md`](../docs/integracao-modelo-app-plano-2026-09-15.md))
+  e a **validação com sinais reais**: até agora só SIMULADO (placeholder) e um
+  pacote RECUSADO fabricado foram exercitados de ponta a ponta na tela.
 - **O wake word offline (`OpenWakeWordDetector`) não está ativo.** Os dois
   classificadores pt-BR estão treinados, versionados (§2.3) e carregam no ONNX Runtime
   (`WakeWordModelosCarregamTest`); falta validar recall e falso positivo em hardware real
@@ -312,17 +336,30 @@ Detalhes do lado do treino:
 ## 6. O que falta
 
 - [x] Export do ST-GCN para `.tflite` (`treino/exportar.py --arquitetura gcn`)
-- [ ] Checkpoint treinado do ST-GCN no app e troca do `PlaceholderSignClassifier` pelo real
+- [x] Infraestrutura de carregamento privado do classificador real — pacote com
+      hash/identidade, três modos (SIMULADO/REAL_EXPERIMENTAL/RECUSADO), cartão
+      de diagnóstico na tela, sem fallback silencioso
+- [ ] Checkpoint treinado do ST-GCN **neste clone** (existe como `final-s20260917-v1`,
+      privado, fora do git) e vídeo com sinais reais em REAL_EXPERIMENTAL
 - [ ] Calibração dos parâmetros do `SignBoundaryDetector` com dado real
 - [x] Treino dos classificadores pt-BR de wake word, versionados e carregando no app
 - [ ] Validação do wake word offline em hardware e ativação do `OpenWakeWordDetector`
-- [ ] Medição da taxa de fallback da contextualização em campo
+      (motor ativo por padrão ainda é o `SpeechRecognizer`, ver §4)
+- [ ] Medição da taxa de fallback da contextualização em campo (modelo treinado
+      integrado, mas desligado por padrão — `MODELO_CONTEXTUALIZACAO_ATIVO = false`,
+      não bateu o template em F1 na validação sintética)
 - [x] Entrega da resposta para a pessoa surda (estado ⑦: avatar VLibras + legenda)
+- [x] Confirmação do reconhecimento pro surdo antes de falar pro atendente (②.5) e
+      modo economia de bateria dos óculos (§3.2.1) — feedback da banca de 2026-09-15
+- [x] Consentimento por atendimento antes de ligar a câmera (①.5) — requisito de
+      `docs/libras-livre-arquitetura.md` §7 (LGPD); **texto do consentimento é um
+      placeholder não revisado juridicamente nem pela comunidade surda**
 - [ ] Espelho local do dicionário de sinais, para o avatar funcionar sem internet
 - [ ] Medir o avatar (WebGL e memória) no celular que acompanha os óculos
 - [ ] **Reduzir o tamanho do APK** — o debug com todos os assets está em **474 MB**.
       Avaliar Play Asset Delivery e a variante de release com minify
-- [ ] Ajuste dinâmico de fps por bateria e limite térmico
+- [ ] Ajuste dinâmico de fps por bateria e limite térmico — diferente do modo
+      economia de §3.2.1, que só reage aos dois eventos críticos do SDK, sem meio-termo
 - [ ] Validação do pipeline completo com pessoas surdas no cenário de balcão
 
 ---

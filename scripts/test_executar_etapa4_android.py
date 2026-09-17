@@ -426,7 +426,7 @@ class TestMaquinaInterrupcao(unittest.TestCase):
 
 
 class TestCliInterrupcao(unittest.TestCase):
-    def testar_cli(self, modo, falha=None):
+    def executar_cli(self, modo, falha=None):
         with tempfile.TemporaryDirectory() as tmp:
             raiz = Path(tmp)
             privado = raiz / "pacote"
@@ -521,16 +521,16 @@ class TestCliInterrupcao(unittest.TestCase):
     def test_cli_ambos_modos_preserva_validacao_apks_sem_video_e_sem_reinstalar_entre_fases(self):
         for modo in host.INTERRUPCOES:
             with self.subTest(modo=modo):
-                self.testar_cli(modo)
+                self.executar_cli(modo)
 
     def test_cli_aborta_apk_instalado_divergente_antes_de_preparar(self):
-        self.testar_cli("interromper-real", "apk_instalado")
+        self.executar_cli("interromper-real", "apk_instalado")
 
     def test_cli_nao_chama_aprovado_a_um_teste_interrompido_que_passou(self):
-        self.testar_cli("interromper-recusado", "aprovacao")
+        self.executar_cli("interromper-recusado", "aprovacao")
 
     def test_cli_recuperacao_falha_gera_json_falho(self):
-        self.testar_cli("interromper-real", "recuperacao")
+        self.executar_cli("interromper-real", "recuperacao")
 
 
 if __name__ == "__main__":
