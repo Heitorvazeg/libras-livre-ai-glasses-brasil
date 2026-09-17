@@ -1,0 +1,10 @@
+pessoa.mp4 — vídeo de teste do LandmarkPipelineTurnosTest (uma pessoa de corpo inteiro, 2 s, HEVC).
+
+Gerado a partir de pose.jpg, imagem de teste do MediaPipe
+(https://storage.googleapis.com/mediapipe-assets/pose.jpg, projeto google-ai-edge/mediapipe,
+Apache License 2.0): recorte de 540x667 a partir de (230,0), centralizado numa tela 540x960
+(o mesmo formato do plant.mp4 do sample), 30 fps, sem B-frames:
+
+  ffmpeg -loop 1 -framerate 30 -i pose.jpg -t 2 \
+    -vf "crop=540:667:230:0,pad=540:960:0:146,format=yuv420p" \
+    -c:v libx265 -x265-params keyint=30:bframes=0 -tag:v hvc1 pessoa.mp4

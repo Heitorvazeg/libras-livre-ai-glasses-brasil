@@ -1,0 +1,24 @@
+INSTRUMENTATION_STATUS: class=com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.RecusadoVideoOrquestradorTest
+INSTRUMENTATION_STATUS: current=1
+INSTRUMENTATION_STATUS: id=AndroidJUnitRunner
+INSTRUMENTATION_STATUS: numtests=1
+INSTRUMENTATION_STATUS: stream=
+com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.RecusadoVideoOrquestradorTest:
+INSTRUMENTATION_STATUS: test=segmentoRealRecusadoNaoGeraGlosaConfirmacaoOuTraducao
+INSTRUMENTATION_STATUS_CODE: 1
+INSTRUMENTATION_STATUS: class=com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.RecusadoVideoOrquestradorTest
+INSTRUMENTATION_STATUS: current=1
+INSTRUMENTATION_STATUS: id=AndroidJUnitRunner
+INSTRUMENTATION_STATUS: numtests=1
+INSTRUMENTATION_STATUS: stream=.
+INSTRUMENTATION_STATUS: test=segmentoRealRecusadoNaoGeraGlosaConfirmacaoOuTraducao
+INSTRUMENTATION_STATUS_CODE: 0
+INSTRUMENTATION_RESULT: etapa4_prova={"execucao":"770c92ef-76fd-45cb-9d30-d37e6600f766","status":"APROVADO","fase":"segmentoRealRecusadoNaoGeraGlosaConfirmacaoOuTraducao","pipeline":"MAIN_ACTIVITY_VIDEO_REAL_SEM_STUB","identidade_sha256":"0f0aea45368ce480854eb89488a031614710cb7f27841896873377a2d03f47ca","inicio_epoch_ms":1789652834340,"audio_acustico_verificado":false,"litert_runtime":"2.22.0","identidade":{"aprovado_entrega":false,"calibracao":"ausente_nao_calibrado","checkpoint_sha256":"5c7fb56e96dc3e3be17b856baafeeceeeb328e8b42c8017a12e34c0bfd45e833","experimental":true,"experimento":"etapa4-recusado-sintetico-v1","modelo_sha256":"b945321665129b9dc645a8ed2bc859641513ea4bb1df8a06e9d3f7137b0f7c45","schema":1,"sidecar_sha256":"8711affe4ede1392ca9210e1bf5f2aa7a6efe4e304c00925307321aa7e1c2336"},"configuracao_original":"ValoresDemo(gravadorSessao=false, painelMetricas=false, modoPlaceholder=ROTEIRO, segmentacao=ParametrosSegmentacao(limiarEntrada=0.7, limiarSaida=0.4, janelaVelocidadeMs=110, alfaSuavizacao=0.5, pausaMs=500, tetoOclusaoMs=900, duracaoMinimaMs=250, duracaoMaximaMs=3500, preRollMs=250, posRollMs=150), tetoCapturaMs=30000, tetoEscutaMs=20000, motorWakeWord=SPEECH_RECOGNIZER, comandoDeVoz=true, saidaVoz=OCULOS, microfoneResposta=CELULAR, folgaAposFalaMs=300, limiarConfianca=0.6, fatorLimiarMemoria=1.5, tetoTraducaoMs=5000, tetoAnimacaoBaseMs=3000, tetoAnimacaoPorSinalMs=1500)","video_sha256":"c5611ea8b0902d68ae470eb5d5121ce0d032e934341de1ade23e5a605424f505","motivo_recusa":"Modelo de sinais recusado: ByteBuffer is not a valid TensorFlow Lite model flatbuffer","primeira_decisao":"motivo=SILENCIO,decisao=REPITA,sinais=0,falhas=1,rejeicoes_seguidas=1","pos_cancelamento_ms":1500,"sem_glosa_confirmacao_traducao":true,"teardown_pipeline_concluido":true,"frames":44,"poses":44,"maos":44,"classify_tentativas":1,"classify_recusas":1,"callbacks_falha":1,"glosas":0,"contextualizacoes":0,"tts_chamadas":["Não consegui entender. Peça para repetir, com uma pausa entre os sinais."],"estados":["AGUARDANDO_SINAL","AGUARDANDO_SINAL","AGUARDANDO_SINAL","AGUARDANDO_SINAL","AGUARDANDO_SINAL","AGUARDANDO_SINAL","AGUARDANDO_SINAL","AGUARDANDO_SINAL","PEDINDO_CONSENTIMENTO","PEDINDO_CONSENTIMENTO","PEDINDO_CONSENTIMENTO","PEDINDO_CONSENTIMENTO","PEDINDO_CONSENTIMENTO","PEDINDO_CONSENTIMENTO","CAPTURANDO_SINAIS","CAPTURANDO_SINAIS","CAPTURANDO_SINAIS","CAPTURANDO_SINAIS","CAPTURANDO_SINAIS","CAPTURANDO_SINAIS","CAPTURANDO_SINAIS","CAPTURANDO_SINAIS","FALANDO","FALANDO","FALANDO","FALANDO","AGUARDANDO_SINAL","AGUARDANDO_SINAL"],"eventos":[{"nome":"consentimento","detalhe":"aceito"},{"nome":"segmento","detalhe":"inicio=137527887,fim_movimento=137528520,duracao_movimento=483,motivo=PAUSA,frames=5"},{"nome":"falha_classificacao","detalhe":"Modelo de sinais recusado: ByteBuffer is not a valid TensorFlow Lite model flatbuffer"},{"nome":"decisao","detalhe":"motivo=SILENCIO,decisao=REPITA,sinais=0,falhas=1,rejeicoes_seguidas=1"},{"nome":"atendimento_cancelado","detalhe":"estado=FALANDO"},{"nome":"atendimento_cancelado","detalhe":"estado=AGUARDANDO_SINAL"}],"cleanup":true,"fim_epoch_ms":1789652858991,"erro":null}
+INSTRUMENTATION_RESULT: stream=
+
+Time: 24.71
+
+OK (1 test)
+
+
+INSTRUMENTATION_CODE: -1

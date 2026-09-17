@@ -1,13 +1,22 @@
-# Seleção de sinais das bases públicas de Libras usadas pela PoC.
+# Seleção de sinais das bases públicas de Libras usadas pela PoC e pelo treino.
 #
-# Critério (definido em README.md §2): ficaram os sinais que existem NAS DUAS
-# bases — assim cada sinal chega com 8 sinalizadores da MINDS-Libras + 3
-# articuladores da V-LIBRASIL = 11 pessoas diferentes por sinal, que é o que a
-# avaliação leave-one-signer-out consome.
+# HISTÓRICO DO CRITÉRIO
 #
-# Esta lista é a fonte de verdade da ingestão. O vocabulário em
-# ../PoC/config.yaml precisa conter exatamente estes 10 rótulos — ingest.py
-# confere e avisa se divergirem.
+# Até 2026-09-08 esta lista tinha 10 sinais: os que existem NAS DUAS bases, para
+# maximizar pessoas por sinal (8 MINDS + 3 V-LIBRASIL = 11) na PoC de DTW.
+#
+# Agora ela tem os 20 sinais do MINDS-Libras. Motivo (docs/investigacao-expansao-dataset.md):
+# a etapa de treino usa o MINDS como núcleo — fonte única, sem o degrau entre bases
+# que custou ~15 pontos na PoC, e sem rótulo ambíguo. Os 10 sinais que também
+# existem na V-LIBRASIL mantêm o mapeamento: ela some 3 pessoas a mais neles, e
+# serve como teste de domínio diferente (treina no MINDS, testa na V-LIBRASIL).
+#
+# Os 10 sinais adicionados são MINDS-only: não têm chave `vlibrasil`, e por isso
+# ingest.py simplesmente não os procura naquele bundle.
+#
+# Esta lista é a fonte de verdade da ingestão. O vocabulário em ../PoC/config.yaml
+# e ../config.yaml precisa conter exatamente estes 20 rótulos — ingest.py confere
+# e avisa se divergirem.
 
 destino: ../PoC/data/raw
 
@@ -24,8 +33,9 @@ fontes:
     prefixo_pessoa: V
 
 sinais:
-  # validado: true  -> o mesmo rótulo nas duas bases
-  # validado: false -> rótulos diferentes que aparentam ser o mesmo sinal;
+  # validado: true  -> não há ambiguidade de rótulo: ou o rótulo é o mesmo nas duas
+  #                    bases, ou o sinal vem só do MINDS (sem merge, sem ambiguidade)
+  # validado: false -> rótulos diferentes entre as bases, pareados por julgamento;
   #                    precisa de conferência de consultor de Libras (README §3)
   - sinal: acontecer
     minds: Acontecer
@@ -77,3 +87,37 @@ sinais:
     nota: >-
       A V-LIBRASIL usa "Rã (sapo)". Rã e sapo podem ter sinais distintos
       dependendo da variante regional. Conferir antes de usar as duas juntas.
+
+  # --- MINDS-only (adicionados em 2026-09-08) ---------------------------------
+  # Os 10 sinais restantes do MINDS-Libras. Sem chave `vlibrasil`: entram como
+  # fonte única, que é justamente o ponto — sem merge, sem rótulo ambíguo.
+  - sinal: aluno
+    minds: Aluno
+    validado: true
+  - sinal: america
+    minds: America
+    validado: true
+  - sinal: aproveitar
+    minds: Aproveitar
+    validado: true
+  - sinal: bala
+    minds: Bala
+    validado: true
+  - sinal: banco
+    minds: Banco
+    validado: true
+  - sinal: cinco
+    minds: Cinco
+    validado: true
+  - sinal: conhecer
+    minds: Conhecer
+    validado: true
+  - sinal: esquina
+    minds: Esquina
+    validado: true
+  - sinal: vacina
+    minds: Vacina
+    validado: true
+  - sinal: vontade
+    minds: Vontade
+    validado: true

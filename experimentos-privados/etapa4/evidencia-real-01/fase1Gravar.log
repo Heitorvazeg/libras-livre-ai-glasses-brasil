@@ -1,0 +1,47 @@
+INSTRUMENTATION_STATUS: class=com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.RealExperimentalEntreProcessosTest
+INSTRUMENTATION_STATUS: current=1
+INSTRUMENTATION_STATUS: id=AndroidJUnitRunner
+INSTRUMENTATION_STATUS: numtests=1
+INSTRUMENTATION_STATUS: stream=
+com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.RealExperimentalEntreProcessosTest:
+INSTRUMENTATION_STATUS: test=fase1Gravar
+INSTRUMENTATION_STATUS_CODE: 1
+INSTRUMENTATION_STATUS: class=com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.RealExperimentalEntreProcessosTest
+INSTRUMENTATION_STATUS: current=1
+INSTRUMENTATION_STATUS: id=AndroidJUnitRunner
+INSTRUMENTATION_STATUS: numtests=1
+INSTRUMENTATION_STATUS: stack=androidx.compose.ui.test.ComposeTimeoutException: Condition (at least one node matches (TestTag = 'mais_controles')) still not satisfied after 20000 ms
+	at androidx.compose.ui.test.AndroidComposeUiTestEnvironment$AndroidComposeUiTestImpl.waitUntil(ComposeUiTest.android.kt:887)
+	at androidx.compose.ui.test.ComposeUiTestKt.waitUntilAtLeastOneExists(ComposeUiTest.kt:242)
+	at androidx.compose.ui.test.junit4.AndroidComposeTestRule.waitUntilAtLeastOneExists(AndroidComposeTestRule.android.kt:498)
+	at com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.RealExperimentalEntreProcessosTest.comActivity(RealExperimentalEntreProcessosTest.kt:126)
+	at com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.RealExperimentalEntreProcessosTest.fase1Gravar(RealExperimentalEntreProcessosTest.kt:60)
+
+INSTRUMENTATION_STATUS: stream=
+Error in fase1Gravar(com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.RealExperimentalEntreProcessosTest):
+androidx.compose.ui.test.ComposeTimeoutException: Condition (at least one node matches (TestTag = 'mais_controles')) still not satisfied after 20000 ms
+	at androidx.compose.ui.test.AndroidComposeUiTestEnvironment$AndroidComposeUiTestImpl.waitUntil(ComposeUiTest.android.kt:887)
+	at androidx.compose.ui.test.ComposeUiTestKt.waitUntilAtLeastOneExists(ComposeUiTest.kt:242)
+	at androidx.compose.ui.test.junit4.AndroidComposeTestRule.waitUntilAtLeastOneExists(AndroidComposeTestRule.android.kt:498)
+	at com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.RealExperimentalEntreProcessosTest.comActivity(RealExperimentalEntreProcessosTest.kt:126)
+	at com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.RealExperimentalEntreProcessosTest.fase1Gravar(RealExperimentalEntreProcessosTest.kt:60)
+
+INSTRUMENTATION_STATUS: test=fase1Gravar
+INSTRUMENTATION_STATUS_CODE: -2
+INSTRUMENTATION_RESULT: stream=
+
+Time: 23.484
+There was 1 failure:
+1) fase1Gravar(com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.RealExperimentalEntreProcessosTest)
+androidx.compose.ui.test.ComposeTimeoutException: Condition (at least one node matches (TestTag = 'mais_controles')) still not satisfied after 20000 ms
+	at androidx.compose.ui.test.AndroidComposeUiTestEnvironment$AndroidComposeUiTestImpl.waitUntil(ComposeUiTest.android.kt:887)
+	at androidx.compose.ui.test.ComposeUiTestKt.waitUntilAtLeastOneExists(ComposeUiTest.kt:242)
+	at androidx.compose.ui.test.junit4.AndroidComposeTestRule.waitUntilAtLeastOneExists(AndroidComposeTestRule.android.kt:498)
+	at com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.RealExperimentalEntreProcessosTest.comActivity(RealExperimentalEntreProcessosTest.kt:126)
+	at com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.RealExperimentalEntreProcessosTest.fase1Gravar(RealExperimentalEntreProcessosTest.kt:60)
+
+FAILURES!!!
+Tests run: 1,  Failures: 1
+
+
+INSTRUMENTATION_CODE: -1

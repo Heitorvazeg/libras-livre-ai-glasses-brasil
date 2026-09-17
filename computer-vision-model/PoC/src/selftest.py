@@ -48,7 +48,11 @@ def _lm(x, y, z=0.0, vis=1.0):
 def _fake_results(offset=(0.0, 0.0), escala=1.0, com_maos=(True, True), vis=1.0):
     """Monta um `results` do Holistic com pose + mãos em posições conhecidas."""
     ox, oy = offset
-    pose = [_lm(0.5, 0.5, 0.0, vis) for _ in range(33)]
+    # Preenchimento no CENTRO, já deslocado por `offset`: pontos que o teste não
+    # posiciona explicitamente ainda precisam acompanhar o deslocamento/escala da
+    # pessoa, senão a invariância da normalização falha por artefato da fixture
+    # (o centro é invariante à escala, então só o offset importa aqui).
+    pose = [_lm(ox + 0.5, oy + 0.5, 0.0, vis) for _ in range(33)]
     # ombros a ±0.1 (antes da escala) do centro; demais pontos em posições fixas.
     pose[0] = _lm(ox + 0.5, oy + 0.5 - 0.15 * escala, 0.0, vis)            # nariz
     pose[11] = _lm(ox + 0.5 - 0.10 * escala, oy + 0.5, 0.0, vis)           # ombro esq
@@ -315,7 +319,8 @@ def teste_video_e_holistic():
         # ruído não contém pessoa: o esperado é descartar tudo, sem quebrar.
         assert seq.shape[0] == 0 and descartados == 8, \
             f"esperava 8 frames descartados em vídeo sem pessoa, veio {seq.shape[0]}/{descartados}"
-        assert seq.shape[1:] == (CFG.num_pontos, CFG.dims), "forma do array vazio inconsistente"
+        # A extração guarda sempre as 3 dims (o descarte do z é na leitura).
+        assert seq.shape[1:] == (CFG.num_pontos, 3), "forma do array vazio inconsistente"
 
 
 TESTES = [

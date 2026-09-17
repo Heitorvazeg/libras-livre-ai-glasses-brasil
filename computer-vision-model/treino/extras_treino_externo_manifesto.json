@@ -1,0 +1,341 @@
+{
+  "schema": 1,
+  "finalidade": "treino_externo",
+  "origem": {
+    "manifesto": "calibracao_naovista_manifesto.json",
+    "manifesto_sha256": "903b57723b78d92909485b3cca9d33e19c2399ebd86f1a68b596233d49bbbc7b",
+    "grupo": "treino_externo",
+    "divisao_fixada_em": "2026-09-15",
+    "pessoas_excluidas": [
+      "T048",
+      "T050",
+      "TUFS",
+      "V03"
+    ]
+  },
+  "itens": [
+    {
+      "classe": "acontecer",
+      "pessoa": "TUFV",
+      "corpus": "malta",
+      "arquivo": "PoC/data/landmarks-malta/pessoaTUFV_sinal-acontecer_rep01.npy",
+      "sha256": "9ea5e4166980c6e4a31c64082fd62ca2748c9801257a617d330a9fb0ad26e754"
+    },
+    {
+      "classe": "acontecer",
+      "pessoa": "V01",
+      "corpus": "vlibrasil",
+      "arquivo": "PoC/data/landmarks/pessoaV01_sinal-acontecer_rep01.npy",
+      "sha256": "5a7738305d806efe8c5d78be4a96b6581eeb78aa046b573f9c6102d1ee821a62"
+    },
+    {
+      "classe": "acontecer",
+      "pessoa": "V02",
+      "corpus": "vlibrasil",
+      "arquivo": "PoC/data/landmarks/pessoaV02_sinal-acontecer_rep01.npy",
+      "sha256": "07a22934c80b3a3ac57d2c211878b856a97d04b19d3be2015d84a628ef0627ad"
+    },
+    {
+      "classe": "amarelo",
+      "pessoa": "T002",
+      "corpus": "malta",
+      "arquivo": "PoC/data/landmarks-malta/pessoaT002_sinal-amarelo_rep01.npy",
+      "sha256": "79157af9635568dd9313a887a79752ce7360b6e12902109dc957e769cc91a481"
+    },
+    {
+      "classe": "amarelo",
+      "pessoa": "V01",
+      "corpus": "vlibrasil",
+      "arquivo": "PoC/data/landmarks/pessoaV01_sinal-amarelo_rep01.npy",
+      "sha256": "9681ccfe70bf2df52d1d4133ec4ab6bf3cfcaa34ff0be2f868c34df1b4224677"
+    },
+    {
+      "classe": "amarelo",
+      "pessoa": "V02",
+      "corpus": "vlibrasil",
+      "arquivo": "PoC/data/landmarks/pessoaV02_sinal-amarelo_rep01.npy",
+      "sha256": "8bab1af371871788dd5ccd89ecbf96b3c1b49c0c0e3221bc445b0beb90371e12"
+    },
+    {
+      "classe": "america",
+      "pessoa": "T002",
+      "corpus": "malta",
+      "arquivo": "PoC/data/landmarks-malta/pessoaT002_sinal-america_rep01.npy",
+      "sha256": "a2a8c8a9ffa119ee59f1d2622360d0ffea71df091a276390c44c0fbb9d524319"
+    },
+    {
+      "classe": "america",
+      "pessoa": "T044",
+      "corpus": "malta",
+      "arquivo": "PoC/data/landmarks-malta/pessoaT044_sinal-america_rep01.npy",
+      "sha256": "e9c2daacf435b61645de08f33a887121f999dc936791aa422836c4200bddc163"
+    },
+    {
+      "classe": "bala",
+      "pessoa": "T042",
+      "corpus": "malta",
+      "arquivo": "PoC/data/landmarks-malta/pessoaT042_sinal-bala_rep01.npy",
+      "sha256": "9cbb8c57df3a84eb4924431b7fbda509e445e48a157e69fe59ce587c4b7e621d"
+    },
+    {
+      "classe": "banheiro",
+      "pessoa": "T002",
+      "corpus": "malta",
+      "arquivo": "PoC/data/landmarks-malta/pessoaT002_sinal-banheiro_rep01.npy",
+      "sha256": "4d92f5e98f5f739499607cdb82aa1826faf12deef222475bda0311c96224d300"
+    },
+    {
+      "classe": "banheiro",
+      "pessoa": "T042",
+      "corpus": "malta",
+      "arquivo": "PoC/data/landmarks-malta/pessoaT042_sinal-banheiro_rep01.npy",
+      "sha256": "7c52f2c319ffeffdbf704e50ed34a0be6e7e7d4194f1e085b3d75249fcb0a85e"
+    },
+    {
+      "classe": "banheiro",
+      "pessoa": "V01",
+      "corpus": "vlibrasil",
+      "arquivo": "PoC/data/landmarks/pessoaV01_sinal-banheiro_rep01.npy",
+      "sha256": "e9d1e6bb7428085bce9fc532c8240a19dc93890a5e1936f34afffcc1d0a8e4ab"
+    },
+    {
+      "classe": "banheiro",
+      "pessoa": "V02",
+      "corpus": "vlibrasil",
+      "arquivo": "PoC/data/landmarks/pessoaV02_sinal-banheiro_rep01.npy",
+      "sha256": "0007a8ccb4714e3063684919b8e4b966e95fc07129ab10348722310b51de9775"
+    },
+    {
+      "classe": "barulho",
+      "pessoa": "T002",
+      "corpus": "malta",
+      "arquivo": "PoC/data/landmarks-malta/pessoaT002_sinal-barulho_rep01.npy",
+      "sha256": "b9332013657b3feb4a1779e64523a35ce178127296f1de194f435bfa412e5465"
+    },
+    {
+      "classe": "barulho",
+      "pessoa": "V01",
+      "corpus": "vlibrasil",
+      "arquivo": "PoC/data/landmarks/pessoaV01_sinal-barulho_rep01.npy",
+      "sha256": "ad44e885853ac56e53fae3aacbc294cd11572a5a055e543c19a08982bd8600fc"
+    },
+    {
+      "classe": "barulho",
+      "pessoa": "V02",
+      "corpus": "vlibrasil",
+      "arquivo": "PoC/data/landmarks/pessoaV02_sinal-barulho_rep01.npy",
+      "sha256": "a4c781aacde9a912a500f72873b533be16d27ac6de35d690fa530ed3d7d65d4f"
+    },
+    {
+      "classe": "cinco",
+      "pessoa": "T002",
+      "corpus": "malta",
+      "arquivo": "PoC/data/landmarks-malta/pessoaT002_sinal-cinco_rep01.npy",
+      "sha256": "ba7ee3a08a3e56de4e0195c2649707a538a04e5c7d6e90c6c6a409e77e11586e"
+    },
+    {
+      "classe": "cinco",
+      "pessoa": "T045",
+      "corpus": "malta",
+      "arquivo": "PoC/data/landmarks-malta/pessoaT045_sinal-cinco_rep01.npy",
+      "sha256": "05890a8a6fdf88337d7ec9e1337ebd0009cfec9db0b3d6fbc3b8d99614923042"
+    },
+    {
+      "classe": "conhecer",
+      "pessoa": "T002",
+      "corpus": "malta",
+      "arquivo": "PoC/data/landmarks-malta/pessoaT002_sinal-conhecer_rep01.npy",
+      "sha256": "68b54b0eb9f6da9ba37877e79cffc1fa92f621d6d0de2beb856996aa771370cd"
+    },
+    {
+      "classe": "conhecer",
+      "pessoa": "T042",
+      "corpus": "malta",
+      "arquivo": "PoC/data/landmarks-malta/pessoaT042_sinal-conhecer_rep01.npy",
+      "sha256": "8b62a088b8f9b2a6139e191a292348cf64c7f73b587768cdd74ce64d1245fe0c"
+    },
+    {
+      "classe": "espelho",
+      "pessoa": "T002",
+      "corpus": "malta",
+      "arquivo": "PoC/data/landmarks-malta/pessoaT002_sinal-espelho_rep01.npy",
+      "sha256": "69a5ed4b12e04d5724b9f035b5adaa62de51e15af3d8098dfbd58e703d469334"
+    },
+    {
+      "classe": "espelho",
+      "pessoa": "V01",
+      "corpus": "vlibrasil",
+      "arquivo": "PoC/data/landmarks/pessoaV01_sinal-espelho_rep01.npy",
+      "sha256": "81af19cb5c9c82d94b99feef5f7bfe0fc1050514f5a8ae6d42b2af18911fa5e0"
+    },
+    {
+      "classe": "espelho",
+      "pessoa": "V02",
+      "corpus": "vlibrasil",
+      "arquivo": "PoC/data/landmarks/pessoaV02_sinal-espelho_rep01.npy",
+      "sha256": "ae43e1f4807fa9468420ea632fffaba17a48c1a103c870468ba4d59081ae2b34"
+    },
+    {
+      "classe": "esquina",
+      "pessoa": "T002",
+      "corpus": "malta",
+      "arquivo": "PoC/data/landmarks-malta/pessoaT002_sinal-esquina_rep01.npy",
+      "sha256": "f986b15bac948da79e1d84901a88be96f7e9b793a99b20525006481c31f28b79"
+    },
+    {
+      "classe": "filho",
+      "pessoa": "T002",
+      "corpus": "malta",
+      "arquivo": "PoC/data/landmarks-malta/pessoaT002_sinal-filho_rep01.npy",
+      "sha256": "a432ac37de1050fe9a76ff59a40ef46f34b3e352622c7c03f8b8462876310a94"
+    },
+    {
+      "classe": "filho",
+      "pessoa": "TUFV",
+      "corpus": "malta",
+      "arquivo": "PoC/data/landmarks-malta/pessoaTUFV_sinal-filho_rep01.npy",
+      "sha256": "ddb96d0aa0348d87f178694eca7b425a39cae9c595dd80eef9a61c979983c876"
+    },
+    {
+      "classe": "filho",
+      "pessoa": "V01",
+      "corpus": "vlibrasil",
+      "arquivo": "PoC/data/landmarks/pessoaV01_sinal-filho_rep01.npy",
+      "sha256": "872481e6e258c7889f80ee8b91ed8527842648691dd7d6f73562983fff27183f"
+    },
+    {
+      "classe": "filho",
+      "pessoa": "V02",
+      "corpus": "vlibrasil",
+      "arquivo": "PoC/data/landmarks/pessoaV02_sinal-filho_rep01.npy",
+      "sha256": "80bd09bb4402c555ab35f6831ed7ceaf4dcde60691c482ddb41a6e2b5b06693e"
+    },
+    {
+      "classe": "maca",
+      "pessoa": "T002",
+      "corpus": "malta",
+      "arquivo": "PoC/data/landmarks-malta/pessoaT002_sinal-maca_rep01.npy",
+      "sha256": "99858176b49eb15d7a66092c521ee550b08bbc058ca0be759f47afea6e6c463e"
+    },
+    {
+      "classe": "maca",
+      "pessoa": "V01",
+      "corpus": "vlibrasil",
+      "arquivo": "PoC/data/landmarks/pessoaV01_sinal-maca_rep01.npy",
+      "sha256": "02ed8f566f636eaf79c0ce4546b083b6bf2bad2f17136d6c9a73d976ad652f08"
+    },
+    {
+      "classe": "maca",
+      "pessoa": "V02",
+      "corpus": "vlibrasil",
+      "arquivo": "PoC/data/landmarks/pessoaV02_sinal-maca_rep01.npy",
+      "sha256": "b10dcf4dc40d23648ddac02d207203fd26623ee1c8b2fe82ab8d7c038e2c3c3d"
+    },
+    {
+      "classe": "medo",
+      "pessoa": "T002",
+      "corpus": "malta",
+      "arquivo": "PoC/data/landmarks-malta/pessoaT002_sinal-medo_rep01.npy",
+      "sha256": "fc0be69d6ab8ba08872b3c47766a32073f2fcdc702aad0c55a7fa7f0867ac2aa"
+    },
+    {
+      "classe": "medo",
+      "pessoa": "T042",
+      "corpus": "malta",
+      "arquivo": "PoC/data/landmarks-malta/pessoaT042_sinal-medo_rep01.npy",
+      "sha256": "cc09562ff5a2cf2728581e6f5107ceb55b2ae738a20afe4c2eb01c819daa8822"
+    },
+    {
+      "classe": "medo",
+      "pessoa": "V01",
+      "corpus": "vlibrasil",
+      "arquivo": "PoC/data/landmarks/pessoaV01_sinal-medo_rep01.npy",
+      "sha256": "8665fcbae10fb53dd7553d75f6960d4b0e3c6bc505d66c0ad4aba44d8c45daf6"
+    },
+    {
+      "classe": "medo",
+      "pessoa": "V02",
+      "corpus": "vlibrasil",
+      "arquivo": "PoC/data/landmarks/pessoaV02_sinal-medo_rep01.npy",
+      "sha256": "0e6861e5c3988531538754a2d88a6356b78d49efaad61bd4c292b7131282ec52"
+    },
+    {
+      "classe": "ruim",
+      "pessoa": "V01",
+      "corpus": "vlibrasil",
+      "arquivo": "PoC/data/landmarks/pessoaV01_sinal-ruim_rep01.npy",
+      "sha256": "6d066fbe0556cea42ae8406e994e96e9d7f9b0a67001c5bd020719822c9ac63a"
+    },
+    {
+      "classe": "ruim",
+      "pessoa": "V02",
+      "corpus": "vlibrasil",
+      "arquivo": "PoC/data/landmarks/pessoaV02_sinal-ruim_rep01.npy",
+      "sha256": "42cc3f41d63a4ccb9b1f65bef6d95152d60c1c892f57e89d9d97549093f158e6"
+    },
+    {
+      "classe": "sapo",
+      "pessoa": "T002",
+      "corpus": "malta",
+      "arquivo": "PoC/data/landmarks-malta/pessoaT002_sinal-sapo_rep01.npy",
+      "sha256": "915b84350379146d221c096af9ad4043d629aa5a20e50f7699177391831bf9b4"
+    },
+    {
+      "classe": "sapo",
+      "pessoa": "V01",
+      "corpus": "vlibrasil",
+      "arquivo": "PoC/data/landmarks/pessoaV01_sinal-sapo_rep01.npy",
+      "sha256": "648b33f780781a8e5c9dee53386dca027754b09a358c8e7012ea95cbd0f2325e"
+    },
+    {
+      "classe": "sapo",
+      "pessoa": "V02",
+      "corpus": "vlibrasil",
+      "arquivo": "PoC/data/landmarks/pessoaV02_sinal-sapo_rep01.npy",
+      "sha256": "1dd354b75d04994876d8b55260dc985f28bacacd36618b2b9f2627c8c4d1878b"
+    },
+    {
+      "classe": "vacina",
+      "pessoa": "T002",
+      "corpus": "malta",
+      "arquivo": "PoC/data/landmarks-malta/pessoaT002_sinal-vacina_rep01.npy",
+      "sha256": "a27cdb2c1b34c7bc5bf0f9932df8cfb513bff051e89430ba4441f8aefdb97405"
+    },
+    {
+      "classe": "vontade",
+      "pessoa": "T002",
+      "corpus": "malta",
+      "arquivo": "PoC/data/landmarks-malta/pessoaT002_sinal-vontade_rep01.npy",
+      "sha256": "11f337e510e2c01950915ddb59eba0a6a4c03229fc08c16820a52830ecfa072a"
+    }
+  ],
+  "n_clipes": 42,
+  "pessoas": [
+    "T002",
+    "T042",
+    "T044",
+    "T045",
+    "TUFV",
+    "V01",
+    "V02"
+  ],
+  "classes": [
+    "acontecer",
+    "amarelo",
+    "america",
+    "bala",
+    "banheiro",
+    "barulho",
+    "cinco",
+    "conhecer",
+    "espelho",
+    "esquina",
+    "filho",
+    "maca",
+    "medo",
+    "ruim",
+    "sapo",
+    "vacina",
+    "vontade"
+  ]
+}

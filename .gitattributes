@@ -1,0 +1,4 @@
+# Snapshots publicados: preservar bytes e hashes, inclusive quebras de linha.
+experimentos-privados/app-baseline-v1/** -text
+experimentos-privados/etapa4/** -text
+experimentos-privados/etapa5/** -text

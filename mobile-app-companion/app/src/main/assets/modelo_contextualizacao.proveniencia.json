@@ -1,0 +1,36 @@
+{
+  "_aviso": "Carimbo do modelo de contextualização versionado neste diretório. O teste ModeloContextualizacaoProvenienciaTest falha se o .tflite ou as tabelas mudarem sem este arquivo ser atualizado junto — é a guarda executável de docs/contextualizacao-implementacao.md §11.",
+  "modelo": "modelo_contextualizacao.tflite",
+  "tflite_sha256": "c59be34a3c2dcc21bc1c98bdc83b55358687763798380a6be84fb558c3325608",
+  "tflite_bytes": 47536960,
+  "glosa_ids_sha256": "137dfb817c0aec63feb0aabc3718ce2f4ea74cc27e5026c3cc5b55ddff7d6aad",
+  "destokenizar_sha256": "36d5747cc48b5914e363ec6aeea7fc7a94bcc961cac8edcbac6098d2cad49e9b",
+  "origem": {
+    "experimento": "v2",
+    "comando": "cd contextualization-model && python exportacao/para_tflite.py --experimento v2 --quantizacao int8-dynamic",
+    "checkpoint_base": "unicamp-dl/ptt5-small-portuguese-vocab, podado (45,1M parâmetros, vocabulário 1.987)",
+    "relatorio": "contextualization-model/resultados-v2/relatorio.md",
+    "arquivo_gerado_em": "2026-09-11T12:47 (data de modificação do arquivo; o commit exato da exportação não foi registrado)"
+  },
+  "contrato": {
+    "S_ENC": 16,
+    "T_DEC": 24,
+    "D_MODEL": 512,
+    "assinaturas": [
+      "encode",
+      "decode_step"
+    ]
+  },
+  "metricas_validacao_sintetica": {
+    "_ressalva": "Validação SINTÉTICA (referências do mesmo gerador do treino). Não mede tradução de Libras — ver o relatório.",
+    "acerto_negacao": 1.0,
+    "content_word_recall": 1.0,
+    "exact_match": 0.395,
+    "f1_palavras": 0.824
+  },
+  "tabelas": {
+    "vocabulario": 1996,
+    "origem": "recuperadas do checkpoint v2 por contextualization-model/exportacao/recuperar_tabelas.py (2026-09-13)",
+    "motivo": "as tabelas versionadas antes vinham de uma poda refeita depois do treino (1.985 peças) e deslocavam os ids; ver docs/prontidao-demo/06-latencia.md §6.1"
+  }
+}

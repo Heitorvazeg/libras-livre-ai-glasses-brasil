@@ -1,0 +1,9 @@
+# Trilha de contextualização (glosa -> português) — Libras Livre
+# Stack separada da trilha de visão (../computer-vision-model/requirements.txt):
+# aqui não há mediapipe/opencv, e lá não há torch/transformers.
+torch>=2.4
+transformers>=4.44
+sentencepiece>=0.2
+pyyaml>=6.0
+# Conversão para .tflite — versão EXATA a fixar após o spike do §0
+# ai-edge-torch==x.y.z

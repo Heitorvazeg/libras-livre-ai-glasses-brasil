@@ -1,0 +1,359 @@
+{
+  "schema_version": 1,
+  "grupos_conteudo": {
+    "agendar:Ev67uA_68Ak": "agendar:Ev67uA_68Ak",
+    "ajudar:fFKvNicVieA": "ajudar:fFKvNicVieA",
+    "ajudar:uQMbHg8hKtI": "ajudar:uQMbHg8hKtI",
+    "ajudar:09gLpPdVTlw": "ajudar:09gLpPdVTlw",
+    "ajudar:l1j9s1q0G78": "ajudar:l1j9s1q0G78",
+    "ajudar:nuzA5vSsPjE": "ajudar:nuzA5vSsPjE",
+    "atendimento:eaWQDGzcP2I": "atendimento:eaWQDGzcP2I",
+    "buscar:cVGe2ZtC5QU": "buscar:cVGe2ZtC5QU",
+    "buscar:lUUgCnP07qs": "buscar:lUUgCnP07qs",
+    "buscar:Zq0lXyLWKSs": "buscar:Zq0lXyLWKSs",
+    "buscar:Evxf2fAXrOM": "buscar:Evxf2fAXrOM",
+    "buscar:P9uCesa0rXI": "buscar:P9uCesa0rXI",
+    "cansado:Z0hUNrHf6us": "cansado:Z0hUNrHf6us",
+    "como:XEaQnV4LnR8": "como:XEaQnV4LnR8",
+    "consulta:LF-pct8Z6NY": "consulta:LF-pct8Z6NY",
+    "documento:7FUK04h5_zw": "documento:7FUK04h5_zw",
+    "documento:klLtmu4e3kg": "documento:klLtmu4e3kg",
+    "documento:Io02GQaMWdI": "documento:Io02GQaMWdI",
+    "documento:DtxfZwfxbxs": "documento:DtxfZwfxbxs",
+    "documento:uu4gsmAVprA": "documento:uu4gsmAVprA",
+    "dor:OTAjCwZcmM4": "dor:OTAjCwZcmM4",
+    "dor:jjjWh57LxLg": "dor:jjjWh57LxLg",
+    "dor:KdgOqgaP_nQ": "dor:KdgOqgaP_nQ",
+    "dor:YqclCOtv9Qo": "dor:YqclCOtv9Qo",
+    "dor:eAvC4QeUzBA": "dor:eAvC4QeUzBA",
+    "entrar:L6CKrnDh8DY": "entrar:L6CKrnDh8DY",
+    "entrar:V1N2UEp-XQA": "entrar:V1N2UEp-XQA",
+    "entrar:EcHsWMLnP14": "entrar:EcHsWMLnP14",
+    "entrar:NyYk9PfFWdg": "entrar:NyYk9PfFWdg",
+    "entrar:9gAbCgActfk": "entrar:9gAbCgActfk",
+    "escrever:Q5RLtaEl4Mo": "escrever:Q5RLtaEl4Mo",
+    "escrever:RpVxBZ3NSjI": "escrever:RpVxBZ3NSjI",
+    "escrever:j2RopRM-5Hs": "escrever:j2RopRM-5Hs",
+    "escrever:eoF-sf-XJDk": "escrever:eoF-sf-XJDk",
+    "escrever:WY5r1x1g-0c": "escrever:WY5r1x1g-0c",
+    "esperar:RDMFzRdJT38": "esperar:RDMFzRdJT38",
+    "esperar:XppZHIsDuDI": "esperar:XppZHIsDuDI",
+    "esperar:f70M7KpTHMc": "esperar:f70M7KpTHMc",
+    "esperar:OqBsQ5uaS30": "esperar:OqBsQ5uaS30",
+    "esperar:pNzcB9mRIRE": "esperar:pNzcB9mRIRE",
+    "ler:UhL0NGvbLtc": "ler:UhL0NGvbLtc",
+    "ler:6mCSlgvXGJU": "ler:6mCSlgvXGJU",
+    "ler:GHxNG97at2g": "ler:GHxNG97at2g",
+    "ler:6wrQWI2BLfA": "ler:6wrQWI2BLfA",
+    "ler:IMt6IW6NpzU": "ler:IMt6IW6NpzU",
+    "levantar:in9uofivfu8": "levantar:in9uofivfu8",
+    "levar:IJunKXcMNzs": "levar:IJunKXcMNzs",
+    "levar:Gh2Tu7IxvhI": "levar:Gh2Tu7IxvhI",
+    "levar:brCezcyagPE": "levar:brCezcyagPE",
+    "levar:jj_2JTzuw50": "trazer:jj_2JTzuw50",
+    "levar:PY8ZLcrJ7wE": "levar:PY8ZLcrJ7wE",
+    "marcar:e8iiLE8o46k": "marcar:e8iiLE8o46k",
+    "medo:9Z9UtH87kKk": "medo:9Z9UtH87kKk",
+    "mostrar:t-adUyr9-Lg": "mostrar:t-adUyr9-Lg",
+    "mostrar:mXYJIR_iiAk": "mostrar:mXYJIR_iiAk",
+    "mostrar:Jq5xqWZZCSE": "mostrar:Jq5xqWZZCSE",
+    "mostrar:3t4v0X-2NHo": "mostrar:3t4v0X-2NHo",
+    "mostrar:JmB-nrcWluA": "mostrar:JmB-nrcWluA",
+    "nao:g5uLm2N0mY0": "nao:g5uLm2N0mY0",
+    "nervoso:hSei88IDjBM": "nervoso:hSei88IDjBM",
+    "nome:TotOUnrWBdI": "nome:TotOUnrWBdI",
+    "nome:R4qxkPmSdLY": "nome:R4qxkPmSdLY",
+    "nome:nJQ3pjPZhnU": "nome:nJQ3pjPZhnU",
+    "nome:-4NrBGLwex8": "nome:-4NrBGLwex8",
+    "nome:VHsY4xFczPc": "nome:VHsY4xFczPc",
+    "obrigado:vub7frPhIQQ": "obrigado:vub7frPhIQQ",
+    "obrigado:syoVxS7zeNY": "obrigado:syoVxS7zeNY",
+    "obrigado:IqcDzU6pi_k": "obrigado:IqcDzU6pi_k",
+    "obrigado:1OUgjL9FXlE": "obrigado:1OUgjL9FXlE",
+    "obrigado:s73yj4lSf94": "obrigado:s73yj4lSf94",
+    "onde:ESKTx1iEyl4": "onde:ESKTx1iEyl4",
+    "onde:sVGn8oelNw4": "onde:sVGn8oelNw4",
+    "perguntar:QIQyENCW-Tk": "perguntar:QIQyENCW-Tk",
+    "por-favor:HHXp06ezgEQ": "por-favor:HHXp06ezgEQ",
+    "por-favor:V3xEY9sykjY": "por-favor:V3xEY9sykjY",
+    "por-favor:3A4to--R6aE": "por-favor:3A4to--R6aE",
+    "por-favor:lDOR-cnhfQc": "por-favor:lDOR-cnhfQc",
+    "por-favor:PjhcPVuNWDs": "por-favor:PjhcPVuNWDs",
+    "porque:ZF0fv66xQWI": "porque:ZF0fv66xQWI",
+    "porque:zdGaRBjU0uM": "porque:zdGaRBjU0uM",
+    "porque:37_69gq6hpg": "porque:37_69gq6hpg",
+    "porque:0NBGxScwpLo": "porque:0NBGxScwpLo",
+    "porque:z_Nh25YWhbc": "porque:z_Nh25YWhbc",
+    "precisar:ZO_G4kiX-Uo": "precisar:ZO_G4kiX-Uo",
+    "precisar:iYWPY7YmA-8": "precisar:iYWPY7YmA-8",
+    "precisar:gcfIS2nsxps": "precisar:gcfIS2nsxps",
+    "precisar:o9xp8DzhjSU": "precisar:o9xp8DzhjSU",
+    "precisar:ScakO-9bMAQ": "precisar:ScakO-9bMAQ",
+    "preciso:LLXGGLyE4uo": "preciso:LLXGGLyE4uo",
+    "protocolo:xOypLUywmNU": "protocolo:xOypLUywmNU",
+    "quando:sT_UtRWc73w": "quando:sT_UtRWc73w",
+    "quando:z-pybYudVfM": "quando:z-pybYudVfM",
+    "quando:DOB_etvQfeM": "quando:DOB_etvQfeM",
+    "quando:VUn4R7mudKM": "quando:VUn4R7mudKM",
+    "quero:wlZg3JwmXL8": "quero:wlZg3JwmXL8",
+    "ruim:OiysZ7GJ2qU": "ruim:OiysZ7GJ2qU",
+    "ruim:BDGvkp5CxZA": "ruim:BDGvkp5CxZA",
+    "ruim:Z0kxSA7lQhw": "ruim:Z0kxSA7lQhw",
+    "ruim:7aGzTguPcbY": "ruim:7aGzTguPcbY",
+    "ruim:-7Rzdp6qCZM": "ruim:-7Rzdp6qCZM",
+    "sair:8-rDLV_TMhY": "sair:8-rDLV_TMhY",
+    "sair:Ze9zvkxb_VU": "sair:Ze9zvkxb_VU",
+    "sair:gAA8zW0AKLA": "sair:gAA8zW0AKLA",
+    "sair:doMUR9f9Kw4": "sair:doMUR9f9Kw4",
+    "sair:7dvBFrXnFxY": "sair:7dvBFrXnFxY",
+    "senha:q7GN1AJXeFU": "senha:q7GN1AJXeFU",
+    "senha:_1gfqLbgvuU": "senha:_1gfqLbgvuU",
+    "senha:yKbVsDyziDI": "senha:yKbVsDyziDI",
+    "sentar:hKImzxXTd14": "sentar:hKImzxXTd14",
+    "sim:4_gsOiAvvoI": "sim:4_gsOiAvvoI",
+    "trazer:X_sGUOYP880": "trazer:vE04wlp6Agw",
+    "trazer:vE04wlp6Agw": "trazer:vE04wlp6Agw",
+    "trazer:NtUtqUwaRhM": "trazer:NtUtqUwaRhM",
+    "trazer:jj_2JTzuw50": "trazer:jj_2JTzuw50",
+    "trazer:UXsXFP6mToQ": "trazer:UXsXFP6mToQ",
+    "urgente:g9uJgU9vJLI": "urgente:g9uJgU9vJLI",
+    "voltar:PjrFp93O4Ew": "voltar:PjrFp93O4Ew",
+    "voltar:E3T7O0A8CQo": "voltar:E3T7O0A8CQo",
+    "voltar:-9NNV-6Iw3k": "voltar:-9NNV-6Iw3k",
+    "voltar:_k5HpKepiZw": "voltar:_k5HpKepiZw",
+    "voltar:5OCzA6cn_qY": "voltar:5OCzA6cn_qY"
+  },
+  "duplicatas": [
+    {
+      "distancia_absoluta": 0.0,
+      "distancia_movimento": 0.0,
+      "classificacao": "duplicata",
+      "palavra_a": "levar",
+      "id_a": "jj_2JTzuw50",
+      "canal_a": "Hellen Pereira Lima",
+      "palavra_b": "trazer",
+      "id_b": "jj_2JTzuw50",
+      "canal_b": "Hellen Pereira Lima"
+    },
+    {
+      "distancia_absoluta": 0.0,
+      "distancia_movimento": 0.0,
+      "classificacao": "duplicata",
+      "palavra_a": "trazer",
+      "id_a": "X_sGUOYP880",
+      "canal_a": "alefer2012",
+      "palavra_b": "trazer",
+      "id_b": "vE04wlp6Agw",
+      "canal_b": "motivabrasil"
+    }
+  ],
+  "por_candidato": {
+    "consulta:LF-pct8Z6NY": {
+      "imagem": "referencia/consulta-LF-pct8Z6NY.jpg",
+      "referencias": [],
+      "convergencia": "sem_referencia"
+    },
+    "entrar:L6CKrnDh8DY": {
+      "imagem": "referencia/entrar-L6CKrnDh8DY.jpg",
+      "referencias": [
+        {
+          "corpus": "V-LIBRASIL",
+          "arquivo": "pessoaV01_sinal-entrar_rep01.mp4"
+        }
+      ],
+      "convergencia": "pendente"
+    },
+    "escrever:Q5RLtaEl4Mo": {
+      "imagem": "referencia/escrever-Q5RLtaEl4Mo.jpg",
+      "referencias": [
+        {
+          "corpus": "V-LIBRASIL",
+          "arquivo": "pessoaV02_sinal-escrever_rep01.mp4"
+        },
+        {
+          "corpus": "MALTA",
+          "arquivo": "pessoaTUFV_sinal-escrever_rep01.mp4"
+        }
+      ],
+      "convergencia": "pendente"
+    },
+    "escrever:RpVxBZ3NSjI": {
+      "imagem": "referencia/escrever-RpVxBZ3NSjI.jpg",
+      "referencias": [
+        {
+          "corpus": "V-LIBRASIL",
+          "arquivo": "pessoaV02_sinal-escrever_rep01.mp4"
+        },
+        {
+          "corpus": "MALTA",
+          "arquivo": "pessoaTUFV_sinal-escrever_rep01.mp4"
+        }
+      ],
+      "convergencia": "pendente"
+    },
+    "escrever:eoF-sf-XJDk": {
+      "imagem": "referencia/escrever-eoF-sf-XJDk.jpg",
+      "referencias": [
+        {
+          "corpus": "V-LIBRASIL",
+          "arquivo": "pessoaV02_sinal-escrever_rep01.mp4"
+        },
+        {
+          "corpus": "MALTA",
+          "arquivo": "pessoaTUFV_sinal-escrever_rep01.mp4"
+        }
+      ],
+      "convergencia": "pendente"
+    },
+    "esperar:RDMFzRdJT38": {
+      "imagem": "referencia/esperar-RDMFzRdJT38.jpg",
+      "referencias": [
+        {
+          "corpus": "V-LIBRASIL",
+          "arquivo": "pessoaV03_sinal-esperar_rep01.mp4"
+        },
+        {
+          "corpus": "MALTA",
+          "arquivo": "pessoaTUFV_sinal-esperar_rep01.mp4"
+        }
+      ],
+      "convergencia": "pendente"
+    },
+    "levar:IJunKXcMNzs": {
+      "imagem": "referencia/levar-IJunKXcMNzs.jpg",
+      "referencias": [
+        {
+          "corpus": "V-LIBRASIL",
+          "arquivo": "pessoaV03_sinal-levar_rep01.mp4"
+        },
+        {
+          "corpus": "MALTA",
+          "arquivo": "pessoaTUFV_sinal-levar_rep01.mp4"
+        }
+      ],
+      "convergencia": "pendente"
+    },
+    "obrigado:vub7frPhIQQ": {
+      "imagem": "referencia/obrigado-vub7frPhIQQ.jpg",
+      "referencias": [
+        {
+          "corpus": "V-LIBRASIL",
+          "arquivo": "pessoaV01_sinal-obrigado_rep01.mp4"
+        },
+        {
+          "corpus": "MALTA",
+          "arquivo": "pessoaT048_sinal-obrigado_rep01.mp4"
+        }
+      ],
+      "convergencia": "pendente"
+    },
+    "porque:ZF0fv66xQWI": {
+      "imagem": "referencia/porque-ZF0fv66xQWI.jpg",
+      "referencias": [
+        {
+          "corpus": "MALTA",
+          "arquivo": "pessoaT002_sinal-porque_rep01.mp4"
+        }
+      ],
+      "convergencia": "pendente"
+    },
+    "porque:zdGaRBjU0uM": {
+      "imagem": "referencia/porque-zdGaRBjU0uM.jpg",
+      "referencias": [
+        {
+          "corpus": "MALTA",
+          "arquivo": "pessoaT002_sinal-porque_rep01.mp4"
+        }
+      ],
+      "convergencia": "pendente"
+    },
+    "precisar:ZO_G4kiX-Uo": {
+      "imagem": "referencia/precisar-ZO_G4kiX-Uo.jpg",
+      "referencias": [
+        {
+          "corpus": "MALTA",
+          "arquivo": "pessoaT002_sinal-precisar_rep01.mp4"
+        }
+      ],
+      "convergencia": "pendente"
+    },
+    "precisar:iYWPY7YmA-8": {
+      "imagem": "referencia/precisar-iYWPY7YmA-8.jpg",
+      "referencias": [
+        {
+          "corpus": "MALTA",
+          "arquivo": "pessoaT002_sinal-precisar_rep01.mp4"
+        }
+      ],
+      "convergencia": "pendente"
+    },
+    "quando:sT_UtRWc73w": {
+      "imagem": "referencia/quando-sT_UtRWc73w.jpg",
+      "referencias": [
+        {
+          "corpus": "V-LIBRASIL",
+          "arquivo": "pessoaV02_sinal-quando_rep01.mp4"
+        }
+      ],
+      "convergencia": "pendente"
+    },
+    "quando:z-pybYudVfM": {
+      "imagem": "referencia/quando-z-pybYudVfM.jpg",
+      "referencias": [
+        {
+          "corpus": "V-LIBRASIL",
+          "arquivo": "pessoaV02_sinal-quando_rep01.mp4"
+        }
+      ],
+      "convergencia": "pendente"
+    },
+    "sair:8-rDLV_TMhY": {
+      "imagem": "referencia/sair-8-rDLV_TMhY.jpg",
+      "referencias": [
+        {
+          "corpus": "V-LIBRASIL",
+          "arquivo": "pessoaV01_sinal-sair_rep01.mp4"
+        }
+      ],
+      "convergencia": "pendente"
+    },
+    "sair:Ze9zvkxb_VU": {
+      "imagem": "referencia/sair-Ze9zvkxb_VU.jpg",
+      "referencias": [
+        {
+          "corpus": "V-LIBRASIL",
+          "arquivo": "pessoaV01_sinal-sair_rep01.mp4"
+        }
+      ],
+      "convergencia": "pendente"
+    },
+    "trazer:X_sGUOYP880": {
+      "imagem": "referencia/trazer-X_sGUOYP880.jpg",
+      "referencias": [
+        {
+          "corpus": "V-LIBRASIL",
+          "arquivo": "pessoaV02_sinal-trazer_rep01.mp4"
+        },
+        {
+          "corpus": "MALTA",
+          "arquivo": "pessoaT002_sinal-trazer_rep01.mp4"
+        }
+      ],
+      "convergencia": "pendente"
+    },
+    "trazer:vE04wlp6Agw": {
+      "imagem": "referencia/trazer-vE04wlp6Agw.jpg",
+      "referencias": [
+        {
+          "corpus": "V-LIBRASIL",
+          "arquivo": "pessoaV02_sinal-trazer_rep01.mp4"
+        },
+        {
+          "corpus": "MALTA",
+          "arquivo": "pessoaT002_sinal-trazer_rep01.mp4"
+        }
+      ],
+      "convergencia": "pendente"
+    }
+  }
+}

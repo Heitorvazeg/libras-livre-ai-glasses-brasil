@@ -8,6 +8,7 @@
 
 package com.meta.wearable.dat.externalsampleapps.cameraaccess.stream
 
+import android.Manifest
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
@@ -15,12 +16,15 @@ import android.app.PendingIntent
 import android.app.Service
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.content.pm.ServiceInfo
 import android.os.Binder
 import android.os.IBinder
 import android.os.PowerManager
 import android.util.Log
+import androidx.annotation.MainThread
 import androidx.core.app.NotificationCompat
+import androidx.core.content.ContextCompat
 import com.meta.wearable.dat.externalsampleapps.cameraaccess.MainActivity
 import com.meta.wearable.dat.externalsampleapps.cameraaccess.R
 
@@ -47,14 +51,35 @@ class StreamingService : Service() {
     private const val WAKELOCK_TIMEOUT_MS = 60L * 60L * 1000L
     private const val ACTION_STOP =
         "com.meta.wearable.dat.externalsampleapps.cameraaccess.stream.STOP"
+    private const val EXTRA_OWNER = "stream_owner"
+    private const val EXTRA_REVISION = "stream_revision"
+    // Não pertence à instância Service: precisa sobreviver a destroy/create e intents tardios.
+    private val ownership = ControleDonoStreaming()
 
-    fun start(context: Context) {
-      val intent =
-          Intent(context, StreamingService::class.java).apply { `package` = context.packageName }
-      context.startForegroundService(intent)
+    @MainThread
+    fun start(context: Context, owner: String) {
+      ownership.iniciar(owner) { enviar(context, it) }
     }
 
-    fun stop(context: Context) {
+    /**
+     * Chamar de novo, com o stream já rodando, quando RECORD_AUDIO acaba de ser concedido em
+     * tempo de execução (ver CameraViewModel.onWakeWordButton) — reinvoca onStartCommand, que
+     * reavalia a permissão e chama startForeground() de novo com o tipo "microphone" incluído
+     * (idempotente: startForeground()/acquireWakeLock() já toleram ser chamados de novo).
+     * Sem isso, uma sessão cujo RECORD_AUDIO só foi concedido DEPOIS do stream já ter começado
+     * ficaria sem a proteção de foreground service pro mic até a PRÓXIMA vez que o stream
+     * reiniciar.
+     */
+    @MainThread
+    fun refreshForegroundServiceType(context: Context, owner: String) = start(context, owner)
+
+    @MainThread
+    fun stop(context: Context, owner: String) {
+      // A drenagem de um VM antigo pode terminar depois do start de outro VM.
+      ownership.parar(owner) { enviar(context, it) }
+    }
+
+    private fun enviar(context: Context, comando: ControleDonoStreaming.Comando) {
       // Route the stop through onStartCommand (a STOP-action start) rather than stopService(). Once
       // startForegroundService() is called the system requires startForeground() to follow; calling
       // stopService() while that start is still pending tears the service down with the foreground
@@ -64,7 +89,9 @@ class StreamingService : Service() {
       val intent =
           Intent(context, StreamingService::class.java).apply {
             `package` = context.packageName
-            action = ACTION_STOP
+            if (!comando.iniciar) action = ACTION_STOP
+            putExtra(EXTRA_OWNER, comando.dono)
+            putExtra(EXTRA_REVISION, comando.revisao)
           }
       context.startForegroundService(intent)
     }
@@ -88,32 +115,61 @@ class StreamingService : Service() {
 
   override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
     // Always enter the foreground first — even for a STOP request that may have raced ahead of a
-    // pending start — so the startForegroundService() contract is always satisfied. Uses
-    // FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE for wearable streaming, which doesn't require CAMERA
-    // permission since the phone's camera isn't used.
+    // pending start — so the startForegroundService() contract is always satisfied.
+    //
+    // CONNECTED_DEVICE for the wearable streaming (doesn't require CAMERA permission since the
+    // phone's camera isn't used) is always included. MICROPHONE is included only when
+    // RECORD_AUDIO is already granted — Libras Livre requests that permission lazily, in
+    // context, right before it's first needed (ver
+    // MainActivity.requestRecordAudioPermission()) — which is AFTER this service typically
+    // already started. Declaring MICROPHONE without the permission granted makes
+    // startForeground() throw SecurityException, which would break the core streaming flow for
+    // every user on first use. refreshForegroundServiceType() re-enters here once the permission
+    // is granted mid-session, upgrading the type without needing to restart the stream.
+    val hasRecordAudio =
+        ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) ==
+            PackageManager.PERMISSION_GRANTED
+    val foregroundServiceType =
+        if (hasRecordAudio) {
+          ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE or
+              ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE
+        } else {
+          ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE
+        }
     try {
       startForeground(
           ForegroundServiceNotificationIds.ACTIVE_RECORDING_NOTIFICATION_ID,
           createNotification(),
-          ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE,
+          foregroundServiceType,
       )
     } catch (e: Exception) {
       Log.e(TAG, "Failed to enter foreground; stopping service", e)
-      stopSelf()
+      // Não encerrar um start mais recente já entregue pelo sistema.
+      if (stopSelfResult(startId)) releaseWakeLock()
       return START_NOT_STICKY
     }
 
-    if (intent?.action == ACTION_STOP) {
+    val comando = intent?.let { recebido ->
+      recebido.getStringExtra(EXTRA_OWNER)?.let { owner ->
+        ControleDonoStreaming.Comando(
+            recebido.getLongExtra(EXTRA_REVISION, -1L), owner, recebido.action != ACTION_STOP,
+        )
+      }
+    }
+    val decisao = ownership.receber(comando)
+    if (decisao.intentDesatualizado) Log.d(TAG, "Late/unknown intent; reconciling current owner")
+    if (decisao.donoAtivo == null) {
       Log.d(TAG, "Service stopping")
       releaseWakeLock()
-      stopForeground(STOP_FOREGROUND_REMOVE)
-      stopSelf()
+      // Se há outro startId pendente, manter foreground até que ele satisfaça o contrato.
+      if (stopSelfResult(startId)) stopForeground(STOP_FOREGROUND_REMOVE)
       return START_NOT_STICKY
     }
 
     Log.d(TAG, "Service started")
     acquireWakeLock()
-    return START_STICKY
+    // Um processo novo não tem VM/stream dono. Não ressuscitar câmera/serviço por intent nulo.
+    return START_NOT_STICKY
   }
 
   override fun onDestroy() {

@@ -16,7 +16,7 @@
     <string name="home_tip_preview_title" description="Tip title about preview">Start preview</string>
     <string name="home_tip_preview" description="Tip about preview">See the live camera feed from your glasses.</string>
     <string name="home_tip_capture_title" description="Tip title about capture">Capture</string>
-    <string name="home_tip_capture" description="Tip about capture">Take photos and record video with audio.</string>
+    <string name="home_tip_capture" description="Tip about capture">Take photos and record video.</string>
     <string name="error_activity_unavailable" description="Error shown when registration is tapped but no activity is available">Can\'t open right now. Try again.</string>
 
     <!-- Camera Screen -->
@@ -31,8 +31,6 @@
     <string name="placeholder_put_on_glasses" description="Placeholder when no active device">Put on your glasses</string>
     <string name="placeholder_ready_title" description="Placeholder when ready to start a session">Ready</string>
     <string name="placeholder_ready_subtitle" description="Placeholder subtitle when ready">Start a session to connect to your glasses.</string>
-    <string name="placeholder_session_started_title" description="Placeholder when session is started">Session started</string>
-    <string name="placeholder_session_started_subtitle" description="Placeholder subtitle when session is started">Start the preview to see the live camera feed.</string>
     <string name="paused_title" description="Badge shown over the frozen preview when the glasses pause the stream">Paused</string>
     <string name="paused_subtitle" description="Instruction telling the user how to resume a paused stream">Tap your glasses to resume.</string>
 
@@ -44,17 +42,117 @@
     <string name="record_video" description="Record video content description">Record video</string>
     <string name="stop_recording" description="Stop recording content description">Stop recording</string>
     <string name="capture_photo" description="Capture photo content description">Capture photo</string>
-    <string name="mic_on" description="Microphone on content description">Turn off microphone</string>
-    <string name="mic_off" description="Microphone off content description">Turn on microphone</string>
     <string name="start_session_button" description="Start session button">Start session</string>
     <string name="end_session_button" description="End session button">End session</string>
 
     <!-- Libras Livre: captura e reconhecimento de sinal -->
-    <string name="libras_capture_start" description="Button label to start capturing a Libras sign">Capturar sinal</string>
-    <string name="libras_capture_stop" description="Button label to stop capturing and recognize the sign">Parar e reconhecer</string>
-    <string name="libras_capture_hint" description="Hint shown while collecting a sign">Sinalize e toque em parar</string>
+    <string name="libras_aguarde" description="Capture state while the first usable frame (torso with both shoulders) has not arrived yet">Aguarde…</string>
+    <string name="libras_pode_sinalizar" description="Capture state once the first usable frame arrived: the deaf person can start signing">Pode sinalizar</string>
     <string name="libras_classifying" description="Status while the sign is being classified">Reconhecendo…</string>
-    <string name="libras_recognized_label" description="Label above the recognized word">Sinal reconhecido</string>
+    <string name="conversa_sinais" description="Conversation panel row label: the signs recognized in the turn">Sinais</string>
+    <string name="conversa_falado" description="Conversation panel row label: the sentence the app spoke aloud">Falado</string>
+    <string name="conversa_resposta" description="Conversation panel row label: the attendant's transcribed reply">Resposta</string>
+
+    <!-- Libras Livre: orquestração da sessão de diálogo (docs/orquestracao-dialogo-audio-plano.md) -->
+    <!-- Botão principal (docs/prontidao-demo/04 §4.7): o rótulo muda com o estado do diálogo -->
+    <string name="botao_iniciar" description="Main button in the waiting state: starts capturing signs">Iniciar</string>
+    <string name="botao_encerrar_agora" description="Main button while capturing signs or listening: ends that step now">Encerrar agora</string>
+    <string name="botao_falando" description="Main button, disabled, while the app speaks the sentence">Falando…</string>
+    <string name="botao_ouvir_resposta" description="Main button when the reply transcription came back empty: listens again">Ouvir resposta</string>
+    <string name="botao_transcrevendo" description="Main button, disabled, while the reply is transcribed">Transcrevendo…</string>
+    <string name="botao_conecte_oculos" description="Main button, disabled, when no glasses are available">Conecte os óculos</string>
+    <string name="botao_consentimento_pendente" description="Libras Livre: inert main-button label while consent is pending (docs/consentimento-por-atendimento-plano.md §2.2) — never actually shown as a clickable label, the real actions are the two symmetric buttons">Aguardando consentimento</string>
+    <string name="botao_repetir" description="Libras Livre: main button while the repetition request is shown to the deaf person on the avatar — reopens sign capture without asking for consent again, since it is the same visit">Capturar de novo</string>
+    <string name="cancelar_atendimento" description="Small button that stops everything and goes back to the waiting state">Cancelar atendimento</string>
+    <string name="conversa_decisao" description="Conversation panel row label: what the app decided about the signed sentence">Aviso</string>
+    <string name="conversa_decisao_repita" description="Conversation panel: the app did not understand and asked for a repetition">Não entendi: pedido de repetição</string>
+    <string name="conversa_decisao_desistiu" description="Conversation panel: after three failures the app suggested another way to communicate">Não foi possível entender: tente outro meio</string>
+
+    <!-- Libras Livre: avatar VLibras, estado 7 (docs/vlibras-webview-plano.md) -->
+    <string name="avatar_open" description="Button that opens the Libras avatar screen">Avatar</string>
+    <string name="avatar_close" description="Content description of the button that closes the Libras avatar screen">Fechar o avatar</string>
+    <string name="avatar_loading" description="Shown while the VLibras player loads — it takes 6 to 9 seconds">Preparando o avatar…</string>
+    <string name="avatar_failed" description="Shown when the VLibras player could not start; the caption below is the fallback">O avatar não pôde ser carregado. A resposta está escrita abaixo.</string>
+    <string name="avatar_retry" description="Button that retries loading the VLibras player">Tentar de novo</string>
+    <string name="avatar_pular" description="Button that ends the avatar step right away, leaving the caption on screen">Pular</string>
+
+    <!-- Libras Livre: faixa de estado (docs/prontidao-demo/10-tela.md §10.2) -->
+    <string name="aviso_repita" description="Status bar warning after the app asked for a repetition">Não entendi — peça para repetir</string>
+    <string name="aviso_desistiu" description="Status bar warning after three failed sentences">Não foi possível entender — tente outro meio</string>
+    <string name="aviso_voz_reserva" description="Status bar warning: the local voice failed and the Android system voice is being used">Voz de reserva em uso</string>
+    <string name="aviso_stream_pausado" description="Status bar block: the glasses paused the camera stream after a tap on the temple">Stream pausado nos óculos — toque na haste para retomar</string>
+    <string name="aviso_mic_oculos_indisponivel" description="Status bar warning: glasses microphone unavailable, the phone microphone is used instead">Microfone dos óculos indisponível, usando o do celular</string>
+    <string name="aviso_celular_quente" description="Status bar warning: the phone is overheating">Celular muito quente: desempenho reduzido</string>
+    <string name="aviso_avatar_liberado_memoria" description="Status bar warning: the avatar was unloaded because memory is low">Avatar liberado por falta de memória; resposta em legenda</string>
+    <string name="aviso_aquecimento_falhou" description="Status bar block: a warm-up step failed; the argument lists which">Preparação com falha — %1$s</string>
+    <string name="aviso_consentimento_recusado" description="Libras Livre: informational status bar notice after the deaf person declines consent in ①.5 (docs/consentimento-por-atendimento-plano.md §2.5) — cleared at the start of the next consent request">Sem uso do reconhecimento de sinais — siga por bilhete ou intérprete</string>
+    <string name="aviso_confirmacao_expirada" description="Libras Livre: status bar notice in ②.5 when nobody pressed Confirmar/Corrigir before the safety timeout — the recognized phrase was discarded and nothing was spoken to the attendant">Tempo esgotado sem conferir a frase — nada foi falado, peça para sinalizar de novo</string>
+    <string name="aviso_correcao_sem_camera" description="Libras Livre: status bar notice in ②.5 when Corrigir could not turn the camera back on — the previous phrase is NOT spoken; the operator can retry, confirm on purpose, or cancel">Não foi possível reabrir a câmera — a frase não foi falada; tente corrigir de novo ou cancele</string>
+    <string name="aviso_consentimento_sem_libras" description="Libras Livre: status bar notice when the avatar failed to animate (or was skipped) while asking for consent in ①.5, so the explanation was shown only as Portuguese text (docs/consentimento-por-atendimento-plano.md §2.1) — the operator should judge whether to proceed via bilhete/intérprete instead">Consentimento mostrado só em texto — avatar em Libras indisponível</string>
+    <string name="aviso_aguarde" description="Status bar: capture opened, waiting for the first usable frame">Aguarde…</string>
+    <string name="aviso_sinalizando" description="Status bar while the person is signing, with the number of signs captured">● sinalizando · %1$d sinais</string>
+    <string name="aviso_parado" description="Status bar while the person is at rest, with the number of signs captured">○ parado · %1$d sinais</string>
+    <string name="aviso_tronco_fora" description="Status bar warning: shoulders not visible, the person should step back">Afaste-se: tronco fora do quadro</string>
+    <string name="aviso_ninguem" description="Status bar warning: nobody visible in the camera">Ninguém no quadro</string>
+    <string name="falha_camera_sem_dispositivo" description="Camera failure cause: no active glasses">Óculos não conectados</string>
+    <string name="falha_camera_permissao" description="Camera failure cause: camera permission on the glasses not granted yet">Permissão de câmera dos óculos pendente</string>
+    <string name="falha_camera_atualizacao" description="Camera failure cause: glasses require an update">Os óculos pedem atualização</string>
+    <string name="falha_camera_sessao" description="Camera failure cause: glasses session did not become ready">Óculos não responderam (dobrados ou fora do rosto?)</string>
+    <string name="falha_camera_stream" description="Camera failure cause: stream did not start">Câmera não subiu (bateria ou temperatura dos óculos?)</string>
+    <string name="falha_camera_pausa_longa" description="Camera failure cause: the stream stayed paused too long and the capture was ended">Stream pausado por muito tempo: captura encerrada</string>
+    <string name="falha_camera_bateria_baixa" description="Libras Livre: camera failure cause shown once the DAT reports low/critical glasses battery (docs/confirmacao-e-modo-economia-plano.md §2) — sign capture stays disabled for the rest of the visit">Bateria dos óculos baixa: câmera desligada, atendimento só por voz</string>
+    <string name="estado_aguardando_sinal" description="Dialog state in Portuguese: waiting for signs">Aguardando sinais</string>
+    <string name="estado_pedindo_consentimento" description="Libras Livre: dialog state in Portuguese, shown while the app waits for the operator to accept or decline consent on the deaf person's behalf, before turning on the camera (docs/consentimento-por-atendimento-plano.md §1)">Pedindo consentimento</string>
+    <string name="estado_capturando" description="Dialog state in Portuguese: capturing signs">Capturando</string>
+    <string name="estado_confirmando" description="Libras Livre: dialog state in Portuguese, shown while the deaf person's recognized sentence waits for the operator to confirm or correct it (docs/confirmacao-e-modo-economia-plano.md §1)">Confirmando com a pessoa surda</string>
+    <string name="estado_falando" description="Dialog state in Portuguese: speaking the sentence">Falando</string>
+    <string name="estado_pedindo_repeticao" description="Libras Livre: dialog state in Portuguese, shown while the repetition request is presented to the deaf person on the avatar and the app waits for the operator to reopen sign capture">Pedindo repetição</string>
+    <string name="estado_aguardando_resposta" description="Dialog state in Portuguese: waiting for the attendant's reply">Aguardando resposta</string>
+    <string name="estado_ouvindo" description="Dialog state in Portuguese: listening to the attendant">Ouvindo a resposta</string>
+    <string name="estado_transcrevendo" description="Dialog state in Portuguese: transcribing">Transcrevendo</string>
+    <string name="estado_avatar" description="Dialog state in Portuguese: showing the answer">Mostrando a resposta</string>
+    <string name="comando_de_voz" description="Switch on the main screen that turns voice commands on or off">Comando de voz</string>
+    <string name="mais_controles" description="Toggle that shows the sample's session, preview, photo and recording controls">Controles da sessão</string>
+    <string name="mais_diagnostico" description="Libras Livre: toggle that shows the classifier identity card, warmup summary, SDK session/stream chips and the metrics panel — diagnostic info kept off the main screen (docs/prontidao-demo/10-tela.md §10.3)">Diagnóstico</string>
+    <string name="botao_preparando" description="Main button, disabled, while the app warms up its models">Preparando…</string>
+
+    <!-- Libras Livre: aquecimento (docs/prontidao-demo/06-latencia.md §6.4) -->
+    <string name="aquecimento_titulo" description="Title of the warm-up checklist card">Preparando…</string>
+    <string name="aquecimento_resumo_ok" description="Collapsed warm-up summary when every step succeeded">Pronto ✓</string>
+    <string name="aquecimento_resumo_falhas" description="Collapsed warm-up summary when some step failed; the argument is how many">Pronto com %1$d falha(s) ✗</string>
+    <string name="aquecimento_etapa_mediapipe" description="Warm-up step: loading MediaPipe">MediaPipe</string>
+    <string name="aquecimento_etapa_classificador" description="Warm-up step: loading the sign classifier">Classificador</string>
+    <string name="aquecimento_etapa_contextualizacao" description="Warm-up step: sentence builder">Contextualização</string>
+    <string name="aquecimento_etapa_vosk" description="Warm-up step: loading the speech recognizer">Transcrição (Vosk)</string>
+    <string name="aquecimento_etapa_voz" description="Warm-up step: loading the voice">Voz (Piper)</string>
+    <string name="aquecimento_etapa_avatar" description="Warm-up step: loading the avatar">Avatar</string>
+    <string name="aquecimento_vosk_falhou" description="Warm-up failure reason: speech recognizer model did not load">Modelo do Vosk não carregou</string>
+    <string name="aquecimento_avatar_falhou" description="Warm-up failure reason: avatar did not load">Avatar não carregou (a legenda cobre)</string>
+
+    <!-- Libras Livre: configurações de demo, onda 4 (docs/prontidao-demo/10-tela.md §10.6) -->
+    <string name="demo_config_segmentacao" description="Section: sign segmentation parameters">Segmentação (valores estimados)</string>
+    <string name="demo_config_tempos" description="Section: dialog timeouts">Tempos do diálogo</string>
+    <string name="demo_config_audio" description="Section: audio">Áudio e voz</string>
+    <string name="demo_config_avatar" description="Section: avatar">Avatar</string>
+    <string name="demo_config_simular_queda" description="Action that crashes the avatar renderer to test automatic recovery">Simular queda do avatar</string>
+    <string name="demo_config_valor_invalido" description="Shown when an edited value is rejected">Valor inválido — mantido o anterior</string>
+
+    <!-- Libras Livre: configurações de demo no menu de debug (docs/prontidao-demo/10-tela.md §10.6) -->
+    <string name="demo_config_title" description="Title of the demo settings section in the debug menu">Configurações de demo</string>
+    <string name="demo_config_reset" description="Button that restores every demo setting to its default">Voltar ao padrão</string>
+    <string name="demo_config_recorder" description="Switch that records each glasses session to a CSV file">Gravador de sessão (CSV)</string>
+    <string name="demo_config_metrics" description="Switch that shows the metrics overlay (fps, stage timings, thermal, battery, RAM)">Painel de métricas</string>
+    <string name="demo_config_placeholder" description="Label of the selector for the fake sign classifier mode used while there is no model">Classificador sem modelo (placeholder)</string>
+    <string name="demo_config_modelo_contextualizacao" description="Libras Livre: debug-only switch that turns on the neural contextualization model (guarded) instead of the template — the model has a measured 11.9% fabrication rate (Guardas.kt); never meant to be shown to the attendant outside the debug menu, only to collect real data on when it errs">Modelo neural de contextualização (11,9% de invenção medida — só teste)</string>
+    <string name="avatar_caption_label" description="Label above the written form of what the hearing person said">O atendente disse</string>
+    <string name="avatar_caption_label_confirmacao" description="Libras Livre: label above the written form of what the deaf person signed, shown during the confirmation window (docs/confirmacao-e-modo-economia-plano.md §1) instead of avatar_caption_label">Você sinalizou</string>
+    <string name="avatar_confirmacao_confirmar" description="Libras Livre: button shown during the confirmation window (docs/confirmacao-e-modo-economia-plano.md §1.3) that confirms the recognized phrase is correct and moves on to speaking it to the attendant">Confirmar</string>
+    <string name="avatar_confirmacao_corrigir" description="Libras Livre: button shown during the confirmation window (docs/confirmacao-e-modo-economia-plano.md §1.3) that discards the recognized phrase and reopens sign capture">Corrigir</string>
+    <string name="avatar_caption_label_repeticao" description="Libras Livre: label above the written form of the repetition request, shown to the deaf person while the app waits for the operator to reopen sign capture, instead of avatar_caption_label">O sistema não entendeu</string>
+    <string name="avatar_caption_label_consentimento" description="Libras Livre: label above the written form of the consent explanation, shown in ①.5 before the camera turns on (docs/consentimento-por-atendimento-plano.md §1) instead of avatar_caption_label — PLACEHOLDER text below needs legal and deaf-community review before real use">Antes de começar</string>
+    <string name="consentimento_aceitar" description="Libras Livre: one of two equally-weighted buttons in ①.5 (docs/consentimento-por-atendimento-plano.md §2.2) — accepts, turning on the camera; deliberately NOT visually more prominent than consentimento_recusar">Aceitar</string>
+    <string name="consentimento_recusar" description="Libras Livre: one of two equally-weighted buttons in ①.5 (docs/consentimento-por-atendimento-plano.md §2.2) — declines; the visit continues by written note or interpreter, without turning on the camera; deliberately NOT visually smaller/secondary compared to consentimento_aceitar">Recusar</string>
+    <string name="avatar_waiting" description="Shown on the avatar screen while no answer has been signed yet">Aguardando a resposta do atendente…</string>
 
     <!-- Update required -->
     <string name="update_firmware_button_title" description="Open firmware update">Update firmware</string>
@@ -79,6 +177,7 @@
     <string name="error_photo_capture_failed" description="Error shown when a photo capture fails">Couldn\'t capture photo. Try again.</string>
     <string name="error_recording_too_short" description="Error shown when a recording stops before any video is captured">Couldn\'t record. Hold a little longer and try again.</string>
     <string name="error_recording_save_failed" description="Error shown when a recording cannot be finalized">Recording couldn\'t be saved. Try again.</string>
+    <string name="error_record_audio_permission_denied" description="Error shown when the microphone permission needed to listen for the attendant's reply is denied">Microphone permission denied — can\'t listen for the reply.</string>
 
     <!-- Wearables errors -->
     <string name="error_device_update_required" description="Error shown when a connected device needs a firmware update"><xliff:g id="device_name">%1$s</xliff:g> needs an update to work with this app.</string>

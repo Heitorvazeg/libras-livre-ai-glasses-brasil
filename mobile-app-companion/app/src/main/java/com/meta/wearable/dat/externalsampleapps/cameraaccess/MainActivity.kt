@@ -23,6 +23,8 @@ import android.Manifest.permission.INTERNET
 import android.Manifest.permission.RECORD_AUDIO
 import android.content.pm.PackageManager
 import android.os.Bundle
+import android.view.KeyEvent
+import com.meta.wearable.dat.externalsampleapps.cameraaccess.ui.TeclasDeVolume
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -30,16 +32,22 @@ import androidx.activity.result.contract.ActivityResultContracts.RequestMultiple
 import androidx.activity.result.contract.ActivityResultContracts.RequestPermission
 import androidx.activity.viewModels
 import androidx.core.content.ContextCompat
+import androidx.lifecycle.ViewModel
 import com.meta.wearable.dat.core.Wearables
 import com.meta.wearable.dat.core.types.Permission
 import com.meta.wearable.dat.core.types.PermissionStatus
 import com.meta.wearable.dat.externalsampleapps.cameraaccess.ui.CameraAccessScaffold
 import com.meta.wearable.dat.externalsampleapps.cameraaccess.wearables.WearablesViewModel
-import kotlin.coroutines.resume
-import kotlinx.coroutines.CancellableContinuation
-import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.withLock
+
+/** Conserva o dono do resultado também durante recriação da Activity por configuração. */
+class PermissoesPendentesViewModel : ViewModel() {
+  private val exclusao = Mutex()
+  val wearables = PermissaoExterna<Permission, PermissionStatus>(exclusao)
+  val audio = PermissaoExterna<Unit, Boolean>(exclusao)
+}
 
 class MainActivity : ComponentActivity() {
   companion object {
@@ -58,50 +66,40 @@ class MainActivity : ComponentActivity() {
         }
       }
 
-  private var permissionContinuation: CancellableContinuation<PermissionStatus>? = null
-  private val permissionMutex = Mutex()
+  private val permissoesPendentes: PermissoesPendentesViewModel by viewModels()
+  private val donoLaunchers = Any()
   // Requesting wearable device permissions via the Meta AI app
   private val permissionsResultLauncher =
       registerForActivityResult(Wearables.RequestPermissionContract()) { result ->
         val permissionStatus = result.getOrDefault(PermissionStatus.Denied)
-        permissionContinuation?.resume(permissionStatus)
-        permissionContinuation = null
+        permissoesPendentes.wearables.receber(permissionStatus)
       }
 
-  // Convenience method to make a permission request in a sequential manner
-  // Uses a Mutex to ensure requests are processed one at a time, preventing race conditions
+  // O slot pertence ao pedido externo, não ao tempo de vida de quem aguarda a resposta.
   suspend fun requestWearablesPermission(permission: Permission): PermissionStatus {
-    return permissionMutex.withLock {
-      suspendCancellableCoroutine { continuation ->
-        permissionContinuation = continuation
-        continuation.invokeOnCancellation { permissionContinuation = null }
-        permissionsResultLauncher.launch(permission)
-      }
+    return withContext(Dispatchers.Main.immediate) {
+      permissoesPendentes.wearables.solicitar(permission)
     }
   }
 
-  private var audioPermissionContinuation: CancellableContinuation<Boolean>? = null
-  // Phone microphone permission, requested in context when recording with sound-in-video on.
+  // Phone microphone permission, requested in context right before listening for the attendant's
+  // reply (DialogState.AGUARDANDO_RESPOSTA -> ESCUTANDO_ATENDENTE — ver
+  // libras/DialogOrchestrator.kt, CameraViewModel.onWakeWordButton).
   private val recordAudioPermissionLauncher =
       registerForActivityResult(RequestPermission()) { granted ->
-        audioPermissionContinuation?.resume(granted)
-        audioPermissionContinuation = null
+        permissoesPendentes.audio.receber(granted)
       }
 
-  // Requests RECORD_AUDIO for sound-in-video. Returns true if granted (already or just now); false
-  // if denied, so recording can proceed video-only instead of being blocked.
+  // Requests RECORD_AUDIO. Returns true if granted (already or just now); false if denied, so the
+  // caller can skip listening instead of crashing.
   suspend fun requestRecordAudioPermission(): Boolean {
     if (
         ContextCompat.checkSelfPermission(this, RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
     ) {
       return true
     }
-    return permissionMutex.withLock {
-      suspendCancellableCoroutine { continuation ->
-        audioPermissionContinuation = continuation
-        continuation.invokeOnCancellation { audioPermissionContinuation = null }
-        recordAudioPermissionLauncher.launch(RECORD_AUDIO)
-      }
+    return withContext(Dispatchers.Main.immediate) {
+      permissoesPendentes.audio.solicitar(Unit)
     }
   }
 
@@ -117,9 +115,37 @@ class MainActivity : ComponentActivity() {
     }
   }
 
+  // Libras Livre (docs/prontidao-demo/04 §4.7): com sessão ativa na tela da câmera, as teclas de
+  // volume fazem o mesmo que o botão principal. Fora disso, ajustam o volume.
+  override fun onKeyDown(keyCode: Int, event: KeyEvent): Boolean {
+    if (keyCode == KeyEvent.KEYCODE_VOLUME_UP || keyCode == KeyEvent.KEYCODE_VOLUME_DOWN) {
+      if (TeclasDeVolume.ouvinte?.invoke(event.repeatCount == 0) == true) return true
+    }
+    return super.onKeyDown(keyCode, event)
+  }
+
   override fun onStart() {
     super.onStart()
     // First, ensure the app has necessary Android permissions
     permissionCheckLauncher.launch(PERMISSIONS)
+    permissoesPendentes.wearables.associar(donoLaunchers) { permissionsResultLauncher.launch(it) }
+    permissoesPendentes.audio.associar(donoLaunchers) { recordAudioPermissionLauncher.launch(RECORD_AUDIO) }
+  }
+
+  private fun dissociarLaunchers() {
+    permissoesPendentes.wearables.dissociar(donoLaunchers)
+    permissoesPendentes.audio.dissociar(donoLaunchers)
+  }
+
+  override fun onStop() {
+    // Não cancela o pedido externo: seu resultado ainda pertence ao deferred original.
+    dissociarLaunchers()
+    super.onStop()
+  }
+
+  override fun onDestroy() {
+    // Um destroy tardio desta Activity não pode remover a associação da sucessora.
+    dissociarLaunchers()
+    super.onDestroy()
   }
 }

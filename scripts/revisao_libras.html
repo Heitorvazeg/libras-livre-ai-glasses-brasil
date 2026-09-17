@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="pt-BR">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>LIBRAS · Fila do consultor</title>
+<style>
+:root{color-scheme:dark;font-family:system-ui,sans-serif;background:#0c1425;color:#e2e8f0}body{max-width:1280px;margin:auto;padding:24px}h1{margin-bottom:4px}p{line-height:1.6}.muted{color:#a7b8d0}.notice{background:#302615;border-left:4px solid #fbbf24;padding:12px 18px;border-radius:8px}button,.button,select,input,textarea{font:inherit;border:1px solid #455776;border-radius:8px;background:#152239;color:inherit;padding:10px}button,.button{cursor:pointer}button:hover{border-color:#5eead4}button:disabled{opacity:.4;cursor:not-allowed}a{color:#5eead4}header,.toolbar{display:flex;gap:12px;flex-wrap:wrap;align-items:center}.toolbar{margin:18px 0}.layout{display:grid;grid-template-columns:240px 1fr;gap:24px}nav{max-height:85vh;overflow:auto}nav button{display:block;text-align:left;width:100%;margin-bottom:8px}nav button.active{border-color:#5eead4;background:#183b40}article{background:#111e33;border:1px solid #273852;border-radius:16px;padding:24px}video{width:100%;max-height:430px;background:#000;border-radius:12px}.form-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}label{display:flex;flex-direction:column;gap:6px;margin:8px 0}textarea{min-height:75px}fieldset{border:1px solid #455776;border-radius:10px;margin:18px 0}legend{padding:0 8px}#message{min-height:24px;color:#fbbf24}details{margin-top:24px}pre{white-space:pre-wrap;overflow-wrap:anywhere}small{display:block;color:#a7b8d0}@media(max-width:760px){.layout,.form-grid{grid-template-columns:1fr}nav{max-height:220px}body{padding:12px}}
+</style>
+<header><div><h1>LIBRAS · Revisão do consultor</h1><span class="muted">Triagem existente → avaliação humana documentada</span></div></header>
+<p id="summary"></p>
+<p class="notice">Candidato não é sinal aprovado. Duração e canal não comprovam rótulo, variante ou sinalizante. Licenças permanecem pendentes. Nenhuma decisão nesta página integra arquivos ao treino.</p>
+<div class="toolbar"><button id="export">Exportar avaliações JSON</button><label class="button">Importar avaliações<input id="import" type="file" accept="application/json,.json"></label><span class="muted">Sem servidor ou envio externo. Exporte um backup antes de fechar.</span></div>
+<div id="message" role="status" aria-live="polite"></div>
+<div class="layout"><nav id="queue" aria-label="Candidatos"></nav><article id="review">
+<h2 id="title"></h2><p id="metadata" class="muted"></p><p id="alerts" class="notice"></p>
+<p id="detection" class="muted" hidden></p>
+<video id="video" controls preload="metadata"></video><p><a id="source" target="_blank" rel="noopener noreferrer">Ver fonte original (abre YouTube)</a></p>
+<section id="reference-box" hidden><h3>Comparação contra o corpus já usado no treino</h3>
+<p id="reference-note" class="muted"></p><img id="reference-img" alt="Candidato acima; referências de MALTA/V-LIBRASIL abaixo" style="width:100%;border-radius:12px;background:#000">
+<p class="muted"><small>Convergência não é aprovação: a referência é material de dicionário, pode ter variante regional diferente da de Goiânia, e a comparação é visual — quem decide o rótulo é o consultor.</small></p></section>
+<form id="form">
+<fieldset><legend>Avaliação linguística</legend><div class="form-grid">
+<label>Decisão<select id="linguistic_status"><option value="pendente">Pendente</option><option value="aprovado">Aprovado linguisticamente</option><option value="requer_recorte">Trecho confirmado — requer recorte</option><option value="rejeitado">Rejeitado</option></select></label>
+<label>Consultor responsável<input id="reviewer" autocomplete="off"></label>
+<label>Rótulo confirmado (não presumido)<input id="confirmed_label"></label>
+<label>Variante / adequação a Goiânia<input id="region" placeholder="Registrar avaliação regional ou incerteza"></label>
+<label>Início do trecho (segundos)<input id="start" type="number" min="0" step="0.001"><button type="button" id="mark-start">Marcar posição atual</button></label>
+<label>Fim do trecho (segundos)<input id="end" type="number" min="0" step="0.001"><button type="button" id="mark-end">Marcar posição atual</button></label>
+<label>Sinalizante (ID local, somente se verificável)<input id="signer" placeholder="Não inferir pelo canal"></label>
+<label>Motivo / observações<textarea id="notes"></textarea></label></div></fieldset>
+<fieldset><legend>Permissão — avaliação independente da linguística</legend><div class="form-grid">
+<label>Situação<select id="permission_status"><option value="pendente">Pendente</option><option value="documentada">Evidência registrada — conferir escopo</option><option value="negada">Não autorizada</option></select></label>
+<label>Responsável pela conferência<input id="permission_reviewer"></label>
+<label>Referência da autorização (sem dados confidenciais)<input id="permission_evidence"></label>
+<label>Escopo e condições<textarea id="permission_scope"></textarea></label></div></fieldset>
+<button type="submit">Salvar avaliação local</button><small>As decisões só são incluídas na exportação depois de salvar. Recortes não são executados nesta etapa.</small>
+</form></article></div>
+<details><summary>Exclusões preservadas da triagem (não fazem parte da fila)</summary><pre id="exclusions"></pre></details>
+<script id="queue-data" type="application/json">/* QUEUE_DATA */</script>
+<script>/* REVIEW_APPLICATION */</script>
+</html>

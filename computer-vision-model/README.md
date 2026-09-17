@@ -1,276 +1,304 @@
 # Computer Vision Model — Libras Livre
 
-> Trilha de **IA** do Libras Livre. Transforma vídeos de sinais de Libras em um
-> classificador `.tflite` leve, que roda **on-device** dentro do app de óculos
-> inteligentes (`../mobile-app-companion`).
+Trilha de **visão** do Libras Livre: transforma vídeos de sinais de Libras num
+classificador que reconhece **um sinal isolado por vez**, destinado a rodar
+on-device dentro do app ([`../mobile-app-companion`](../mobile-app-companion)).
+
+A pergunta que organiza tudo aqui:
+
+> Qual a acurácia com uma **pessoa que o modelo nunca viu**?
+
+Os óculos são institucionais — atendem alguém novo a cada atendimento, sem
+calibração. Por isso toda avaliação nesta pasta deixa uma pessoa **inteira** fora
+do treino (*leave-one-signer-out*, LOSO). Um número medido de outra forma não
+responde à pergunta do produto.
 
 ---
 
-## 🧪 Comece pela PoC — [`PoC/`](./PoC)
-
-**Antes de treinar o `.tflite`, uma PoC decide se vale a pena.** A pergunta que
-ela responde, com o mínimo de esforço e critério de decisão definido de antemão:
-
-> MediaPipe Holistic + um classificador simples reconhecem um vocabulário fechado
-> de Libras **generalizando entre pessoas diferentes** (signer-independent), na
-> distância e ângulo de um atendimento de balcão?
-
-Isso é **requisito de produto**, não detalhe de avaliação: os óculos são
-institucionais e atendem uma pessoa nova a cada sessão — o modelo nunca vê quem
-está à frente da câmera (ver [`docs/libras-livre-arquitetura.md`](../docs/libras-livre-arquitetura.md), §4.3).
-
-| | **PoC** (`PoC/`) | **Pipeline principal** (este diretório) |
-|---|---|---|
-| Objetivo | validar a hipótese signer-independent | produzir o `.tflite` de produção |
-| Landmarks | MediaPipe **Holistic** (mãos + pose do tronco) | MediaPipe **Hands** (21 pontos) |
-| Modelo | baseline **DTW** (1-NN), sem treino | classificador raso → temporal |
-| Avaliação | **leave-one-signer-out** (obrigatório) | split treino/val |
-| Saída | acurácia + decisão ir/não-ir | `sinal_classifier.tflite` |
-
-➡️ **O pipeline abaixo só vale o investimento depois que a PoC der sinal verde
-(≥ 80%).** Detalhes e passo a passo em [`PoC/README.md`](./PoC/README.md).
-
-**Estado: a PoC rodou.** 430 clipes, 11 pessoas, 10 sinais →
-**70,0% (🟡 zona de atenção)** no dataset completo e **85,7%** no recorte sem o
-degrau entre as duas bases e sem os rótulos ainda não validados. O que separa um
-número do outro está em [`PoC/README.md`](./PoC/README.md) §6.4 — e decide o
-próximo passo melhor que a média sozinha.
-
----
-
-## 📼 De onde vêm os vídeos — [`datasets/`](./datasets)
-
-O dataset da PoC **não** foi gravado: ele é um recorte de duas bases públicas de
-Libras — **MINDS-Libras** e **V-LIBRASIL** —, integradas por
-[`datasets/ingest.py`](./datasets/ingest.py). O critério de seleção foi um só:
-ficaram os **10 sinais que existem nas duas bases**, e por isso chegam com
-**11 pessoas diferentes cada** (8 sinalizadores da MINDS + 3 articuladores da
-V-LIBRASIL, 430 clipes). Pessoas por sinal é exatamente o que a avaliação
-leave-one-signer-out consome.
-
-Esse é o vocabulário em `config.yaml` e em `PoC/config.yaml`:
-
-```
-acontecer   amarelo   banheiro   barulho   espelho
-filho       maca      medo       ruim      sapo
-```
-
-Os vídeos não são versionados (24 GB, e a licença da V-LIBRASIL não permite
-redistribuição) — o que fica no git é a receita para reproduzi-los:
-
-```bash
-cd datasets && python ingest.py --listar   # cobertura, sem baixar nada
-cd datasets && python ingest.py --reps 1   # 11 pessoas × 10 sinais, ~5 GB
-```
-
-⚠️ Estas bases foram gravadas em condição controlada (a V-LIBRASIL com *chroma
-key*), que **não** é o balcão do cenário de produto: a acurácia medida sobre elas
-é um teto otimista. As ressalvas todas estão em
-[`datasets/README.md`](./datasets/README.md) §6.
-
----
-
-## 1. Contexto — o que este projeto resolve
-
-**Libras Livre** é um sistema de acessibilidade para óculos inteligentes (Ray-Ban
-Meta): a câmera dos óculos vê uma pessoa sinalizando em Libras, e o sistema
-traduz esses sinais em fala/texto para quem não conhece a língua — pensado para
-um cenário de atendimento (ex.: um posto de saúde).
-
-O projeto tem **duas trilhas** que se encontram em um único arquivo:
-
-```
-   TRILHA IA (este projeto, Python)          TRILHA MOBILE (../mobile-app-companion, Kotlin)
-   vídeos → landmarks → modelo  ──►  sinal_classifier.tflite  ──►  inferência em tempo real nos óculos
-```
-
-Este repositório é a **trilha de IA**. A entrega é o `sinal_classifier.tflite`,
-copiado depois para `../mobile-app-companion/app/src/main/assets/`. Tudo aqui
-existe para produzir esse arquivo com qualidade.
-
----
-
-## 2. Conceitos essenciais da IA
-
-Esta é a parte mais importante de entender. São 4 decisões que definem todo o resto.
-
-### 2.1 Por que reconhecer *sinais isolados* (palavras), e não frases
-
-O classificador reconhece **uma palavra por vez**, não a frase inteira como uma
-classe única. Motivos:
-
-- **Linguisticamente correto:** Libras é composta por sinais; uma frase é uma
-  sequência deles, não um bloco atômico.
-- **Escalável:** um sinal ("dor") serve em várias frases ("dor de cabeça", "dor
-  de barriga"). Com N sinais você cobre muito mais que N frases.
-- **Alinhado aos datasets reais:** V-LIBRASIL, MINDS-Libras, WLASL — todos são
-  organizados por **palavra isolada**. Operar na mesma unidade que eles permite
-  aproveitá-los como fonte de dados, não só como referência.
-
-A montagem da frase final ("dor" + "cabeça" → "Estou com dor de cabeça") acontece
-**depois, no app**, por uma tabela de combinações conhecidas — não por geração
-gramatical (gloss-to-text), que segue sem solução pronta.
-
-### 2.2 Por que *landmarks*, e não os pixels do vídeo
-
-O modelo **não vê a imagem**. Antes de qualquer treino, cada frame passa pelo
-**MediaPipe Hands**, que devolve as **coordenadas de 21 pontos da mão** (juntas
-dos dedos, pulso), cada um com `(x, y, z)`:
-
-```
-21 pontos × 3 coordenadas = 63 números por frame, por mão
-```
-
-Isso é a "esqueletização" do gesto. Por que é uma ideia tão boa:
-
-- **Invariante ao que não importa:** cor da pele, roupa, fundo, iluminação —
-  nada disso chega ao modelo. Só a **geometria da mão**.
-- **Modelo minúsculo:** classificar 63 números é ordens de grandeza mais barato
-  que classificar uma imagem. Cabe num `.tflite` que roda em tempo real no celular.
-- **Menos dados necessários:** o MediaPipe já resolveu a parte difícil (achar a
-  mão); você só precisa ensinar a *forma* de cada sinal, não a visão inteira.
-
-O código dessa etapa está em `src/data/landmark_extraction.py`.
-
-### 2.3 Do simples ao robusto — Fase A e Fase B
-
-O modelo evolui em duas fases (nunca reescrito, só trocado):
-
-| | **Fase A — PoC** | **Fase B — vocabulário fechado** |
-|---|---|---|
-| Vocabulário | 1–2 sinais | ~10 sinais |
-| Entrada | **média** dos landmarks na janela → vetor fixo de 63 | **sequência temporal** completa |
-| Modelo | classificador raso (`Dense → softmax`) | temporal (1D-CNN / recorrente) |
-| Ideia | "que *forma* a mão faz" | "que *movimento* a mão faz ao longo do tempo" |
-| Arquivo | `src/models/shallow.py` | `src/models/temporal.py` |
-
-A Fase A joga fora o tempo (tira a média) — funciona para sinais que são
-essencialmente uma pose. A Fase B mantém o tempo — necessária para sinais que
-**são um movimento** (a maioria). Você começa na A para provar o pipeline
-inteiro ponta a ponta, depois liga a B trocando `fase: B` no `config.yaml`.
-
-**Transfer learning (Fase B):** não existe modelo pronto de Libras, mas existem
-modelos pré-treinados em outras línguas de sinais por esqueleto (ex.: **SAM-SLR**).
-A estratégia é reaproveitar o *backbone* temporal e treinar só a cabeça de
-classificação com seus sinais — reduz a quantidade de dados necessária por classe.
-⚠️ *Licenciamento:* WLASL é C-UDA (uso acadêmico, sem comercial); a V-LIBRASIL
-é CC BY-NC-ND 4.0 (uso de pesquisa/educação, sem uso comercial, sem
-redistribuição) e a cópia da MINDS-Libras no Kaggle é declarada MIT. Confira os
-termos na fonte antes de usar — detalhes em [`datasets/README.md`](./datasets/README.md) §1.
-
-### 2.4 Por que `.tflite` (e quantização)
-
-O modelo roda **dentro do app, no celular, sem internet** (on-device / edge). Para
-isso, o modelo Keras é convertido para **TensorFlow Lite** — um formato compacto,
-otimizado para inferência em ARM. A **quantização** (Fase B em diante) reduz ainda
-mais o tamanho e acelera, convertendo os pesos de `float32` para `int8`, com custo
-mínimo de acurácia. Código em `src/export/to_tflite.py`.
-
-### 2.5 O problema das fronteiras (onde este projeto *não* mexe)
-
-"Quando um sinal acaba e outro começa" é o problema de **segmentação temporal**.
-Decisão do projeto: isso é resolvido **no app** (Kotlin), por detecção de pausa/
-movimento sobre os landmarks em tempo real — **não aqui**. Este projeto só
-responde *"que sinal é este trecho já recortado"*. A divisão:
-
-- **Python (aqui):** *o quê* é o gesto → classificador de palavra isolada.
-- **Kotlin (app):** *onde* um gesto começa e termina → lógica das duas pausas.
-
----
-
-## 3. Pipeline
-
-```
-data/raw/*.mp4              vídeos brutos (1 sinal isolado por arquivo)
-     │   MediaPipe Hands  ── src/data/landmark_extraction.py
-     ▼
-data/landmarks/*.npy        sequências de 63 valores/frame, rotuladas
-     │   montar X, y      ── src/data/dataset.py   (média=Fase A | sequência=Fase B)
-     ▼
-X, y
-     │   treino           ── src/models/ + src/training/train.py
-     ▼
-models/*.keras
-     │   export + quantiz.── src/export/to_tflite.py
-     ▼
-models/sinal_classifier.tflite   ──►  copiar para ../mobile-app-companion/app/src/main/assets/
-```
-
----
-
-## 4. Estrutura do projeto
+## 1. Onde estão as coisas
 
 ```
 computer-vision-model/
-├── config.yaml            ⭐ vocabulário, caminhos e hiperparâmetros num lugar só
-├── requirements.txt       mediapipe, opencv, tensorflow, pyyaml, scikit-learn
-│
-├── datasets/              ⭐ seleção e ingestão dos vídeos públicos (MINDS + V-LIBRASIL)
-│   ├── selecao.yaml       os 10 sinais e o arquivo correspondente em cada base
-│   ├── ingest.py          baixa os clipes escolhidos e renomeia p/ a convenção da PoC
-│   ├── remote_zip.py      lê um .zip remoto por HTTP Range (sem baixar 47 GB)
-│   ├── selftest.py        validação offline da receita de ingestão
-│   └── manifest.csv       um registro por clipe (origem → destino, bytes, estado)
-│
-├── data/
-│   ├── raw/               vídeos brutos            (não versionado)
-│   └── landmarks/         .npy extraídos           (não versionado)
-│
-├── src/                   biblioteca (a lógica, testável)
-│   ├── config.py          carrega o config.yaml num objeto tipado
-│   ├── data/
-│   │   ├── landmark_extraction.py   §2.2 — MediaPipe Hands
-│   │   └── dataset.py               §2.3 — monta X, y (Fase A e B)
-│   ├── models/
-│   │   ├── shallow.py               Fase A — classificador raso
-│   │   └── temporal.py              Fase B — temporal / transfer learning
-│   ├── training/train.py            orquestra o treino
-│   └── export/to_tflite.py          §2.4 — export + quantização
-│
-├── scripts/               pontos de entrada (finos), na ordem de execução
-│   ├── 01_extract_landmarks.py
-│   ├── 02_train.py
-│   └── 03_export_tflite.py
-│
-└── models/                saída: sinal_classifier.tflite   (não versionado)
+├── datasets/       ingestão dos vídeos públicos (MINDS, V-LIBRASIL, MALTA, WLASL)
+├── PoC/            extração de landmarks + baseline DTW (a PoC que decidiu o resto)
+│   └── src/extract.py   ⟵ a extração de landmarks usada por TODO o pipeline
+├── treino/         ⟵ o pipeline de produção: representação, modelos, LOSO, export
+├── config.yaml     vocabulário e caminhos
+├── src/ + scripts/ andaime legado — ver §6
+└── models/         saída do export (não versionado)
 ```
 
-Padrão de projeto de ML: **biblioteca (`src/`) separada de execução (`scripts/`)**.
-Os scripts só carregam o config e chamam a função certa; toda a lógica vive em
-`src/`, reutilizável e testável. O `config.yaml` é o centro de controle — nenhum
-módulo tem vocabulário ou hiperparâmetro hardcoded.
+O caminho real dos dados atravessa três pastas:
+
+```
+datasets/ingest*.py     ->  PoC/src/extract.py   ->  treino/treinar.py  ->  treino/exportar.py
+vídeos .mp4                 landmarks .npy           checkpoint .pt         .tflite
+(não versionados)           (não versionados)        (não versionado)
+                                                                             |
+                                             ../mobile-app-companion/app/src/main/assets/
+```
 
 ---
 
-## 5. Como rodar
+## 2. Conceitos que decidem o resto
+
+### 2.1 Sinais isolados, não frases
+
+O classificador reconhece **uma palavra por vez**, não a frase inteira como classe
+única. Três motivos:
+
+- **Linguisticamente correto:** Libras é composta por sinais; uma frase é uma
+  sequência deles, não um bloco atômico.
+- **Escalável:** um sinal ("dor") serve em várias frases. Com N sinais você cobre
+  muito mais que N frases.
+- **Alinhado aos datasets reais:** V-LIBRASIL, MINDS-Libras, WLASL e MALTA são
+  todos organizados por palavra isolada.
+
+A montagem da frase acontece **depois**, e não aqui: a segmentação ("onde um sinal
+acaba") é do app, e a tradução glosa → português é da trilha
+[`../contextualization-model`](../contextualization-model).
+
+### 2.2 Landmarks, não pixels
+
+O modelo não vê a imagem. Cada frame passa pelo **MediaPipe Holistic**, que devolve
+as coordenadas de:
+
+```
+21 pontos de cada mão  +  15 pontos de pose  =  57 pontos por frame
+```
+
+Os 15 pontos de pose (nariz, olhos, orelhas, boca, ombros, cotovelos, pulsos,
+quadris) foram ampliados de 7 para 15 em 2026-09-08: muitos sinais são articulados
+em relação a **âncoras faciais** — "maçã (rosto)", "medo" — e com só o nariz como
+referência de cabeça essa informação desaparece. Pernas ficam de fora: irrelevantes
+para sinalização e frequentemente fora do quadro num balcão.
+
+Por que essa representação é uma boa ideia:
+
+- **Invariante ao que não importa:** cor de pele, roupa, fundo e iluminação não
+  chegam ao modelo. Só a geometria.
+- **Modelo minúsculo:** cabe num `.tflite` que roda em tempo real no celular.
+- **Menos dados necessários:** o MediaPipe já resolveu achar a mão; resta ensinar
+  a forma e o movimento de cada sinal.
+
+**A normalização é o passo que mais afeta o resultado.** Origem no ponto médio dos
+ombros, escala pela distância entre eles — o que torna os landmarks invariantes à
+distância da câmera, à posição da pessoa no quadro e à resolução. O app replica
+exatamente esse algoritmo em Kotlin (`LandmarkNormalizer.kt`), com testes de
+paridade numérica, porque uma divergência aqui não gera erro: degrada a acurácia
+em silêncio.
+
+### 2.3 Duas arquiteturas medidas, uma escolhida
+
+| Modelo | LOSO | Parâmetros | Tamanho exportado |
+|---|---|---|---|
+| Chance aleatória (20 sinais) | 5,0% | — | — |
+| Baseline DTW 1-NN (PoC) | 70,0% | — | — |
+| ST-GCN (x, y apenas) | 72,1% | 0,46M | — |
+| ST-GCN + ossos | 91,0% / 92,5% | 0,46M | — |
+| **ST-GCN + ossos + z — entrega** | **94,6% / 94,9%** | **0,47M** | ~1,9 MB fp32 / 0,47 MB int8 |
+| ResNet-18 + imputação | 95,1% | 11,25M | 45 MB fp32 / 11,3 MB int8 |
+| Literatura (mesma base, mesmo protocolo) | 93–94% | — | — |
+
+**O ST-GCN é o modelo de entrega**, decidido em 2026-09-11: empatou com a melhor
+ResNet usando 24× menos parâmetros. O raciocínio completo, inclusive a retratação
+de uma afirmação anterior errada, está em
+[`../docs/decisao-arquitetura-modelo.md`](../docs/decisao-arquitetura-modelo.md).
+
+Duas coisas precisam acompanhar qualquer citação desses números:
+
+1. **A variância entre execuções é de ~1,7 ponto.** Diferenças menores que ~2
+   pontos são ruído.
+2. **São todos vídeos de estúdio**, frontais e controlados. Teto otimista. O
+   número de balcão depende de coleta própria.
+
+O que fez o ST-GCN sair de 72% para 94% foram os **ossos** (+18,9 pontos) e o **z
+recentrado** (+2,1) — features derivadas dos landmarks que já existiam, sem nenhum
+dado novo.
+
+### 2.4 Por que `.tflite`
+
+O modelo roda dentro do app, no celular, sem internet. O checkpoint PyTorch é
+convertido por `ai-edge-torch`, com quantização opcional. O `.tflite` recebe
+`(1, T, P, 2)` e devolve logits — a montagem da representação acontece **dentro do
+grafo**, para que o app não precise reproduzi-la e errar em silêncio.
+
+**Limitação atual:** `treino/exportar.py` só cobre a **ResNet-18**. Escrever o
+export do ST-GCN — incluindo calcular os ossos dentro do grafo, o que hoje é feito
+em Python — é o maior bloqueio entre a decisão de arquitetura e ter algo rodando no
+aparelho. É trabalho novo, não uma flag.
+
+---
+
+## 3. Os dados
+
+| Conjunto | Clipes | Classes | Pessoas | Papel |
+|---|---|---|---|---|
+| **MINDS-Libras** | 800 | 20 sinais | 8 | **treino + avaliação LOSO** |
+| V-LIBRASIL (auditada) | 4.025 | 1.349 palavras | 3 (sempre os mesmos) | pré-treino |
+| MALTA-LIBRAS | 6.353 | 5.958 rótulos | 8 | pré-treino (ainda não habilitado no código) |
+| WLASL100 (ASL) | 1.013 | 100 | 64 | pré-treino (ainda não habilitado no código) |
+| V-LIBRASIL (curada) | 30 | 10 sinais | 3 | clipes reservados |
+
+O vocabulário de avaliação são os **20 sinais do MINDS-Libras**, em `config.yaml`,
+`PoC/config.yaml` e `datasets/selecao.yaml` — a ingestão confere que as três listas
+coincidem:
+
+```
+acontecer  amarelo  banheiro  barulho  espelho  filho  maca  medo  ruim  sapo
+aluno  america  aproveitar  bala  banco  cinco  conhecer  esquina  vacina  vontade
+```
+
+Até 2026-09-08 a lista tinha 10 sinais — os que existem nas **duas** bases, para
+maximizar pessoas por sinal na PoC de DTW. O treino passou a usar o MINDS como
+núcleo: fonte única, sem o degrau entre bases que custou ~15 pontos na PoC.
+
+**Estes não são os sinais do produto.** São um banco de provas. O vocabulário de
+atendimento está proposto em
+[`../docs/vocabulario-mvp-proposta.md`](../docs/vocabulario-mvp-proposta.md) e
+depende de consultor de Libras e de coleta própria.
+
+**Os papéis não se misturam, e isso é deliberado.** Um clipe que entra no
+pré-treino não pode aparecer na avaliação, ou o número de generalização deixa de
+significar o que diz. O isolamento e a proveniência estão em
+[`../docs/protocolo-pretreino.md`](../docs/protocolo-pretreino.md).
+
+Os vídeos **não são versionados** — são ~48 GB e a V-LIBRASIL é CC BY-NC-ND, que
+não autoriza redistribuição. O que fica no git é a receita:
+[`datasets/README.md`](./datasets/README.md).
+
+---
+
+## 4. Como rodar
+
+Python **3.11** (o MediaPipe 0.10.14 não suporta 3.12+).
 
 ```bash
-python -m venv .venv && source .venv/bin/activate
+cd PoC && python3.11 -m venv .venv311 && source .venv311/bin/activate
 pip install -r requirements.txt
-
-# 1) traga os vídeos para data/raw — 1 sinal isolado por arquivo (ver data/README.md).
-#    Bases públicas:  cd datasets && python ingest.py --reps 1
-#    Coleta própria:  cd PoC && python src/record.py --pessoa 03 --sinal ajuda
-python scripts/01_extract_landmarks.py   # data/raw      -> data/landmarks
-python scripts/02_train.py               # data/landmarks -> models/*.keras
-python scripts/03_export_tflite.py       # models/*.keras -> models/sinal_classifier.tflite
 ```
 
-**Coleta (§1.1 do guia):** câmera frontal, ~1 m de distância (ponto de vista de
-quem atende), 15–20 repetições por sinal, variando pessoa, luz e velocidade.
+### 4.1 Trazer os vídeos
 
-> **Estado atual:** a extração de landmarks, o modelo raso (Fase A) e o export
-> `.tflite` já estão implementados. `dataset.py`, `temporal.py` e `train.py`
-> estão como *stubs* (`NotImplementedError` com o passo documentado), porque
-> dependem das suas decisões de rótulo e dos seus dados reais.
+```bash
+cd ../datasets
+python selftest.py                   # confere a receita, sem rede
+python ingest.py --listar            # cobertura e tamanho, sem baixar nada
+python ingest.py --reps 1            # 1 repetição por pessoa/sinal — primeiro teste
+python ingest.py                     # seleção completa
+```
+
+Não é preciso credencial do Kaggle: `remote_zip.py` lê o índice no rodapé de cada
+`.zip` remoto e baixa só os membros escolhidos. A ingestão é retomável e ordenada
+por repetição, de modo que uma execução interrompida deixa um dataset balanceado.
+
+### 4.2 Extrair landmarks
+
+```bash
+cd ../PoC
+python src/extract.py                        # data/raw -> data/landmarks
+python src/extract.py --particao 1/4         # paraleliza por partição
+python src/extract.py --descartar-video      # apaga o .mp4 depois de extrair
+```
+
+**Esta etapa é CPU e leva horas. Não acelera em GPU** — fica na máquina local.
+
+### 4.3 Treinar e avaliar
+
+```bash
+cd ../treino
+python selftest.py                           # valida o encanamento em segundos
+python treinar.py --epocas 5 --folds 1       # rodada curta, para ver de pé
+# LOSO completo da configuração de entrega (ST-GCN + ossos + z recentrado):
+python treinar.py --arquitetura gcn --ossos --com-z --z-recentrado
+# treina com todas as pessoas e salva o checkpoint final:
+python treinar.py --arquitetura gcn --ossos --com-z --z-recentrado --final
+```
+
+O treino vai para GPU pelos notebooks (`treino/notebook_gpu.ipynb`,
+`notebook_gcn_variantes.ipynb`, `notebook_poc_3d.ipynb`), em Colab ou Kaggle, onde
+horas viram minutos. Detalhes e o papel de cada arquivo em
+[`treino/README.md`](./treino/README.md).
+
+### 4.4 Exportar
+
+```bash
+python exportar.py --smoke                   # valida o toolchain, sem checkpoint
+python exportar.py --checkpoint resultados-resnet/modelo_final.pt \
+                   --saida ../models/sinal_classifier.tflite
+```
+
+Requer `pip install "torch<2.10" ai-edge-torch`. **Só a ResNet-18 é exportável
+hoje** (§2.4).
+
+### 4.5 Validar que nada quebrou
+
+```bash
+cd treino    && python selftest.py
+cd datasets  && python selftest.py
+cd PoC       && python src/selftest.py
+```
+
+O selftest do treino inclui um **controle negativo**: com rótulos aleatórios, a
+acurácia tem de ficar na chance. Se subir, há vazamento entre treino e teste — o
+erro mais caro possível aqui, porque produz um número bonito e falso.
 
 ---
 
-## 6. Checklist da trilha (guia §1.5)
+## 5. A PoC — o passo zero, já respondido
 
-- [ ] Vídeos gravados (ângulo frontal, 1 sinal por vídeo)
-- [ ] Landmarks extraídos e dataset montado
-- [ ] Modelo treinado (Fase A raso → Fase B temporal + transfer learning)
-- [ ] Exportado para `.tflite`
-- [ ] Quantizado (a partir da Fase B)
-- [ ] `.tflite` copiado para `../mobile-app-companion/app/src/main/assets/`
+Antes de investir no pipeline de treino, uma PoC respondeu se a abordagem se
+sustentava, com um critério de ir/não-ir definido antes de rodar:
+
+> MediaPipe Holistic + um classificador simples reconhecem um vocabulário fechado
+> de Libras generalizando entre pessoas diferentes?
+
+**Resposta medida:** 70,0% no dataset completo (10 sinais, 11 pessoas, 430 clipes)
+e 85,7% no recorte sem o degrau entre bases e sem os rótulos ainda não validados.
+Sinal verde, com uma descoberta que mudou o pipeline: clipes de bases diferentes
+quase nunca são vizinhos um do outro — juntar MINDS e V-LIBRASIL não somou pessoas,
+somou um degrau de condição de gravação. Foi por isso que o treino passou a usar o
+MINDS como fonte única.
+
+A pasta [`PoC/`](./PoC) continua sendo onde vive a **extração de landmarks** que
+todo o pipeline consome (`PoC/src/extract.py`), além do baseline DTW e do relatório
+completo em `PoC/results/relatorio.md`.
+
+---
+
+## 6. `src/` e `scripts/` são andaime legado
+
+As pastas `src/` e `scripts/` vêm do commit inicial do repositório, antes da PoC, e
+**não fazem parte do pipeline em uso**. Vários dos seus módulos são *stubs* que
+levantam `NotImplementedError` (`src/data/dataset.py`, `src/models/temporal.py`,
+`src/training/train.py`, `src/export/to_tflite.py`).
+
+O que as substituiu:
+
+| Andaime legado | Substituído por |
+|---|---|
+| `src/data/landmark_extraction.py` | `PoC/src/extract.py` (Holistic, 57 pontos) |
+| `src/data/dataset.py` | `treino/dados.py` |
+| `src/models/shallow.py`, `temporal.py` | `treino/modelo.py` (ResNet-18), `treino/gcn.py` (ST-GCN) |
+| `src/training/train.py` | `treino/treinar.py`, `treino/pretreinar.py` |
+| `src/export/to_tflite.py` | `treino/exportar.py` |
+| `scripts/01..03_*.py` | os pontos de entrada de `treino/` |
+
+Elas permanecem apenas como registro do desenho inicial. Não as use como ponto de
+partida.
+
+---
+
+## 7. Onde ler mais
+
+| Assunto | Documento |
+|---|---|
+| Visão geral do projeto | [`../docs/CONTEXTO.md`](../docs/CONTEXTO.md) |
+| Procedimento de treino ponta a ponta | [`../docs/protocolo-treinamento.md`](../docs/protocolo-treinamento.md) |
+| Isolamento e proveniência do pré-treino | [`../docs/protocolo-pretreino.md`](../docs/protocolo-pretreino.md) |
+| ResNet vs. ST-GCN, com números e ressalvas | [`../docs/decisao-arquitetura-modelo.md`](../docs/decisao-arquitetura-modelo.md) |
+| Datasets e enquadramento legal | [`../docs/decisao-datasets-e-licencas.md`](../docs/decisao-datasets-e-licencas.md) |
+| Estado da arte e expansão do dataset | [`../docs/investigacao-expansao-dataset.md`](../docs/investigacao-expansao-dataset.md) |
+| Como rodar o treino, arquivo por arquivo | [`treino/README.md`](./treino/README.md) |
+| Como os vídeos são baixados | [`datasets/README.md`](./datasets/README.md) |
+| A PoC e o baseline DTW | [`PoC/README.md`](./PoC/README.md) |

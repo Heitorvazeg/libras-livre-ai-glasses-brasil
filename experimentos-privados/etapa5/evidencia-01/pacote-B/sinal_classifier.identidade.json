@@ -1,0 +1,10 @@
+{
+  "aprovado_entrega": false,
+  "calibracao": "ausente_nao_calibrado",
+  "checkpoint_sha256": "1139d377c7e269f87228a44f127c902e802e2ab081733c883a35c92e4290e6f9",
+  "experimental": true,
+  "experimento": "etapa5-B-negativo-transporte-nao-final",
+  "modelo_sha256": "2edf00c9c38dbbd34e7a5959978dbef8ed1642293864dd3ab9e14e799c03fddb",
+  "schema": 1,
+  "sidecar_sha256": "7e48d8729b22273049a0ae568a5ef33c1db3878c658c7a749c072dc990364faa"
+}

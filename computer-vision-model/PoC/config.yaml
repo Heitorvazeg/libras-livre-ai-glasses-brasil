@@ -25,6 +25,16 @@ vocabulario:
   - medo
   - ruim
   - sapo
+  - aluno
+  - america
+  - aproveitar
+  - bala
+  - banco
+  - cinco
+  - conhecer
+  - esquina
+  - vacina
+  - vontade
 
 # Metas de coleta (§4). Usadas para conferir cobertura do dataset no relatório;
 # a fonte de verdade é sempre o nome do arquivo de cada clipe.
@@ -41,14 +51,34 @@ paths:
 
 # Subconjunto de pose extraído do Holistic (índices MediaPipe Pose), na ordem em
 # que entram no vetor do frame. Contexto de tronco/cabeça sem inflar dimensionalidade (§5.2).
+#
+# AMPLIADO em 2026-09-08 (de 7 para 15 pontos, total 49 -> 57 por frame). Motivo
+# em docs/investigacao-expansao-dataset.md, Achado D: a literatura de ISLR em
+# Libras mostra que o subconjunto de landmarks é a escolha que mais move o
+# resultado, e que faltavam aqui as ÂNCORAS FACIAIS — muitos sinais são
+# articulados em relação a olhos/boca/orelha ("maçã (rosto)", "medo"), e com só o
+# nariz como referência de cabeça essa informação some. Quadris entram como
+# referência estável de tronco. Pernas (25-32) ficam de fora: irrelevantes para
+# sinalização e frequentemente fora do quadro num balcão.
+#
+# Os índices 19-22 (pontos da mão que a pose também estima) seguem de fora por
+# serem redundantes com os 21 pontos por mão do Holistic.
 pose_indices:
   nariz: 0
+  olho_esq: 2
+  olho_dir: 5
+  orelha_esq: 7
+  orelha_dir: 8
+  boca_esq: 9
+  boca_dir: 10
   ombro_esq: 11
   ombro_dir: 12
   cotovelo_esq: 13
   cotovelo_dir: 14
   pulso_esq: 15
   pulso_dir: 16
+  quadril_esq: 23
+  quadril_dir: 24
 
 # Normalização (§5.2): origem = ponto médio entre os ombros, escala = distância entre eles.
 normalizacao:
@@ -60,6 +90,15 @@ normalizacao:
   # somados no mesmo vetor entram como ruído. Os .npy continuam sendo extraídos
   # com 3 dims; carregar_dataset descarta a última na leitura, então voltar atrás
   # é só trocar para true (não precisa reextrair).
+  #
+  # ATENÇÃO — esta flag vale SÓ para a PoC (DTW). O pipeline de `treino/` NÃO a
+  # lê: `treino/dados.py` faz `arr[:, :, :2]` incondicionalmente. Trocar para
+  # true aqui não muda nada no treino da ResNet nem do GCN.
+  #
+  # E a medição acima é do DTW 1-NN, que soma distâncias cruas e não tem defesa
+  # contra um canal de escala incoerente. ResNet e GCN têm peso aprendido e podem
+  # ponderar o canal — o efeito do z NELES não foi medido. Não citar os 4-6
+  # pontos como se valessem para o modelo atual.
   usar_z: false          # inclui a coordenada z dos landmarks no vetor do frame
   min_visibilidade: 0.5  # descarta o frame se um dos ombros estiver abaixo disso
 

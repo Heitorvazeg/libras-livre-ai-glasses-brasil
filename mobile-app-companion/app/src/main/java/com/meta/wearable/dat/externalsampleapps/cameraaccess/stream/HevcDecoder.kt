@@ -27,7 +27,10 @@ import java.nio.ByteBuffer
 import java.util.concurrent.LinkedBlockingQueue
 import java.util.concurrent.TimeUnit
 
-class HevcDecoder {
+class HevcDecoder(
+  // Observabilidade opcional da pipeline de inferência; não altera recuperação do decoder.
+  private val onFailure: (etapa: String, erro: Throwable) -> Unit = { _, _ -> },
+) {
 
   companion object {
     private const val TAG = "HevcDecoder"
@@ -54,39 +57,70 @@ class HevcDecoder {
       }
   }
 
-  // These references are torn down from stop() on the caller thread while MediaCodec callbacks may
-  // still fire on the decoder thread. @Volatile is sufficient: each is a single reference assigned
-  // on setup and nulled on teardown — no compound state, only publication visibility.
-  @Volatile private var decoder: MediaCodec? = null
-  @Volatile private var decoderThread: HandlerThread? = null
+  // Serializes producers and native lifecycle only. Callbacks NEVER acquire this lock.
+  // CodecCallbackOwner has a separate short lock for identity/state + buffer operations.
+  // In particular, native stop/release may wait for callbacks without holding their lock.
+  private val lifecycleLock = Any()
+  private val owner = CodecCallbackOwner<MediaCodec>()
+  private val conclusaoCallbacks = ConclusaoCallbacksCodec()
+  private var decoderThread: HandlerThread? = null
+  private var codecStarted = false
   private val incomingDataQueue = LinkedBlockingQueue<DecoderFrame>(DATA_QUEUE_CAPACITY)
 
-  @Volatile private var mediaFormat: MediaFormat? = null
-  @Volatile private var cachedVideoCodec: ByteBuffer? = null
+  private var mediaFormat: MediaFormat? = null
+  private var cachedVideoCodec: ByteBuffer? = null
+  // Shared with callbacks; all other parsing/setup state belongs to lifecycleLock.
   @Volatile private var active = false
-  @Volatile private var firstInputFrame = true
-  @Volatile private var receivedKeyframe = false
-  @Volatile private var outputSurface: Surface? = null
+  private var firstInputFrame = true
+  private var receivedKeyframe = false
+  private var outputSurface: Surface? = null
+
+  private data class Failure(val stage: String, val error: Throwable)
+
+  // Libras Livre: vezes em que a fila de entrada encheu e o decoder desativou até o próximo
+  // keyframe — métrica do painel (docs/prontidao-demo/03 §3.8).
+  @Volatile var vezesFilaCheia = 0
+    private set
 
   fun start(width: Int, height: Int, surface: Surface) {
-    outputSurface = surface
-    mediaFormat =
-        MediaFormat.createVideoFormat(MediaFormat.MIMETYPE_VIDEO_HEVC, width, height).also { format
-          ->
-          format.setInteger(MediaFormat.KEY_FRAME_RATE, 30)
-          format.setInteger(MediaFormat.KEY_I_FRAME_INTERVAL, 1)
-          format.setInteger(MediaFormat.KEY_BIT_RATE, 750000)
-        }
-    try {
-      ensureCodecsCreated()
-    } catch (e: Exception) {
-      Log.e(TAG, "Failed to create HEVC decoder: ${e.message}", e)
+    val failures = mutableListOf<Failure>()
+    synchronized(lifecycleLock) {
+      // One start per instance, including stop-before-start. Existing callers replace the
+      // HevcDecoder at each stream/surface; a late producer must not resurrect this one.
+      if (!owner.canPrepare()) return
+      try {
+        outputSurface = surface
+        mediaFormat =
+            MediaFormat.createVideoFormat(MediaFormat.MIMETYPE_VIDEO_HEVC, width, height).also {
+              it.setInteger(MediaFormat.KEY_FRAME_RATE, 30)
+              it.setInteger(MediaFormat.KEY_I_FRAME_INTERVAL, 1)
+              it.setInteger(MediaFormat.KEY_BIT_RATE, 750000)
+            }
+        // stop/start cannot interleave creation and publication: both own lifecycleLock.
+        check(owner.prepare(createHevcDecoder()))
+      } catch (e: Exception) {
+        failures += Failure("criacao", e)
+        stopLocked(failures)
+      }
     }
+    reportFailures(failures)
   }
 
   fun decodeFrame(data: ByteArray, presentationTimeUs: Long) {
     if (data.isEmpty()) return
+    val failures = mutableListOf<Failure>()
+    synchronized(lifecycleLock) {
+      if (owner.current() == null) return
+      decodeFrameLocked(data, presentationTimeUs, failures)
+    }
+    reportFailures(failures)
+  }
 
+  private fun decodeFrameLocked(
+      data: ByteArray,
+      presentationTimeUs: Long,
+      failures: MutableList<Failure>,
+  ) {
     // Replicate SDK VideoDecoder.enqueue(buffer, presentationTimeUs) exactly:
     // parse NAL units, cache config, activate on keyframe, feed each NAL separately.
     val buffer = ByteBuffer.wrap(data)
@@ -105,7 +139,8 @@ class HevcDecoder {
       } else if (isKeyFrame) {
         if (!active) {
           active = true
-          cachedVideoCodec?.let { cachedConfig -> enqueuePublic(cachedConfig) }
+          cachedVideoCodec?.let { cachedConfig -> enqueuePublic(cachedConfig, failures) }
+          if (owner.current() == null) return // Cached config activation failed and tore down.
         }
         if (!receivedKeyframe) {
           receivedKeyframe = true
@@ -120,32 +155,84 @@ class HevcDecoder {
               isKeyFrame = isKeyFrame,
               isConfigFrame = isConfigFrame,
           ),
+          failures = failures,
       )
 
+      // Activation failure is terminal; do not parse/reactivate after teardown.
+      if (owner.current() == null) {
+        return
+      }
       index = findNalUnit(writableByteArray, index + 1, data.size, prefixFlags)
     }
   }
 
+  // Na própria fila de callbacks, apenas solicita a parada fora dela: nunca esperar lifecycle
+  // nativo que pode estar aguardando este callback. Owners finais devem usar stopAndDrain.
   fun stop() {
+    conclusaoCallbacks.parar {
+      val failures = mutableListOf<Failure>()
+      synchronized(lifecycleLock) { stopLocked(failures) }
+      reportFailures(failures)
+    }
+  }
+
+  /**
+   * Barreira final, inclusive reportFailures dos callbacks e de stop solicitado por onFailure.
+   * Chamar após drenar o produtor, de outro job, sem locks. stop() sozinho NÃO é essa barreira.
+   */
+  suspend fun stopAndDrain() {
+    conclusaoCallbacks.pararEDrenar(::stop)
+  }
+
+  // Requires lifecycleLock, NOT the callback lock. Invalidation waits only for a buffer
+  // operation already in progress, never for poll(1s). The completion helper retains the
+  // thread after quit; only stopAndDrain joins it, outside both locks and off main.
+  private fun stopLocked(failures: MutableList<Failure>) {
+    val codec = owner.stop()
+    val thread = decoderThread
+    decoderThread = null
     active = false
     incomingDataQueue.clear()
     try {
-      decoder?.stop()
-      decoder?.release()
-    } catch (e: Exception) {
-      Log.e(TAG, "Error stopping decoder: ${e.message}", e)
+      if (codec != null) {
+        try {
+          // A created/configured codec whose start never succeeded only needs release.
+          if (codecStarted) codec.stop()
+        } catch (e: Throwable) {
+          failures += Failure("encerramento", e)
+        } finally {
+          try {
+            codec.release()
+          } catch (e: Throwable) {
+            failures += Failure("encerramento", e)
+          }
+        }
+      }
+    } finally {
+      codecStarted = false
+      firstInputFrame = true
+      receivedKeyframe = false
+      cachedVideoCodec = null
+      mediaFormat = null
+      outputSurface = null
+      try {
+        thread?.quit()
+      } catch (e: Throwable) {
+        failures += Failure("encerramento", e)
+      }
     }
-    decoder = null
-    decoderThread?.quit()
-    decoderThread = null
-    firstInputFrame = true
-    receivedKeyframe = false
-    cachedVideoCodec = null
-    outputSurface = null
+  }
+
+  // Observers may call back into the owner/caller; never invoke them under either lock.
+  private fun reportFailures(failures: List<Failure>) {
+    failures.forEach { (stage, error) ->
+      Log.e(TAG, "Decoder $stage: ${error.message}", error)
+      onFailure(stage, error)
+    }
   }
 
   // Mirrors SDK VideoDecoder's public enqueue(ByteBuffer) — recursive entry for cached config
-  private fun enqueuePublic(buffer: ByteBuffer) {
+  private fun enqueuePublic(buffer: ByteBuffer, failures: MutableList<Failure>) {
     val writableByteArray =
         ByteBuffer.allocate(buffer.capacity())
             .apply {
@@ -177,31 +264,30 @@ class HevcDecoder {
               isKeyFrame = isKeyFrame,
               isConfigFrame = isConfigFrame,
           ),
+          failures = failures,
       )
+      if (owner.current() == null) {
+        return
+      }
       index = findNalUnit(writableByteArray, index + 1, buffer.limit(), prefixFlags)
     }
   }
 
   // Mirrors SDK VideoDecoder's private enqueue(VideoFrame)
-  private fun enqueuePrivate(frame: DecoderFrame) {
-    if (!active) return
+  private fun enqueuePrivate(frame: DecoderFrame, failures: MutableList<Failure>) {
+    if (!active || owner.current() == null) return
     if (!frame.isConfigFrame && !receivedKeyframe) return
     if (firstInputFrame) {
       firstInputFrame = false
-      activateDecoder()
+      if (!activateDecoder(failures)) return
     }
     if (incomingDataQueue.remainingCapacity() == 0) {
       Log.w(TAG, "Decoder queue full")
+      vezesFilaCheia++
       active = false
       return
     }
     incomingDataQueue.offer(frame)
-  }
-
-  private fun ensureCodecsCreated() {
-    if (decoder == null) {
-      decoder = createHevcDecoder()
-    }
   }
 
   // Prefer a software HEVC decoder
@@ -226,101 +312,120 @@ class HevcDecoder {
     }
   }
 
-  private fun activateDecoder() {
+  // Requires lifecycleLock. Only start() creates a codec; activation never recreates one.
+  private fun activateDecoder(failures: MutableList<Failure>): Boolean {
+    val codec = owner.current() ?: return false
     try {
-      ensureCodecsCreated()
-      decoder?.let { codec ->
-        decoderThread?.quit()
-        val thread = HandlerThread("HevcDecoderThread", Process.THREAD_PRIORITY_VIDEO)
-        thread.start()
-        decoderThread = thread
+      val thread = HandlerThread("HevcDecoderThread", Process.THREAD_PRIORITY_VIDEO)
+      conclusaoCallbacks.registrar(thread)
+      decoderThread = thread
+      thread.start()
 
-        codec.reset()
-        codec.configure(mediaFormat, outputSurface, null, 0)
-        codec.setCallback(
-            object : MediaCodec.Callback() {
-              override fun onInputBufferAvailable(codec: MediaCodec, index: Int) {
-                onInputBuffer(codec, index)
-              }
+      // Fresh codec, configured once. No reset/reuse of old callback indices.
+      codec.configure(mediaFormat, outputSurface, null, 0)
+      codec.setCallback(
+          object : MediaCodec.Callback() {
+            override fun onInputBufferAvailable(codec: MediaCodec, index: Int) {
+              onInputBuffer(codec, index)
+            }
 
-              override fun onOutputBufferAvailable(
-                  codec: MediaCodec,
-                  index: Int,
-                  info: MediaCodec.BufferInfo,
-              ) {
-                onOutputBuffer(codec, index, info)
-              }
+            override fun onOutputBufferAvailable(
+                codec: MediaCodec,
+                index: Int,
+                info: MediaCodec.BufferInfo,
+            ) {
+              onOutputBuffer(codec, index, info)
+            }
 
-              override fun onError(codec: MediaCodec, e: MediaCodec.CodecException) {
-                Log.e(TAG, "Codec error: ${e.message}")
-              }
+            override fun onError(codec: MediaCodec, e: MediaCodec.CodecException) {
+              val failure = owner.use(codec) { Failure("codec", e) }
+              failure?.let { reportFailures(listOf(it)) }
+            }
 
-              override fun onOutputFormatChanged(codec: MediaCodec, format: MediaFormat) {}
-            },
-            // Deliver MediaCodec callbacks on our own decoder thread.
-            Handler(thread.looper),
-        )
-        codec.start()
-      }
+            override fun onOutputFormatChanged(codec: MediaCodec, format: MediaFormat) {
+              owner.use(codec) { Unit } // No format state to publish; reject stale callbacks too.
+            }
+          },
+          // Deliver MediaCodec callbacks on our own decoder thread.
+          Handler(thread.looper),
+      )
+      // Enable before start: an async buffer can arrive before start() returns. Native
+      // callbacks only expose valid indices; stop cannot interleave under lifecycleLock.
+      check(owner.enableCallbacks(codec))
+      codec.start()
+      codecStarted = true
+      return true
     } catch (e: MediaCodec.CodecException) {
-      Log.e(TAG, "Decoder activation codec exception: ${e.message}", e)
+      failures += Failure("ativacao_codec", e)
     } catch (e: Throwable) {
-      Log.e(TAG, "Decoder activation exception: ${e.message}", e)
+      failures += Failure("ativacao", e)
     }
+    stopLocked(failures)
+    return false
   }
 
   // Mirrors VideoDecoderBufferHandler.onInputBuffer — feeds ENTIRE buffer with offset
   private fun onInputBuffer(codec: MediaCodec, index: Int) {
-    var bufferQueued = false
-    try {
-      val inputBuffer = codec.getInputBuffer(index)
-      val frame = incomingDataQueue.poll(1, TimeUnit.SECONDS)
-
-      if (frame == null || inputBuffer == null || !active) {
-        codec.queueInputBuffer(index, 0, 0, 0, 0)
-        bufferQueued = true
-        return
+    // Check before waiting, then revalidate after waiting. Never retain an input buffer
+    // across poll: stop may invalidate and release the codec during this entire second.
+    val queue = owner.use(codec) { incomingDataQueue } ?: return
+    val frame = try {
+      queue.poll(1, TimeUnit.SECONDS)
+    } catch (e: InterruptedException) {
+      Thread.currentThread().interrupt()
+      val failure = owner.use(codec) {
+        active = false
+        Failure("entrada", e)
       }
-
-      frame.data.rewind()
-      inputBuffer.clear()
-      inputBuffer.put(frame.data)
-      inputBuffer.flip()
-      val clampedSize = minOf(frame.size, inputBuffer.limit() - frame.offset)
-      codec.queueInputBuffer(
-          index,
-          frame.offset,
-          clampedSize,
-          frame.presentationTimeUs,
-          frame.flags,
-      )
-      bufferQueued = true
-    } catch (e: Throwable) {
-      Log.e(TAG, "Input buffer error: ${e.message}", e)
-      if (active) active = false
-    } finally {
-      if (!bufferQueued) {
-        try {
+      failure?.let { reportFailures(listOf(it)) }
+      return
+    }
+    val failure = owner.use(codec) {
+      var bufferQueued = false
+      try {
+        val inputBuffer = codec.getInputBuffer(index)
+        if (frame == null || inputBuffer == null || !active) {
           codec.queueInputBuffer(index, 0, 0, 0, 0)
-        } catch (_: Throwable) {}
+        } else {
+          frame.data.rewind()
+          inputBuffer.clear()
+          inputBuffer.put(frame.data)
+          inputBuffer.flip()
+          val clampedSize = minOf(frame.size, inputBuffer.limit() - frame.offset)
+          codec.queueInputBuffer(index, frame.offset, clampedSize, frame.presentationTimeUs, frame.flags)
+        }
+        bufferQueued = true
+        null
+      } catch (e: Throwable) {
+        active = false
+        Failure("entrada", e)
+      } finally {
+        // Even the fallback belongs to the same identity-checked section. An obsolete
+        // callback never queues/recycles an index, including an empty buffer.
+        if (!bufferQueued) {
+          try {
+            codec.queueInputBuffer(index, 0, 0, 0, 0)
+          } catch (_: Throwable) {}
+        }
       }
     }
+    failure?.let { reportFailures(listOf(it)) }
   }
 
   private fun onOutputBuffer(codec: MediaCodec, index: Int, info: MediaCodec.BufferInfo) {
-    try {
-      if (!active || info.size == 0) {
-        codec.releaseOutputBuffer(index, false)
-        return
-      }
-      // Render directly to the Surface — the GPU handles YUV→RGB conversion.
-      codec.releaseOutputBuffer(index, true)
-    } catch (e: Throwable) {
-      Log.e(TAG, "Output buffer error: ${e.message}", e)
+    val failure = owner.use(codec) {
       try {
-        codec.releaseOutputBuffer(index, false)
-      } catch (_: Throwable) {}
+        // Render directly to the Surface — the GPU handles YUV→RGB conversion.
+        codec.releaseOutputBuffer(index, active && info.size != 0)
+        null
+      } catch (e: Throwable) {
+        try {
+          codec.releaseOutputBuffer(index, false)
+        } catch (_: Throwable) {}
+        Failure("saida", e)
+      }
     }
+    failure?.let { reportFailures(listOf(it)) }
   }
 
   // --- NalUnitUtil (copied from SDK) ---

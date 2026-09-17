@@ -1,17 +1,35 @@
-# datasets/ — vídeos públicos de Libras usados pela PoC
+# datasets/ — vídeos públicos de Libras
 
-Esta pasta integra ao repositório dois bancos públicos de vídeos de Libras e
-transforma um recorte deles no dataset que a PoC consome. Ela existe porque a
-pergunta da PoC — *o reconhecimento generaliza entre pessoas diferentes?* — não
+Esta pasta integra ao repositório os bancos públicos de vídeos de Libras e
+transforma recortes deles nos conjuntos que o projeto consome. Ela existe porque a
+pergunta central — *o reconhecimento generaliza entre pessoas diferentes?* — não
 depende de gravarmos os vídeos: depende de ter **muitas pessoas diferentes por
 sinal**, e isso as bases públicas já têm.
+
+> **Dois fluxos distintos, e não devem se misturar.**
+>
+> - **Avaliação** (`ingest.py`): os 20 sinais do MINDS-Libras, que o `treino/`
+>   usa para medir LOSO. É o que este README descreve em detalhe.
+> - **Pré-treino** (`ingest_pretreino.py`, `ingest_malta.py`, `ingest_wlasl.py`):
+>   corpus grande, com auditoria obrigatória, sidecars de proveniência por amostra
+>   e exclusão por origem. O protocolo está em
+>   [isolamento e proveniência](../../docs/protocolo-pretreino.md).
+>
+> Nunca aponte o corpus de pré-treino para a pasta de avaliação: um clipe que
+> entra nos dois lados destrói o significado do número de generalização.
 
 O que está versionado aqui é a **receita**, não os vídeos (§5):
 
 | Arquivo | Papel |
 |---|---|
-| `selecao.yaml` | os 10 sinais escolhidos e a que arquivo eles correspondem em cada base |
-| `ingest.py` | baixa os clipes selecionados e os renomeia para a convenção da PoC |
+| `selecao.yaml` | os sinais escolhidos e a que arquivo eles correspondem em cada base |
+| `ingest.py` | baixa os clipes de avaliação e os renomeia para a convenção do projeto |
+| `ingest_pretreino.py` | corpus V-LIBRASIL de pré-treino, com exclusão por origem |
+| `ingest_malta.py`, `ingest_wlasl.py`, `subset_wlasl.py` | ingestão de MALTA-LIBRAS e WLASL |
+| `proveniencia.py` | sidecars por amostra: origem, hash, identidade do sinalizante |
+| `preparar_corpus_auditado.py` | cópia auditada e conservadora do corpus de pré-treino |
+| `registrar_legado.py` | regulariza corpus antigo, sem sidecar |
+| `diagnostico_bundle.py` | inspeciona um bundle remoto sem baixá-lo |
 | `remote_zip.py` | lê/extrai membros de um `.zip` remoto por HTTP Range |
 | `selftest.py` | validação offline: nomes, unicidade de pessoa, ordem, manifesto |
 | `manifest.csv` | gerado: um registro por clipe (origem, destino, bytes, estado) |
@@ -39,24 +57,35 @@ de pessoas, não o de repetições, que a avaliação leave-one-signer-out conso
 
 ---
 
-## 2. Como os 10 sinais foram escolhidos
+## 2. Como o vocabulário foi escolhido
 
-Critério único e mecânico: **ficaram os sinais que existem nas DUAS bases.**
+O critério mudou uma vez, e a razão importa.
 
-Um sinal presente só na MINDS chega com 8 pessoas; só na V-LIBRASIL, com 3. Nos
-dois, com **11 pessoas diferentes e 43 clipes** — 8 × 5 da MINDS + 3 × 1 da
-V-LIBRASIL. Como a métrica da PoC é acurácia deixando uma pessoa de fora, mais
-pessoas por sinal é o que mais move o resultado.
+**Até 2026-09-08 eram 10 sinais:** os que existem nas **duas** bases. Um sinal
+presente só na MINDS chega com 8 pessoas; só na V-LIBRASIL, com 3; nos dois, com
+**11 pessoas diferentes e 43 clipes**. Como a métrica é acurácia deixando uma
+pessoa de fora, mais pessoas por sinal é o que mais move o resultado — e era isso
+que a PoC de DTW precisava.
 
-O vocabulário resultante (`selecao.yaml`, replicado em `../PoC/config.yaml` e
-`../config.yaml`):
+**Hoje são os 20 sinais do MINDS-Libras.** A PoC mediu que juntar as duas bases
+não somou pessoas: somou um degrau de condição de gravação, que custou ~15 pontos
+(§6.1). O treino passou a usar o MINDS como núcleo — fonte única, sem esse degrau
+e sem rótulo ambíguo. Os 10 sinais que também existem na V-LIBRASIL mantêm o
+mapeamento, e ela passou a servir como teste de domínio diferente.
+
+O vocabulário atual (`selecao.yaml`, replicado em `../PoC/config.yaml` e
+`../config.yaml` — `ingest.py` confere e avisa se divergirem):
 
 ```
-acontecer   amarelo   banheiro   barulho   espelho
-filho       maca      medo       ruim      sapo
+acontecer  amarelo  banheiro  barulho  espelho  filho  maca  medo  ruim  sapo
+aluno  america  aproveitar  bala  banco  cinco  conhecer  esquina  vacina  vontade
 ```
 
-Cobertura conferida contra o índice real dos dois `.zip`:
+Os 10 da segunda linha são **MINDS-only**: não têm chave `vlibrasil` no
+`selecao.yaml`, e `ingest.py` simplesmente não os procura naquele bundle.
+
+Cobertura dos 10 sinais compartilhados, conferida contra o índice real dos dois
+`.zip` (é este recorte que a PoC de DTW usou):
 
 ```
 sinal        pessoas  minds  vlib  clipes     GB
@@ -75,10 +104,11 @@ TOTAL             11                  430  24.10
 
 **Estes não são os sinais do produto.** O vocabulário de atendimento (`ola`,
 `ajuda`, `dor`, `marcar-consulta`…) não existe nessas bases com pessoas
-suficientes, e volta quando houver coleta própria. A pergunta da PoC é sobre
+suficientes, e volta quando houver coleta própria. A pergunta aqui é sobre
 generalização entre pessoas — ela se responde com qualquer vocabulário
-suficientemente variado, e estes 10 sinais têm configurações de mão e movimentos
-bem diferentes entre si.
+suficientemente variado, e estes sinais têm configurações de mão e movimentos bem
+diferentes entre si. A proposta de vocabulário de produto está em
+[`../../docs/vocabulario-mvp-proposta.md`](../../docs/vocabulario-mvp-proposta.md).
 
 ---
 
@@ -116,12 +146,15 @@ cd computer-vision-model/datasets
 python selftest.py                   # confere a receita, sem rede (~1 s)
 python ingest.py --listar            # cobertura e tamanho, sem baixar nada
 python ingest.py --fonte vlibrasil   # 30 clipes, ~80 MB — bom para testar o caminho
-python ingest.py --reps 1            # 1 repetição por pessoa/sinal: 110 clipes, ~5 GB
-python ingest.py                     # seleção completa: 430 clipes, ~24 GB
+python ingest.py --reps 1            # 1 repetição por pessoa/sinal — primeira medição
+python ingest.py                     # seleção completa dos 20 sinais
 ```
 
-Os vídeos vão para `../PoC/data/raw/` já renomeados, e o passo seguinte é o
-pipeline normal da PoC (`python src/extract.py`, depois `python src/evaluate.py`).
+Rode `--listar` antes de qualquer coisa: ele imprime a contagem e o volume reais
+da seleção atual, sem baixar um byte. Os vídeos vão para `../PoC/data/raw/` já
+renomeados, e o passo seguinte é a extração de landmarks
+(`cd ../PoC && python src/extract.py`), consumida tanto pelo baseline DTW
+(`src/evaluate.py`) quanto pelo treino (`../treino/treinar.py`).
 
 Detalhes que importam na prática:
 
@@ -131,9 +164,9 @@ Detalhes que importam na prática:
 - **A ordem é por repetição**, não por sinal: todas as pessoas e sinais na rep 1,
   depois na rep 2… Uma execução interrompida no meio deixa um dataset
   **balanceado**, e não completo em alguns sinais e vazio em outros.
-- **24 GB levam horas** numa conexão doméstica (~3 MB/s ≈ 2h20). `--reps 1` já
-  dá as 11 pessoas em todos os 10 sinais e é o caminho recomendado para a
-  primeira medição.
+- **Dezenas de GB levam horas** numa conexão doméstica (~3 MB/s). Os clipes da
+  MINDS são pesados (~60 MB cada). `--reps 1` já dá todas as pessoas em todos os
+  sinais e é o caminho recomendado para a primeira medição.
 - O índice de cada `.zip` fica em `.cache/` (não versionado); `--sem-cache`
   reconsulta.
 
@@ -155,20 +188,24 @@ leave-one-signer-out, que passaria a treinar e testar na mesma pessoa sem avisar
 
 ## 5. Por que os vídeos não vão para o git
 
-Três motivos, e qualquer um sozinho já bastaria: são ~24 GB; a licença da
+Três motivos, e qualquer um sozinho já bastaria: são dezenas de GB; a licença da
 V-LIBRASIL (CC BY-NC-ND 4.0) não autoriza redistribuição; e o próprio plano da
 PoC pede para não reter vídeo além do necessário (`extract.py --descartar-video`
 apaga o `.mp4` depois de extrair os landmarks).
 
 O que reproduz o dataset é a receita versionada aqui — `selecao.yaml` +
 `ingest.py` + `manifest.csv`. Quem clonar o repositório roda `python ingest.py` e
-chega aos mesmos 430 arquivos, com os mesmos nomes.
+chega exatamente aos mesmos arquivos, com os mesmos nomes.
 
 ---
 
 ## 6. O que o dataset entregou — e o que ele não entrega
 
-A PoC rodou sobre estes 430 clipes (relatório completo em
+Esta seção registra a medição da **PoC de DTW**, feita sobre o recorte de 10
+sinais e 430 clipes. Ela continua valendo como diagnóstico das bases — foi ela
+que motivou a mudança de critério do §2 — mas não descreve o dataset atual.
+
+A PoC rodou sobre esses 430 clipes (relatório completo em
 [`../PoC/results/relatorio.md`](../PoC/results/relatorio.md)). O número oficial
 ficou em **70,0%**, zona amarela — mas ele é a média de dois regimes bem
 diferentes, e é a separação entre eles que decide o próximo passo
@@ -176,11 +213,11 @@ diferentes, e é a separação entre eles que decide o próximo passo
 
 | cenário | pessoas | clipes | acurácia |
 |---|---|---|---|
-| dataset completo | 11 | 430 | **70,0%** 🟡 |
+| dataset completo | 11 | 430 | **70,0%** |
 | só MINDS-Libras | 8 | 400 | 77,8% |
 | só V-LIBRASIL | 3 | 30 | 46,7% |
-| só os 7 sinais de rótulo validado | 11 | 301 | **80,5%** 🟢 |
-| MINDS + só os 7 validados | 8 | 280 | **85,7%** 🟢 |
+| só os 7 sinais de rótulo validado | 11 | 301 | **80,5%** |
+| MINDS + só os 7 validados | 8 | 280 | **85,7%** |
 
 ### 6.1 As duas bases não somaram pessoas — somaram um degrau de domínio
 
