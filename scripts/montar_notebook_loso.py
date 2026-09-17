@@ -71,6 +71,19 @@ print(f"LOSO média: {media:.2%} | evidências={COM_EVIDENCIAS}")
 '''
 
 
+def trocar_nome_experimento(fonte: str, nome: str) -> str:
+    """Substitui a atribuição inteira de NOME_EXPERIMENTO, que ocupa mais de uma linha.
+
+    A versão anterior cortava só até a primeira quebra de linha e deixava o resto
+    da expressão órfão — o notebook quebrava no Kaggle com IndentationError.
+    """
+    novo, trocas = re.subn(r"NOME_EXPERIMENTO = \((?:[^()]*)\)|NOME_EXPERIMENTO = [^\n]*",
+                           f'NOME_EXPERIMENTO = "{nome}"', fonte, count=1)
+    if trocas != 1:
+        raise SystemExit("atribuição de NOME_EXPERIMENTO não encontrada")
+    return novo
+
+
 def gerar(sha: str, evidencias: bool, nome: str) -> dict:
     fonte = subprocess.run(["git", "-C", str(RAIZ), "show", f"{sha}:{NOTEBOOK}"],
                            capture_output=True, text=True, check=True).stdout
@@ -92,6 +105,11 @@ def gerar(sha: str, evidencias: bool, nome: str) -> dict:
         raise SystemExit("célula do treino final não encontrada")
     extra = '\nLOSO_ARGS.append("--salvar-evidencias")' if evidencias else ""
     alvo[0]["source"] = CELULA.replace("__EVIDENCIAS__", extra).splitlines(keepends=True)
+
+    nomeada = [c for c in nb["cells"] if c["cell_type"] == "code" and "NOME_EXPERIMENTO" in "".join(c["source"])]
+    if len(nomeada) != 1:
+        raise SystemExit("célula do nome do experimento não encontrada")
+    nomeada[0]["source"] = trocar_nome_experimento("".join(nomeada[0]["source"]), nome).splitlines(keepends=True)
 
     for celula in nb["cells"]:
         if celula["cell_type"] == "code":
@@ -132,12 +150,6 @@ def main(argv=None) -> int:
     kernel = args.kernel or f"etapa3-{nome.replace('loso-s20260917-', 'loso-').replace('-v1', '')}"
 
     nb = gerar(args.sha, args.evidencias, nome)
-    alvos = [c for c in nb["cells"] if c["cell_type"] == "code" and "NOME_EXPERIMENTO" in "".join(c["source"])]
-    fonte = "".join(alvos[0]["source"])
-    inicio = fonte.index("NOME_EXPERIMENTO")
-    fim = fonte.index("\n", inicio)
-    alvos[0]["source"] = (fonte[:inicio] + f'NOME_EXPERIMENTO = "{nome}"' + fonte[fim:]).splitlines(keepends=True)
-
     args.saida.mkdir(parents=True, exist_ok=True)
     arquivo = args.saida / f"notebook_{nome.replace('-', '_')}.ipynb"
     arquivo.write_text(json.dumps(nb, ensure_ascii=False, indent=1) + "\n", encoding="utf-8")
