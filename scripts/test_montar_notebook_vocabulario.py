@@ -41,7 +41,11 @@ class TestGerador(unittest.TestCase):
                        "entrada_final.validar_minds", "HASH_BACKBONE_APROVADO",
                        'executar("selftest.py"', "empacotar()",
                        'hashlib.sha256(bruto).hexdigest() != amostra["sha256"]',
-                       'registrar("inventario-vocabulario.json"'):
+                       'registrar("inventario-vocabulario.json"',
+                       # guardas pós-treino da célula original, que a derivação precisa manter
+                       'meta["proveniencia"]["codigo"]["commit"] != COMMIT_APROVADO',
+                       "any(not torch.isfinite(v).all()",
+                       'registrar("checkpoint-final.json"'):
             self.assertIn(trecho, codigo)
 
     def test_recorte_usa_as_palavras_e_alimenta_o_treino(self):
@@ -51,7 +55,8 @@ class TestGerador(unittest.TestCase):
         self.assertIn('"--landmarks", str(MINDS_VOCAB)', codigo)
         self.assertNotIn('"--landmarks", str(MINDS)', codigo)
         # --inventario-final vale para as 800 identidades; não cabe no recorte.
-        self.assertNotIn("--inventario-final", codigo)
+        # (o gerador explica isso num comentário, daí a busca pelo argumento entre aspas)
+        self.assertNotIn('"--inventario-final"', codigo)
 
     def test_receita_de_entrega_intacta(self):
         for modo in ("final", "loso"):
@@ -71,7 +76,7 @@ class TestGerador(unittest.TestCase):
         final = fonte_codigo(mnv.gerar(SHA, "final", DEZ, "x"))
         loso = fonte_codigo(mnv.gerar(SHA, "loso", DEZ, "x"))
         self.assertIn('"--final", "--politica-final", "ultima"', final)
-        self.assertNotIn("--final", loso.replace("--final-", ""))
+        self.assertNotIn("--final", loso)
         self.assertIn("--salvar-evidencias", loso)
         self.assertNotIn("--salvar-evidencias", final)
         self.assertIn("len(rodadas) != 8", loso)
@@ -103,6 +108,86 @@ class TestGerador(unittest.TestCase):
                           ["--sha", SHA, "--modo", "final", "--palavras", "filho"]):
                 with self.subTest(extra=extra), self.assertRaises(SystemExit):
                     mnv.main([*extra, "--saida", str(Path(tmp) / "k")])
+
+
+class TestRecorteExecutado(unittest.TestCase):
+    """Executa o trecho do recorte contra um corpus fictício.
+
+    O resto da suíte confere texto; esta parte é a única lógica que não existe
+    no notebook original, então precisa rodar de verdade: trocar o filtro de
+    `sinal` por `pessoa`, por exemplo, passaria em todos os outros testes.
+    """
+    PESSOAS = [f"M{n:02d}" for n in range(1, 9)]
+    SINAIS = ["filho", "medo", "amarelo"]
+
+    def montar_corpus(self, raiz: Path):
+        import hashlib
+        import numpy as np
+        minds = raiz / "minds"
+        minds.mkdir(parents=True)
+        amostras = []
+        for pessoa in self.PESSOAS:
+            for sinal in self.SINAIS:
+                for rep in range(1, 6):
+                    nome = f"pessoa{pessoa}_sinal-{sinal}_rep{rep:02d}.npy"
+                    arr = np.full((4, 57, 3), len(amostras) + 1, dtype="float32")
+                    np.save(minds / nome, arr, allow_pickle=False)
+                    bruto = (minds / nome).read_bytes()
+                    amostras.append({"arquivo": nome, "sha256": hashlib.sha256(bruto).hexdigest(),
+                                     "pessoa": pessoa, "sinal": sinal, "rep": rep})
+        inventario = {"amostras": amostras, "pessoas": list(self.PESSOAS),
+                      "rotulos": sorted(self.SINAIS), "corpus_sha256": "0" * 64}
+        return minds, inventario
+
+    def rodar(self, raiz: Path, palavras, inventario, minds):
+        lista = "[" + ", ".join(f'"{p}"' for p in palavras) + "]"
+        codigo = mnv.RECORTE.replace("__PALAVRAS__", lista)
+        registros = {}
+        escopo = {"DESTINO": raiz / "destino", "MINDS": minds, "INVENTARIO_MINDS": inventario,
+                  "registrar": lambda nome, valor: registros.__setitem__(nome, valor),
+                  "print": lambda *a, **k: None}
+        exec(compile(codigo, "<recorte>", "exec"), escopo)
+        return escopo, registros
+
+    def test_copia_so_os_clipes_das_palavras(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            raiz = Path(tmp)
+            minds, inventario = self.montar_corpus(raiz)
+            escopo, registros = self.rodar(raiz, ("filho", "medo"), inventario, minds)
+            copiados = sorted(p.name for p in escopo["MINDS_VOCAB"].iterdir())
+            esperados = sorted(a["arquivo"] for a in inventario["amostras"]
+                               if a["sinal"] in ("filho", "medo"))
+            self.assertEqual(copiados, esperados)
+            self.assertEqual(len(copiados), 2 * 8 * 5)
+            self.assertNotIn("amarelo", " ".join(copiados))
+            vocab = registros["inventario-vocabulario.json"]
+            self.assertEqual(vocab["palavras"], ["filho", "medo"])
+            self.assertEqual(vocab["n_clipes"], 80)
+            # bytes idênticos aos do corpus validado
+            for nome in copiados:
+                self.assertEqual((escopo["MINDS_VOCAB"] / nome).read_bytes(),
+                                 (minds / nome).read_bytes())
+
+    def test_recusa_clipe_adulterado_depois_do_inventario(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            raiz = Path(tmp)
+            minds, inventario = self.montar_corpus(raiz)
+            alvo = next(a for a in inventario["amostras"] if a["sinal"] == "filho")
+            (minds / alvo["arquivo"]).write_bytes(b"\x93NUMPY adulterado")
+            with self.assertRaises(RuntimeError) as erro:
+                self.rodar(raiz, ("filho", "medo"), inventario, minds)
+            self.assertIn("diverge do inventário", str(erro.exception))
+
+    def test_recusa_palavra_fora_do_corpus_e_destino_existente(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            raiz = Path(tmp)
+            minds, inventario = self.montar_corpus(raiz)
+            with self.assertRaises(RuntimeError):
+                self.rodar(raiz, ("filho", "inexistente"), inventario, minds)
+            self.rodar(raiz, ("filho", "medo"), inventario, minds)
+            with self.assertRaises(RuntimeError) as erro:  # não sobrescreve recorte anterior
+                self.rodar(raiz, ("filho", "medo"), inventario, minds)
+            self.assertIn("já existe", str(erro.exception))
 
 
 if __name__ == "__main__":

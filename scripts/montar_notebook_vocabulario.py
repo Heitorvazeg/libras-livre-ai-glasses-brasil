@@ -33,14 +33,18 @@ from montar_notebook_loso import (DATASETS, IMAGEM, NOTEBOOK, RAIZ,
 PALAVRAS_PADRAO = ("banco", "banheiro", "cinco", "conhecer", "esquina", "filho",
                    "medo", "ruim", "vacina", "vontade")
 
-RECORTE = '''# Revalidar imediatamente antes da chamada longa, inclusive se células foram
+REVALIDA = '''# Revalidar imediatamente antes da chamada longa, inclusive se células foram
 # executadas fora de ordem.
 codigo_final.conferir_codigo(REPO, COMMIT_APROVADO)
 entrada_final.validar_minds(MINDS, manifesto_referencia=INVENTARIO_CAMINHO)
 if entrada.pv.hash_arquivo(BACKBONE) != HASH_BACKBONE_APROVADO:
     raise RuntimeError("Backbone mudou após o preflight.")
 
-import hashlib
+'''
+
+# Só o recorte, sem as guardas acima: assim o teste executa este trecho contra um
+# corpus fictício, que é a única parte da receita que não existe no notebook original.
+RECORTE = '''import hashlib
 
 # Vocabulário reduzido. A guarda dos 800 clipes continua valendo acima: o
 # recorte sai do corpus JÁ validado e cada clipe é conferido pelo sha256 do
@@ -77,6 +81,9 @@ FINAL_ARGS = [
     "--arquitetura", "gcn", "--ossos", "--com-z", "--z-recentrado",
     "--kernel-temporal", "9", "--fontes", "minds", "--landmarks", str(MINDS_VOCAB),
     "--inicializar", str(BACKBONE),
+    # Sem --inventario-final de propósito: essa guarda exige as 800 identidades do
+    # MINDS completo e recusaria o recorte. A validação das 800 já rodou acima, e o
+    # recorte é conferido clipe a clipe pelo sha256 do inventário.
     "--epocas", "120", "--lr", "1e-3", "--wd", "1e-4", "--batch", "64",
     "--agendador", "cosseno",
     "--final", "--politica-final", "ultima", "--semente", "20260917",
@@ -97,10 +104,16 @@ if (meta["epoca_salva"] != 120 or meta["politica_selecao"] != "ultima"
         or checkpoint["rotulos"] != sorted(PALAVRAS)
         or sorted(meta["pessoas"]) != sorted(INVENTARIO_MINDS["pessoas"])
         or meta.get("extras") is not None
-        or bool(meta["args"].get("aug_dominio"))):
-    raise RuntimeError("Checkpoint não corresponde à receita desta variante.")
-print("checkpoint:", destino)
-print("rótulos:", checkpoint["rotulos"])
+        or bool(meta["args"].get("aug_dominio"))
+        or meta["proveniencia"]["codigo"]["commit"] != COMMIT_APROVADO
+        or any(not torch.isfinite(v).all() for v in checkpoint["state_dict"].values())):
+    raise RuntimeError("Checkpoint não corresponde à receita desta variante; não exportar.")
+registrar("checkpoint-final.json", {"sha256": entrada.pv.hash_arquivo(destino),
+                                    "epoca": 120, "aprovado_entrega": False})
+rotulos_entregues = list(checkpoint["rotulos"])
+del checkpoint
+print("Checkpoint final:", destino, "|", entrada.pv.hash_arquivo(destino))
+print("rótulos:", rotulos_entregues)
 '''
 
 LOSO = '''
@@ -158,7 +171,7 @@ def gerar(sha: str, modo: str, palavras: tuple[str, ...], nome: str) -> dict:
     if len(alvo) != 1:
         raise SystemExit("célula do treino final não encontrada")
     lista = "[" + ", ".join(f'"{p}"' for p in palavras) + "]"
-    corpo = RECORTE.replace("__PALAVRAS__", lista) + (FINAL if modo == "final" else LOSO)
+    corpo = REVALIDA + RECORTE.replace("__PALAVRAS__", lista) + (FINAL if modo == "final" else LOSO)
     alvo[0]["source"] = corpo.splitlines(keepends=True)
 
     nomeada = [c for c in nb["cells"] if c["cell_type"] == "code" and "NOME_EXPERIMENTO" in "".join(c["source"])]
