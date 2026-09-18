@@ -438,13 +438,19 @@ class CameraViewModel(
             },
             onConversa = { evento ->
               _uiState.update { it.copy(conversa = Conversas.reduzir(it.conversa, evento)) }
-              // 2.8: "não entendi" fica na faixa até a próxima frase aceita.
-              if (evento is EventoConversa.DecisaoTomada) {
-                when (evento.decisao) {
-                  DecisaoNaConversa.REPITA -> definirAviso(TipoAviso.REPITA, textos.repita)
-                  DecisaoNaConversa.DESISTIU -> definirAviso(TipoAviso.REPITA, textos.desistiu)
-                  else -> limparAviso(TipoAviso.REPITA)
-                }
+              when (evento) {
+                // 2.8: "não entendi" fica na faixa até a próxima frase aceita.
+                is EventoConversa.DecisaoTomada ->
+                    when (evento.decisao) {
+                      DecisaoNaConversa.REPITA -> definirAviso(TipoAviso.REPITA, textos.repita)
+                      DecisaoNaConversa.DESISTIU -> definirAviso(TipoAviso.REPITA, textos.desistiu)
+                      else -> limparAviso(TipoAviso.REPITA)
+                    }
+                // Uma nova captura começou (iniciar/repetir/corrigir): o "não entendi" (ATENÇÃO) do
+                // turno anterior já cumpriu seu papel e encobriria a badge de sinalização (CAPTURA,
+                // INFORMAÇÃO). Some com ele para o operador ver "● sinalizando / ○ parado" ao vivo.
+                EventoConversa.TurnoIniciado -> limparAviso(TipoAviso.REPITA)
+                else -> Unit
               }
             },
             metricas = metricas,
