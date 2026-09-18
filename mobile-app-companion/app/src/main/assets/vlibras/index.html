@@ -76,6 +76,36 @@
     player.play(glosa);
   };
   window.avatarStop = function () { player.stop(); };
+
+  // A WebView carrega ESCONDIDA e sem tamanho (0x0) durante o aquecimento; o Unity fixa o buffer
+  // de desenho no tamanho de init e não redesenha sozinho quando a view é anexada e ganha
+  // dimensão real — daí a tela branca. Um ResizeObserver reavisa o Unity (evento 'resize', que o
+  // UnityLoader escuta) assim que o container finalmente tem tamanho, e loga para diagnóstico.
+  var wrapper = document.getElementById("wrapper");
+  // Carregada escondida (0x0), a página trava o `height:100%` em 0 e, ao anexar, só a largura se
+  // recupera — a altura fica 0 e o Unity desenha em 0x0 (tela branca). Em vez de confiar no
+  // viewport, o Kotlin passa a altura/largura reais em px do dispositivo; fixamos html/body nesse
+  // tamanho (em px CSS) e o `height:100%!important` do wrapper/canvas cascateia, e o Unity então
+  // recalcula o buffer no evento 'resize'.
+  window.avatarResize = function (pxW, pxH) {
+    var dpr = window.devicePixelRatio || 1;
+    if (pxH > 0) {
+      var cssH = Math.round(pxH / dpr) + "px";
+      document.documentElement.style.height = cssH;
+      document.body.style.height = cssH;
+    }
+    if (pxW > 0) {
+      var cssW = Math.round(pxW / dpr) + "px";
+      document.documentElement.style.width = cssW;
+      document.body.style.width = cssW;
+    }
+    var cv = wrapper.querySelector("canvas");
+    bridge("log", "resize in=" + pxW + "x" + pxH + " dpr=" + dpr +
+        " wrapper=" + wrapper.clientWidth + "x" + wrapper.clientHeight +
+        " canvas=" + (cv ? cv.width + "x" + cv.height : "-"));
+    if (wrapper.clientWidth > 0 && wrapper.clientHeight > 0) window.dispatchEvent(new Event("resize"));
+  };
+  if (window.ResizeObserver) new ResizeObserver(function () { window.avatarResize(); }).observe(wrapper);
 })();
 </script>
 </body>

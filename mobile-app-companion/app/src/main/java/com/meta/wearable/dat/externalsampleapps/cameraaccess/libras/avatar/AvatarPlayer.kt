@@ -100,7 +100,7 @@ class AvatarPlayer(
   var visivel: Boolean = false
     set(value) {
       field = value
-      if (value) resume() else pausarSeOcioso()
+      if (value) { resume(); nudgeResize() } else pausarSeOcioso()
     }
   private val mainHandler = Handler(Looper.getMainLooper())
   private val cargaTimeout = Runnable {
@@ -265,6 +265,25 @@ class AvatarPlayer(
       it.onResume()
     }
     pausado = false
+  }
+
+  /**
+   * Reavisa o Unity do tamanho do canvas. A WebView carrega escondida (0x0) e o Unity fixa o
+   * buffer no tamanho de init; ao ser anexada e ganhar tamanho, ele não redesenha sozinho — daí a
+   * tela branca. O ResizeObserver na página já cobre o anexo; isto é o reforço com timing pela
+   * main thread (o layout do AndroidView pode assentar depois do `visivel = true`).
+   */
+  private fun nudgeResize() {
+    val wv = webView ?: return
+    // Passa o tamanho REAL em px do dispositivo: a página não consegue descobrir a altura sozinha
+    // (o viewform ficou preso em 0 de quando carregou escondida). Repetimos porque o layout do
+    // AndroidView pode assentar depois do `visivel = true`.
+    val nudge = Runnable {
+      wv.evaluateJavascript("window.avatarResize && window.avatarResize(${wv.width}, ${wv.height});", null)
+    }
+    wv.post(nudge)
+    mainHandler.postDelayed(nudge, 250)
+    mainHandler.postDelayed(nudge, 700)
   }
 
   // Pronto (não carregando nem animando) e com a tela fechada: pausa.
