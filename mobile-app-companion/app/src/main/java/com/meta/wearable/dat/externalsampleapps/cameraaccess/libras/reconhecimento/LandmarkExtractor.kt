@@ -52,19 +52,26 @@ class LandmarkExtractor(context: Context) {
     private const val MAX_MAOS = 4
   }
 
-  // Calibração 2026-09-18: os dois modelos rodavam em CPU (delegate padrão), o que segurava o
-  // pipeline em ~5 fps e inflava a velocidade da segmentação. Tenta GPU primeiro e cai pra CPU se o
-  // aparelho não suportar — a falha do delegate GPU aparece na criação, então o fallback é seguro.
-  private fun <T> criarComGpuOuCpu(nome: String, cria: (Delegate) -> T): T =
+  // Delegate do MediaPipe. GPU dá ~22 fps de inferência (contra ~5 em CPU) e resolveria a
+  // segmentação, MAS a criação dos modelos em GPU custa ~55 s NESTE aparelho (Galaxy A57) — e a
+  // cada lançamento, não é cache. Inaceitável no warmup. Fica desligado por padrão, atrás deste
+  // flag, até termos um init em segundo plano (ou um device onde o custo seja aceitável).
+  // Medições em docs/ / conversa 2026-09-18.
+  private val usarGpu = false
+
+  private fun <T> criarLandmarker(nome: String, cria: (Delegate) -> T): T {
+    if (usarGpu) {
       try {
-        cria(Delegate.GPU).also { Log.i(TAG, "$nome em GPU") }
+        return cria(Delegate.GPU).also { Log.i(TAG, "$nome em GPU") }
       } catch (e: Throwable) {
         Log.w(TAG, "$nome: GPU indisponível ($e) — usando CPU")
-        cria(Delegate.CPU)
       }
+    }
+    return cria(Delegate.CPU).also { Log.i(TAG, "$nome em CPU") }
+  }
 
   private val poseLandmarker: PoseLandmarker =
-      criarComGpuOuCpu("pose") { delegate ->
+      criarLandmarker("pose") { delegate ->
         PoseLandmarker.createFromOptions(
             context,
             PoseLandmarker.PoseLandmarkerOptions.builder()
@@ -77,7 +84,7 @@ class LandmarkExtractor(context: Context) {
       }
 
   private val handLandmarker: HandLandmarker =
-      criarComGpuOuCpu("maos") { delegate ->
+      criarLandmarker("maos") { delegate ->
         HandLandmarker.createFromOptions(
             context,
             HandLandmarker.HandLandmarkerOptions.builder()
