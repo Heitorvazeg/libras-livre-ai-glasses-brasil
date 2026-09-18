@@ -49,6 +49,50 @@ class DialogOrchestratorCameraTest {
   }
 
   @Test
+  fun `iniciar reaproveita consentimento do mesmo atendimento sem repetir a pergunta`() = runTest {
+    val c = Cenario(backgroundScope)
+    // Primeiro turno real: aceita o consentimento e começa a captura.
+    c.dialogo.onWakeWord(WakeWord.INICIAR)
+    runCurrent()
+    assertEquals(DialogState.PEDINDO_CONSENTIMENTO, c.estado)
+    c.dialogo.aceitarConsentimento()
+    runCurrent()
+    assertEquals(DialogState.CAPTURANDO_SINAIS, c.estado)
+    assertEquals(1, c.capturas)
+
+    // Sem nenhum sinal, o teto encerra a captura (Ignorar) e volta ao ① — sem revogar consentimento.
+    advanceTimeBy(Transicoes.TETO_CAPTURA_SEM_SEGMENTO_MS + 1)
+    runCurrent()
+    assertEquals(DialogState.AGUARDANDO_SINAL, c.estado)
+    assertTrue(c.politica.consentimento)
+
+    // Novo "iniciar" no MESMO atendimento: não passa por ①.5, vai direto pra captura.
+    c.dialogo.onWakeWord(WakeWord.INICIAR)
+    runCurrent()
+    assertEquals(DialogState.CAPTURANDO_SINAIS, c.estado)
+    assertEquals(2, c.capturas)
+  }
+
+  @Test
+  fun `cancelar faz o iniciar seguinte pedir consentimento de novo`() = runTest {
+    val c = Cenario(backgroundScope)
+    c.dialogo.onWakeWord(WakeWord.INICIAR)
+    runCurrent()
+    c.dialogo.aceitarConsentimento()
+    runCurrent()
+    assertEquals(DialogState.CAPTURANDO_SINAIS, c.estado)
+
+    c.dialogo.cancelarAtendimento()
+    runCurrent()
+    assertFalse(c.politica.consentimento)
+
+    // Atendimento novo (consentimento revogado por Cancelar): volta a ①.5.
+    c.dialogo.onWakeWord(WakeWord.INICIAR)
+    runCurrent()
+    assertEquals(DialogState.PEDINDO_CONSENTIMENTO, c.estado)
+  }
+
+  @Test
   fun `aceitar recusar cancela ensure e desliga mesmo sem estado capturando`() = runTest {
     val c = Cenario(backgroundScope)
     c.portaCamera = CompletableDeferred()

@@ -470,6 +470,22 @@ class DialogOrchestrator(
       return
     }
     geracao++
+    // Consentimento é POR ATENDIMENTO, não por turno (docs/consentimento-por-atendimento-plano.md
+    // §2.6): se a pessoa já aceitou neste atendimento — e ele não foi encerrado por Cancelar,
+    // Recusar, ocioso (encerrarAtendimento, 60 s) ou bateria, que revogam —, um novo "iniciar" NÃO
+    // repete ①.5: religa a câmera e vai direto pra captura. Preview e atendimento novo (sem
+    // consentimento em memória) continuam passando por ①.5.
+    if (politicaCamera.consentimento && !preview) {
+      deactivateCamera()
+      somentePreview = false
+      startingSignSession = true
+      ligandoCameraAposConsentimento = true
+      politicaCamera.aceitarConsentimento() // idempotente; renova o token da câmera como no Aceitar
+      onEvento("consentimento", "reaproveitado")
+      metricas?.novoTurno(SystemClock.uptimeMillis())
+      abrirCameraEComecar(geracao, DialogState.AGUARDANDO_SINAL)
+      return
+    }
     politicaCamera.revogarConsentimento()
     deactivateCamera()
     somentePreview = preview
@@ -520,13 +536,22 @@ class DialogOrchestrator(
     ligandoCameraAposConsentimento = true
     politicaCamera.aceitarConsentimento()
     onEvento("consentimento", "aceito")
-    val minhaGeracao = geracao
+    abrirCameraEComecar(geracao, DialogState.PEDINDO_CONSENTIMENTO)
+  }
+
+  /**
+   * Religa a câmera e abre a captura — caminho comum ao "Aceitar" de ①.5 e ao "iniciar" que
+   * reaproveita o consentimento do atendimento. [estadoEsperado] é o estado de partida
+   * (PEDINDO_CONSENTIMENTO no Aceitar, AGUARDANDO_SINAL no reaproveitamento): se a conversa avançou
+   * por outra via enquanto a câmera subia, aborta. Requer `ligandoCameraAposConsentimento` já true.
+   */
+  private fun abrirCameraEComecar(minhaGeracao: Int, estadoEsperado: DialogState) {
     aberturaJob = scope.launch {
       try {
         val falha = ensureCameraActive()
         if (minhaGeracao != geracao) return@launch
         if (falha != null) {
-          Log.w(TAG, "Câmera/stream não subiu ($falha) — consentimento aceito, 'iniciar' não completou")
+          Log.w(TAG, "Câmera/stream não subiu ($falha) — 'iniciar' não completou")
           onEvento("camera_nao_subiu", falha.name)
           onFalhaCamera(falha)
           pularAvatar()
@@ -534,11 +559,15 @@ class DialogOrchestrator(
           voltarAoInicio()
           return@launch
         }
-        if (_state.value != DialogState.PEDINDO_CONSENTIMENTO) return@launch
+        if (_state.value != estadoEsperado) return@launch
         pularAvatar()
         esconderAvatar()
         if (somentePreview) {
           voltarAoInicio()
+          // Preview é uma amostra: seu consentimento NÃO vale pra uma captura real depois — um
+          // "iniciar" seguinte passa por ①.5 de novo. Sem isto, o reaproveitamento por atendimento
+          // (beginSignSession) herdaria o consentimento do sample.
+          politicaCamera.revogarConsentimento()
         } else {
           aoIniciarCaptura()
           iniciarCaptura()
