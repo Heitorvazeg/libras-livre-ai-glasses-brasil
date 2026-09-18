@@ -996,6 +996,7 @@ class DialogOrchestrator(
 
   // Único ponto que muda o estado E decide se a wake word deve estar ouvindo.
   private fun setState(newState: DialogState) {
+    if (_state.value != newState) Log.i(TAG, "estado ${_state.value} -> $newState")
     _state.value = newState
     if (Transicoes.wakeWordAtiva(newState, wakeWordHabilitada)) {
       wakeWordDetector?.start()
