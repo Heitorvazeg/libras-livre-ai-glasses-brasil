@@ -58,8 +58,10 @@ data class ValoresDemo(
     val saidaVoz: SaidaVoz = SaidaVoz.OCULOS,
     val microfoneResposta: MicrofoneResposta = MicrofoneResposta.CELULAR,
     val folgaAposFalaMs: Long = 300L,
-    // 2.8
-    val limiarConfianca: Float = 0.60f,
+    // 2.8 — Calibração 2026-09-18 (CSVs ao vivo): a confiança separa certo/errado com um degrau
+    // nítido entre ~0.66 (errados) e ~0.76 (certos). 0.60 deixava passar acertos "por sorte" de
+    // confiança baixa que saíam errados; 0.72 rejeita esses (viram "repita") e mantém os ≥0.76.
+    val limiarConfianca: Float = 0.72f,
     // 8.1: libera o avatar quando a memória disponível cai abaixo de fator × threshold do sistema
     val fatorLimiarMemoria: Float = 1.5f,
     // 9.1

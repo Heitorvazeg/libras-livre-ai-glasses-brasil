@@ -12,18 +12,28 @@ package com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.reconhecime
 data class ParametrosSegmentacao(
     /** PARADO -> SINALIZANDO quando a velocidade suavizada chega aqui (ombros/s). */
     val limiarEntrada: Float = 0.7f,
-    /** Enquanto SINALIZANDO, acima disto ainda é movimento (ombros/s). Menor que a entrada. */
-    val limiarSaida: Float = 0.4f,
+    /**
+     * Enquanto SINALIZANDO, acima disto ainda é movimento (ombros/s). Menor que a entrada.
+     *
+     * Calibração 2026-09-18 (CSVs ao vivo, ~5 fps): 0.4 era baixo demais — a ~5 fps a velocidade
+     * entre frames fica inflada e quase nunca caía abaixo de 0.4, então os sinais não fechavam por
+     * pausa e batiam no teto de 3.5 s (11 de 13 segmentos por DURACAO_MAXIMA). 0.55 faz os vales
+     * reais (medidos em 1.2–1.7 s entre sinais) fecharem o segmento. Revisar quando o fps subir.
+     */
+    val limiarSaida: Float = 0.55f,
     /** A velocidade compara o frame atual com o mais recente que tenha pelo menos esta idade. */
     val janelaVelocidadeMs: Long = 110L,
     /** Peso do valor novo na média móvel exponencial da velocidade. */
     val alfaSuavizacao: Float = 0.5f,
     /**
-     * Pausa (mãos visíveis, abaixo do limiar de saída) que fecha o sinal. 800 ms, e não os 500 ms
-     * sugeridos pelo plano, porque holds internos dos clipes do MINDS acumularam ~480 ms e
-     * partiam um sinal em dois — ver docs/integracao-video-minds-e-calibracao-2026-09-17.md.
+     * Pausa (mãos visíveis, abaixo do limiar de saída) que fecha o sinal.
+     *
+     * Calibração 2026-09-18: reduzida de 800 para 500 ms — a ~5 fps os sinais emendados batiam no
+     * teto de 3.5 s antes de qualquer pausa de 800 ms aparecer. 500 ms ainda fica acima dos ~480 ms
+     * de hold interno dos clipes do MINDS (que partiam um sinal em dois — ver
+     * docs/integracao-video-minds-e-calibracao-2026-09-17.md), preservando essa margem.
      */
-    val pausaMs: Long = 800L,
+    val pausaMs: Long = 500L,
     /** Ausência das duas mãos que fecha o sinal. Antes disso, o relógio da pausa não anda. */
     val tetoOclusaoMs: Long = 900L,
     /** Movimento mais curto que isto é espasmo: descartado sem classificar e sem contar falha. */

@@ -26,6 +26,7 @@ import android.util.Log
 import com.google.mediapipe.framework.image.BitmapImageBuilder
 import java.nio.ByteBuffer
 import com.google.mediapipe.tasks.core.BaseOptions
+import com.google.mediapipe.tasks.core.Delegate
 import com.google.mediapipe.tasks.vision.core.RunningMode
 import com.google.mediapipe.tasks.vision.handlandmarker.HandLandmarker
 import com.google.mediapipe.tasks.vision.handlandmarker.HandLandmarkerResult
@@ -51,25 +52,42 @@ class LandmarkExtractor(context: Context) {
     private const val MAX_MAOS = 4
   }
 
+  // Calibração 2026-09-18: os dois modelos rodavam em CPU (delegate padrão), o que segurava o
+  // pipeline em ~5 fps e inflava a velocidade da segmentação. Tenta GPU primeiro e cai pra CPU se o
+  // aparelho não suportar — a falha do delegate GPU aparece na criação, então o fallback é seguro.
+  private fun <T> criarComGpuOuCpu(nome: String, cria: (Delegate) -> T): T =
+      try {
+        cria(Delegate.GPU).also { Log.i(TAG, "$nome em GPU") }
+      } catch (e: Throwable) {
+        Log.w(TAG, "$nome: GPU indisponível ($e) — usando CPU")
+        cria(Delegate.CPU)
+      }
+
   private val poseLandmarker: PoseLandmarker =
-      PoseLandmarker.createFromOptions(
-          context,
-          PoseLandmarker.PoseLandmarkerOptions.builder()
-              .setBaseOptions(BaseOptions.builder().setModelAssetPath(POSE_MODEL).build())
-              .setRunningMode(RunningMode.VIDEO)
-              .setNumPoses(MAX_POSES)
-              .build(),
-      )
+      criarComGpuOuCpu("pose") { delegate ->
+        PoseLandmarker.createFromOptions(
+            context,
+            PoseLandmarker.PoseLandmarkerOptions.builder()
+                .setBaseOptions(
+                    BaseOptions.builder().setModelAssetPath(POSE_MODEL).setDelegate(delegate).build())
+                .setRunningMode(RunningMode.VIDEO)
+                .setNumPoses(MAX_POSES)
+                .build(),
+        )
+      }
 
   private val handLandmarker: HandLandmarker =
-      HandLandmarker.createFromOptions(
-          context,
-          HandLandmarker.HandLandmarkerOptions.builder()
-              .setBaseOptions(BaseOptions.builder().setModelAssetPath(HAND_MODEL).build())
-              .setRunningMode(RunningMode.VIDEO)
-              .setNumHands(MAX_MAOS)
-              .build(),
-      )
+      criarComGpuOuCpu("maos") { delegate ->
+        HandLandmarker.createFromOptions(
+            context,
+            HandLandmarker.HandLandmarkerOptions.builder()
+                .setBaseOptions(
+                    BaseOptions.builder().setModelAssetPath(HAND_MODEL).setDelegate(delegate).build())
+                .setRunningMode(RunningMode.VIDEO)
+                .setNumHands(MAX_MAOS)
+                .build(),
+        )
+      }
 
   // Buffers reaproveitados entre frames (a thread de frames é uma só): o frame YUV é copiado em
   // bloco para arrays e convertido para um Bitmap ARGB — ver YuvParaArgb para o porquê.
