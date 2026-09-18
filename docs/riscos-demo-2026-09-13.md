@@ -878,13 +878,16 @@ Hoje ninguém vê a transcrição antes do avatar (§12).
 
 ### 8.1 Depende de rede — [código] e [medido]
 
-A tradução para glosa usa o endpoint público do VLibras, com cache em disco, e o player
-busca as animações dos sinais na rede (`vlibras-webview-plano.md`). Não existe espelho
-offline.
+A tradução para glosa usa o endpoint público do VLibras, com um cache que dura só o
+atendimento (em memória, apagado no fim de cada um), e o player busca as animações dos
+sinais na rede (`vlibras-webview-plano.md`). Não existe espelho offline.
 
 **Resolução:**
-- **Aquecer o cache no local:** rodar as respostas do roteiro uma vez na rede do evento
-  antes de apresentar. O `GlosaCache` guarda a tradução.
+- ~~**Aquecer o cache no local**~~ — **deixou de ser possível por desenho** (2026-09-18):
+  o `GlosaCache` não grava mais em disco e é apagado no fim de cada atendimento, junto com o
+  consentimento, porque guardava o texto da conversa entre atendimentos. A primeira
+  ocorrência de cada frase em cada atendimento vai à rede; só repetições no mesmo
+  atendimento saem do cache.
 - Levar um roteador 4G ou usar o hotspot de **outro** celular.
 - A legenda já é o piso (`onAvatarUnavailable`): ensaiar esse caminho também, para que a
   falha pareça planejada.
@@ -1011,7 +1014,7 @@ aparelho de demo.
 | glosas → frase | seq2seq autorregressivo; exige as correções do §5.1 para o teto valer | < 1,5 s, depois o template |
 | frase → primeiro áudio | síntese do Piper | < 1 s |
 | fim da fala do atendente → texto | fim de enunciado do Vosk | < 1,5 s |
-| texto → avatar sinalizando | rede do VLibras + animação (§8) | < 3 s com cache aquecido |
+| texto → avatar sinalizando | rede do VLibras + animação (§8) | < 3 s com a glosa em cache (só repetição no mesmo atendimento, §8.1) |
 
 ### 10.2 Instrumentar antes de otimizar
 
@@ -1143,7 +1146,7 @@ roteiro, iniciar a sessão com os óculos antes de subir ao palco.
 | Fundo sem pessoas e boa iluminação frontal | pose correta e mãos estáveis |
 | Óculos e celular carregados; power bank; estojo dos óculos | §9 |
 | Celular com tela sempre ligada, sem economia de bateria, em modo não perturbe | §9.2, notificações sobre o avatar |
-| Rede 4G própria, cache do VLibras aquecido | §8.1 |
+| Rede 4G própria (o cache de glosa não se aquece: dura só o atendimento) | §8.1 |
 | App aberto e aquecido antes de subir ao palco | §10.3 |
 | **Vídeo gravado de uma execução bem-sucedida** | plano B final, se hardware ou rede falharem |
 | Um roteiro de fala para cada falha (tabela abaixo) | a falha vira explicação de arquitetura |

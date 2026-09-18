@@ -6,6 +6,7 @@ import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.audio.SttEng
 import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.audio.TtsEngine
 import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.audio.WakeWord
 import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.avatar.DesfechoAvatar
+import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.avatar.GlosaCache
 import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.contextualizacao.PassthroughGlossContextualizer
 import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.reconhecimento.Classificacao
 import kotlinx.coroutines.CancellationException
@@ -13,6 +14,7 @@ import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
@@ -497,8 +499,109 @@ class DialogOrchestratorCameraTest {
     assertEquals(listOf("filho"), c.falas)
   }
 
+  // --- Cache de glosa por atendimento: apagado em todo fim de atendimento, e só nele ---
+
+  /** Chega a ② com o consentimento aceito; o texto do consentimento já passou pelo cache. */
+  private fun TestScope.emCaptura(c: Cenario) {
+    c.dialogo.onWakeWord(WakeWord.INICIAR)
+    runCurrent()
+    c.dialogo.aceitarConsentimento()
+    runCurrent()
+    assertEquals(DialogState.CAPTURANDO_SINAIS, c.estado)
+  }
+
+  private fun Cenario.guardarFrase(texto: String) = cache.guardar(texto, texto.uppercase(), cache.epoca())
+
+  @Test
+  fun `cancelar atendimento apaga o cache de glosa`() = runTest {
+    val c = Cenario(backgroundScope)
+    emCaptura(c)
+    c.guardarFrase("sua consulta e amanha")
+    assertTrue(c.cache.tamanho() > 0)
+    c.dialogo.cancelarAtendimento()
+    runCurrent()
+    assertEquals(0, c.cache.tamanho())
+  }
+
+  @Test
+  fun `atendimento ocioso apaga o cache de glosa`() = runTest {
+    val c = Cenario(backgroundScope)
+    emCaptura(c)
+    // Teto da captura sem sinais: volta ao ① ainda no atendimento, com o cache valendo.
+    advanceTimeBy(Transicoes.TETO_CAPTURA_SEM_SEGMENTO_MS + 1)
+    runCurrent()
+    assertEquals(DialogState.AGUARDANDO_SINAL, c.estado)
+    c.guardarFrase("sua consulta e amanha")
+    assertTrue(c.cache.tamanho() > 0)
+    advanceTimeBy(60_000L + 1)
+    runCurrent()
+    assertFalse(c.politica.consentimento)
+    assertEquals(0, c.cache.tamanho())
+  }
+
+  @Test
+  fun `recusar consentimento apaga o cache de glosa, inclusive o texto do proprio consentimento`() = runTest {
+    val c = Cenario(backgroundScope)
+    c.dialogo.onWakeWord(WakeWord.INICIAR)
+    runCurrent()
+    assertEquals(DialogState.PEDINDO_CONSENTIMENTO, c.estado)
+    assertEquals(
+        DialogOrchestrator.TEXTO_CONSENTIMENTO_PLACEHOLDER.uppercase(),
+        c.cache.obter(DialogOrchestrator.TEXTO_CONSENTIMENTO_PLACEHOLDER))
+    c.dialogo.recusarConsentimento()
+    runCurrent()
+    assertEquals(0, c.cache.tamanho())
+  }
+
+  @Test
+  fun `fim do preview apaga o cache de glosa`() = runTest {
+    val c = Cenario(backgroundScope)
+    c.dialogo.pedirPreview()
+    runCurrent()
+    assertTrue(c.cache.tamanho() > 0)
+    c.dialogo.aceitarConsentimento()
+    runCurrent()
+    assertEquals(DialogState.AGUARDANDO_SINAL, c.estado)
+    assertFalse(c.politica.consentimento)
+    assertEquals(0, c.cache.tamanho())
+  }
+
+  @Test
+  fun `novo iniciar com consentimento reaproveitado mantem o cache de glosa`() = runTest {
+    val c = Cenario(backgroundScope)
+    emCaptura(c)
+    advanceTimeBy(Transicoes.TETO_CAPTURA_SEM_SEGMENTO_MS + 1)
+    runCurrent()
+    c.guardarFrase("sua consulta e amanha")
+    val antes = c.cache.tamanho()
+    c.dialogo.onWakeWord(WakeWord.INICIAR)
+    runCurrent()
+    assertEquals(DialogState.CAPTURANDO_SINAIS, c.estado)
+    assertEquals(antes, c.cache.tamanho())
+    assertEquals("SUA CONSULTA E AMANHA", c.cache.obter("sua consulta e amanha"))
+  }
+
+  @Test
+  fun `bateria baixa interrompe a captura mas nao encerra o atendimento nem o cache`() = runTest {
+    val c = Cenario(backgroundScope)
+    emCaptura(c)
+    c.guardarFrase("sua consulta e amanha")
+    c.dialogo.onBateriaBaixa()
+    runCurrent()
+    assertEquals(DialogState.AGUARDANDO_SINAL, c.estado)
+    // A economia não revoga o consentimento: o atendimento segue (②.5, ⑦ ainda funcionam).
+    assertTrue(c.politica.consentimento)
+    assertEquals("SUA CONSULTA E AMANHA", c.cache.obter("sua consulta e amanha"))
+    // O fim de verdade vem pelo caminho de sempre — aqui, a inatividade.
+    advanceTimeBy(60_000L + 1)
+    runCurrent()
+    assertEquals(0, c.cache.tamanho())
+  }
+
   private class Cenario(scope: CoroutineScope) {
-    val politica = PoliticaCamera()
+    // Mesma ligação do CameraViewModel: o fim do atendimento (revogar) apaga o cache de glosa.
+    val cache = GlosaCache()
+    val politica = PoliticaCamera(aoEncerrarAtendimento = cache::limpar)
     var portaCamera: CompletableDeferred<Unit>? = null
     var portaRepita: CompletableDeferred<Unit>? = null
     var portaFimCaptura: CompletableDeferred<Unit>? = null
@@ -562,7 +665,8 @@ class DialogOrchestratorCameraTest {
           paradasCamera++
           cameraAtiva = false
         },
-        playAvatar = { DesfechoAvatar.ANIMOU },
+        // Como o VM: todo texto mostrado ao surdo passa pelo tradutor, que o guarda no cache.
+        playAvatar = { texto -> cache.guardar(texto, texto.uppercase(), cache.epoca()); DesfechoAvatar.ANIMOU },
         aoIniciarCaptura = {},
         releaseAvatar = {},
         onAvatarUnavailable = {},

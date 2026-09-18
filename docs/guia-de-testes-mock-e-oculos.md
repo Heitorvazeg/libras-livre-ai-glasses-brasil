@@ -254,8 +254,8 @@ Depois:
 |---|---|
 | Abre e anima? (WebGL) | sim/não |
 | Tempo até ficar pronto | s |
-| Primeira resposta com cache frio × aquecido | s / s |
-| Modo avião com cache aquecido | anima ou legenda? |
+| Primeira ocorrência da frase no atendimento × repetição no mesmo atendimento (o cache de glosa dura só o atendimento) | s / s |
+| Modo avião repetindo uma frase já traduzida no mesmo atendimento | anima ou legenda? |
 | Memória com o avatar carregado (`dumpsys meminfo`) | MB (app + processo sandboxed) |
 
 **9. Desempenho e resistência** [onda 2 para o painel]
@@ -269,7 +269,7 @@ Comparar as etapas do painel com as metas (6.6):
 | glosas → frase | < 1,5 s | | |
 | frase → primeiro áudio | < 1 s | | |
 | fim da fala → texto | < 1,5 s | | |
-| texto → avatar sinalizando | < 3 s (cache aquecido) | | |
+| texto → avatar sinalizando | < 3 s (glosa em cache: frase repetida no atendimento) | | |
 
 E mais:
 - **fps recebido × processado** e ocorrências de "fila do decodificador cheia" (3.8). Se o

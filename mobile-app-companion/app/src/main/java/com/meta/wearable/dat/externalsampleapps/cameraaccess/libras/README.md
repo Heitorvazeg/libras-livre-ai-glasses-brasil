@@ -23,7 +23,7 @@ e no sentido inverso, para a pessoa surda ler a resposta:
 
   atendente responde por voz (mic dos óculos, HFP)
   -> VoskSttEngine transcreve  (estado ⑥)
-  -> VLibrasGlosaTranslator: português -> glosa do VLibras  (rede, com cache em disco)
+  -> VLibrasGlosaTranslator: português -> glosa do VLibras  (rede, com cache só do atendimento)
   -> AvatarPlayer: WebView -> player VLibras -> Unity/WebGL -> avatar sinaliza  (estado ⑦)
 ```
 
@@ -85,7 +85,8 @@ compartilhado (ver `docs/vlibras-webview-plano.md` §0.5).
 | Arquivo | Papel |
 |---|---|
 | `GlosaTranslator.kt` | interface (português → glosa) |
-| `VLibrasGlosaTranslator.kt` | endpoint público do VLibras + `GlosaCache`, um TSV em disco |
+| `VLibrasGlosaTranslator.kt` | endpoint público do VLibras + `GlosaCache`, só em memória e apagado no fim de cada atendimento |
+| `CacheDeGlosaLegado.kt` | apaga, na inicialização, o TSV que versões antigas do cache gravavam em `filesDir` |
 | `AvatarPlayer.kt` | dono da WebView: `prepare` / `play` / `pause` / `release`, e `AvatarState` |
 
 Quem consome: `CameraViewModel.playAvatar`, chamado pelo `DialogOrchestrator` no ⑦. A View
@@ -214,7 +215,7 @@ pelo script. Sem ele, o `AvatarPlayer` reporta falha e o app cai na legenda.
   (SIMULADO) e diz isso na tela. O modelo segue `experimental=true`, sem calibração de
   confiança e sem aprovação de entrega.
 - **O avatar depende de rede para traduzir e para buscar os sinais.** É a única
-  peça online do fluxo; o cache de glosa cobre repetições, e o espelho local do
+  peça online do fluxo; o cache de glosa cobre só repetições dentro do mesmo atendimento, e o espelho local do
   dicionário (Fase 3.5 do plano) ainda não existe.
 - **O avatar nunca foi medido em GPU ARM.** A validação foi num emulador com
   passthrough para GPU Intel; resultado positivo ali não prova celular real.

@@ -70,4 +70,23 @@ class PoliticaCameraTest {
       assertEquals(0, aberturas)
     }
   }
+
+  @Test
+  fun `so revogar o consentimento dispara o fim do atendimento`() {
+    // É o ponto único de limpeza do cache de glosa: todo fim de atendimento revoga, inclusive o
+    // onCleared do VM; aceitar de novo (reaproveitamento), parar o stream e a economia não.
+    var fins = 0
+    val politica = PoliticaCamera(aoEncerrarAtendimento = { fins++ })
+    politica.aceitarConsentimento()
+    politica.invalidarAbertura()
+    politica.aceitarConsentimento()
+    politica.ativarEconomia()
+    assertEquals(0, fins)
+    politica.revogarConsentimento()
+    assertEquals(1, fins)
+    assertFalse(politica.consentimento)
+    // Revogar sem consentimento (atendimento novo, recusa em ①.5) também é fronteira.
+    politica.revogarConsentimento()
+    assertEquals(2, fins)
+  }
 }

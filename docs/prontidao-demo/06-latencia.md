@@ -189,7 +189,7 @@ Critério do ensaio. Etapa acima da meta vira item de otimização. Detalhes no
 | glosas → frase | < 1,5 s (senão, template) |
 | frase → primeiro áudio | < 1 s |
 | fim da fala do atendente → texto | < 1,5 s |
-| texto → avatar sinalizando | < 3 s, com o cache aquecido |
+| texto → avatar sinalizando | < 3 s, com a glosa em cache (frase repetida no mesmo atendimento; o cache é apagado no fim de cada um, 9.3) |
 
 ## 6.7 Variante fp16
 

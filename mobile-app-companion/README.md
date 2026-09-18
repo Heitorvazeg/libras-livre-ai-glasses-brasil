@@ -301,7 +301,7 @@ Todos rodam localmente. Nenhuma chamada de rede acontece no fluxo de tradução.
 | Síntese de voz | Piper/sherpa-onnx pt-BR | `AndroidTextToSpeechEngine` |
 | Transcrição | Vosk pt-BR | `AndroidSpeechRecognizerSttEngine` |
 | Wake word | `SpeechRecognizerWakeWordDetector` | botões Iniciar/Encerrar na tela |
-| Tradução PT → glosa | endpoint público do VLibras, com cache em disco | legenda em texto |
+| Tradução PT → glosa | endpoint público do VLibras, com cache só em memória, apagado no fim de cada atendimento | legenda em texto |
 | Avatar em Libras | player VLibras (Unity/WebGL) em WebView | legenda em texto |
 
 Lacunas importantes, todas com trabalho conhecido pela frente:
