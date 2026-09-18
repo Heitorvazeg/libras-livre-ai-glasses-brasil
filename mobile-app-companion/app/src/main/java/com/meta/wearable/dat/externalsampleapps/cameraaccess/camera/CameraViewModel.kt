@@ -273,7 +273,13 @@ class CameraViewModel(
     }
     return carregado.classificador
   }
-  private val audioSessionManager = AudioSessionManager(application)
+  private val audioSessionManager = AudioSessionManager(
+      application,
+      // CP1.3/CP2.5: perfil Bluetooth ativo (HFP na escuta, A2DP no resto). O intervalo entre um
+      // "HFP" e o "A2DP" seguinte é o tempo de HFP ativo.
+      onPerfil = { perfil ->
+        gravador.evento(SystemClock.uptimeMillis(), metricas.turno, "perfil_bluetooth", "perfil=$perfil")
+      })
 
   // Sentido OUVINTE -> SURDO (docs/vlibras-webview-plano.md). O tradutor fala com o endpoint
   // público do VLibras e guarda o resultado em disco — as perguntas de balcão se repetem, e o

@@ -35,7 +35,8 @@ adb pull /sdcard/Android/data/com.meta.wearable.dat.externalsampleapps.cameraacc
 - **`frame`** — um por frame do MediaPipe: estado do detector, velocidades, presença de pose/mãos, 57 pontos.
 - **`evento`** — `segmento`, `descartado`, `classificacao`, `falha_classificacao`, `enquadramento`,
   `decisao`, `latencia` (por etapa do turno, formato `... etapa=X ms=Y`), `latencia_modelo`
-  (`modelo=tts_piper|stt_vosk,ms=Y`), `config_captura`, `identidade_classificador`, `consentimento`.
+  (`modelo=tts_piper|stt_vosk,ms=Y`), `config_captura`, `perfil_bluetooth` (`perfil=HFP|A2DP`),
+  `identidade_classificador`, `consentimento`.
 - **`metrica`** — amostrado ~1×/s: `fps_recebido/decodificado/processado`, `pct_sem_pose`,
   `fila_cheia`, `mp_inferencia_ms_media`/`mp_inferencia_ms_max` (visão), `bateria_pct`,
   `folga_termica`, `estado_termico`, `ram_app_mb`.
@@ -149,9 +150,10 @@ Libras** (não há display nos óculos; o avatar é a superfície visual no celu
 - **Latência até o 1º som:** `evento latencia etapa=frase_primeiro_audio` → **mediana 509 ms** (fluxo);
   modelo puro `latencia_modelo modelo=tts_piper` → **465 ms** (frase nova) / ~0 (cacheada).
 - **Rota/saída:** `config_captura` (`saida_voz=OCULOS`).
-
-**Lacuna:** o **perfil Bluetooth em uso (HFP × A2DP)** não é registrado no CSV — hoje inferido pela
-config. Registrar o perfil ativo é uma adição pequena pendente.
+- **Perfil Bluetooth ativo:** `evento perfil_bluetooth perfil=HFP|A2DP` — registrado a cada troca de
+  estado (`AudioSessionManager`): **A2DP** no padrão (TTS/avatar), **HFP** durante a escuta do
+  atendente. O que foi preterido: A2DP e HFP são exclusivos no mesmo par, então a escuta interrompe a
+  reprodução por A2DP.
 
 ---
 
@@ -202,9 +204,11 @@ celular; fps × resolução; tempo de HFP ativo; estratégia com o que foi prete
   LeitorSistema.kt`) — derivar o Δ da série. **Nesta coleta: inválida (celular no USB)**.
 - **fps × resolução:** métricas de fps + `config_captura` (processado ~11, MEDIUM/24).
 - **Térmico:** `metrica folga_termica`/`estado_termico` (nominal, `estado_termico=0`).
+- **Tempo de HFP ativo:** derivado dos `evento perfil_bluetooth` — intervalo entre um `perfil=HFP` e o
+  `perfil=A2DP` seguinte (`ts_ms`). HFP fica ativo só durante a escuta, minimizando o consumo do rádio.
 
-**Lacunas:** **bateria dos óculos %/10 min** não é exposta pelo SDK de forma contínua (só o evento
-crítico) — medir por observação externa; **tempo de HFP ativo** não é cronometrado no CSV.
+**Lacuna:** **bateria dos óculos %/10 min** não é exposta pelo SDK de forma contínua (só o evento
+crítico) — medir por observação externa.
 
 ---
 
@@ -219,16 +223,16 @@ crítico) — medir por observação externa; **tempo de HFP ativo** não é cro
 | Câmera — fps × resolução, rota | ✅ medido | recebido ~24 / processado ~11; MEDIUM; OCULOS |
 | Privacidade — local, consentimento, retenção | ✅ implementado | arquivos acima; vídeo off por padrão |
 | Bateria celular %/10 min | ⚠️ coletar fora do USB | `bateria_pct` |
-| Perfil Bluetooth HFP × A2DP | ❌ | registrar o perfil ativo num evento |
+| Perfil Bluetooth HFP × A2DP | ✅ registrado | `evento perfil_bluetooth` a cada troca |
+| Tempo de HFP ativo | ✅ derivável | intervalo entre `perfil=HFP` e `perfil=A2DP` |
 | Bateria dos óculos %/10 min | ❌ (SDK) | medição externa / observação |
-| Tempo de HFP ativo | ❌ | cronometrar sessão de escuta |
 | 1º frame bruto (isolado) | ⚠️ | hoje medimos 1º frame útil (inclui consentimento) |
 
 ## Próximos passos
 
-1. **Coleta fora do USB** para bateria do celular %/10 min (CP2.5).
-2. **Registrar perfil Bluetooth ativo** e **tempo de HFP** (CP1.3 / CP2.5) — adições pequenas de log.
-3. **Fechar o vocabulário da demo** nos sinais fortes (filho, medo, banheiro, cinco, vontade) — o
+1. **Coleta fora do USB** para bateria do celular %/10 min (CP2.5) — e, na mesma sessão, conferir o
+   `perfil_bluetooth` (HFP/A2DP) e o tempo de HFP, agora registrados.
+2. **Fechar o vocabulário da demo** nos sinais fortes (filho, medo, banheiro, cinco, vontade) — o
    escopo permite fechar vocabulário/cenário.
-4. Ganhar mais fps para sinais rápidos: **paralelizar pose+mãos na CPU** (~+30%) ou **GPU em segundo
+3. Ganhar mais fps para sinais rápidos: **paralelizar pose+mãos na CPU** (~+30%) ou **GPU em segundo
    plano** (destrava os ~22 fps sem os 55 s de init).
