@@ -24,7 +24,14 @@
 <script src="vlibras.js"></script>
 <script>
 (function () {
-  function bridge(fn, arg) { try { AvatarBridge[fn](arg); } catch (e) {} }
+  // Chamar um método @JavascriptInterface de 0 args COM um argumento (undefined) lança
+  // "method not found" em WebViews recentes (Chromium 151+), e o onReady/onGlossEnd sumiam
+  // calados — o app esperava PRONTO até o timeout mesmo com o player já carregado. Só passa
+  // arg quando ele existe; e o erro, se houver, vai para o console (capturado no logcat).
+  function bridge(fn, arg) {
+    try { if (arg === undefined) AvatarBridge[fn](); else AvatarBridge[fn](arg); }
+    catch (e) { console.error("bridge " + fn + " falhou: " + e); }
+  }
 
   if (typeof VLibras === "undefined") {
     bridge("onError", "vlibras.js ausente — rode ./download-assets.sh");

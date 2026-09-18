@@ -56,11 +56,7 @@ private const val BASE = "https://appassets.androidplatform.net/assets/vlibras/"
  * estado ficaria em CARREGANDO para sempre e CADA resposta pagaria o timeout inteiro de quem
  * espera a animação, em vez de cair na legenda de uma vez.
  */
-// DIAGNÓSTICO (2026-09-17): elevado de 20s para 40s enquanto investigamos por que o Unity não
-// fica pronto no Galaxy A57 (SM-A576B / Android 16 / WebView 151). Serve para distinguir "carga
-// fria lenta demais" de "init do Unity travada de vez". Rebaixar de volta para ~20s quando a causa
-// estiver confirmada.
-private const val CARGA_TIMEOUT_MS = 40_000L
+private const val CARGA_TIMEOUT_MS = 20_000L
 
 /** Estado do avatar, refletido na UI para o operador saber se pode contar com ele. */
 enum class AvatarState {
@@ -323,11 +319,25 @@ class AvatarPlayer(
     pausado = false
   }
 
+  /**
+   * Roda [bloco] na main thread, pulando se a WebView já foi descartada (o mesmo resguardo que o
+   * antigo `webView?.post` dava: um avatar liberado não deve ser ressuscitado a PRONTO).
+   *
+   * NÃO usa `webView.post`: a WebView carrega DESANEXADA (escondida durante o aquecimento, sem a
+   * tela do avatar aberta) e `View.post` numa view sem janela só executa quando ela é anexada — o
+   * que, no aquecimento, nunca acontece. Era por isso que o `onReady` chegava mas o estado ficava
+   * preso em CARREGANDO até o timeout.
+   */
+  private fun naMain(bloco: () -> Unit) {
+    mainHandler.post { if (webView != null) bloco() }
+  }
+
   private inner class Bridge {
     @JavascriptInterface
     fun onReady() {
+      Log.i(TAG, "onReady recebido do JS")
       // Vem da thread do JS; tudo que toca a WebView precisa voltar para a main thread.
-      webView?.post {
+      naMain {
         mainHandler.removeCallbacks(cargaTimeout)
         state = AvatarState.PRONTO
         glosaPendente?.let { glosaPendente = null; enviar(it) }
@@ -337,9 +347,11 @@ class AvatarPlayer(
 
     @JavascriptInterface
     fun onGlossEnd() {
-      webView?.post {
+      naMain {
         if (state == AvatarState.ANIMANDO) state = AvatarState.PRONTO
-        onGlossEnd()
+        // this@AvatarPlayer: o callback do construtor (o gancho ⑦ -> ①), não este método do Bridge
+        // — `onGlossEnd()` sem qualificador resolveria para a função do Bridge e recursaria.
+        this@AvatarPlayer.onGlossEnd()
         pausarSeOcioso()
       }
     }
@@ -347,7 +359,7 @@ class AvatarPlayer(
     @JavascriptInterface
     fun onError(motivo: String) {
       Log.e(TAG, "erro no player: $motivo")
-      webView?.post { state = AvatarState.FALHOU }
+      naMain { state = AvatarState.FALHOU }
     }
 
     @JavascriptInterface
