@@ -49,12 +49,12 @@ import com.meta.wearable.dat.core.types.PermissionStatus
 import com.meta.wearable.dat.externalsampleapps.cameraaccess.R
 import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.audio.AudioSessionManager
 import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.audio.PcmMicCapture
+import java.io.File
 import kotlinx.coroutines.CompletableDeferred
 import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.avatar.AvatarPlayer
 import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.avatar.AvatarState
 import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.avatar.GlosaCache
 import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.avatar.VLibrasGlosaTranslator
-import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.avatar.apagarCacheDeGlosaLegado
 import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.audio.PiperSherpaOnnxTtsEngine
 import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.audio.Speaker
 import com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.audio.SpeechRecognizerWakeWordDetector
@@ -175,11 +175,7 @@ class CameraViewModel(
   private var session: DeviceSession? = null
   private var camera: Camera? = null
   private var stream: Stream? = null
-  // Cache de glosa do avatar, só em memória e por atendimento (libras/avatar/GlosaCache). Nasce
-  // antes da política porque é ela quem o apaga: revogar o consentimento é o fim do atendimento,
-  // e o cache vai junto — ver o comentário de PoliticaCamera.
-  private val glosaCache = GlosaCache()
-  private val politicaCamera = PoliticaCamera(aoEncerrarAtendimento = glosaCache::limpar)
+  private val politicaCamera = PoliticaCamera()
   private var aberturaCameraJob: Job? = null
   private var permissaoPendenteToken: Long? = null
   // Inclui confirmação local, fila do launcher e decisão no app Meta; não tem prazo humano.
@@ -274,9 +270,10 @@ class CameraViewModel(
   private val audioSessionManager = AudioSessionManager(application)
 
   // Sentido OUVINTE -> SURDO (docs/vlibras-webview-plano.md). O tradutor fala com o endpoint
-  // público do VLibras e guarda o resultado no [glosaCache] só até o fim do atendimento: a mesma
-  // frase não volta à rede no mesmo atendimento, e nada da conversa fica no aparelho depois dele.
-  private val glosaTranslator = VLibrasGlosaTranslator(glosaCache)
+  // público do VLibras e guarda o resultado em disco — as perguntas de balcão se repetem, e o
+  // cache é o que torna o modo sem rede parcialmente útil.
+  private val glosaTranslator =
+      VLibrasGlosaTranslator(GlosaCache(File(application.filesDir, "vlibras/glosa-cache.tsv")))
 
   // O avatar é criado uma vez e reaproveitado durante o atendimento inteiro; só o ciclo
   // prepare/release é dirigido pelo DialogOrchestrator (§4.2 do plano).
@@ -403,10 +400,6 @@ class CameraViewModel(
   private var streamErrorJob: Job? = null
 
   init {
-    // Versões antigas gravavam o cache de glosa em filesDir/vlibras/glosa-cache.tsv, com frases de
-    // atendimentos passados. Some no primeiro lançamento desta versão (e é no-op dali em diante).
-    viewModelScope.launch(Dispatchers.IO) { apagarCacheDeGlosaLegado(application.filesDir) }
-
     // Mirror the recorder's intent/elapsed into UI state.
     viewModelScope.launch {
       videoRecorder.isRecording.collect { recording ->

@@ -5,9 +5,8 @@
  * que faria isso sozinho — e o bundle que o download-assets.sh gera aponta para o MESMO endpoint
  * que usamos aqui (conferido no build de 2026-09-12; a URL morta /dl/translate é a de outra
  * variante do config, não a deste bundle). O que traduzir no Kotlin dá, e o player não dá:
- * cache controlado por nós (só em memória, apagado no fim de cada atendimento — ver
- * [GlosaCache]), um ponto único para o comportamento sem rede, e independência de um config que
- * vive dentro de um bundle de 72 KB que não versionamos.
+ * cache em disco entre sessões, um ponto único para o comportamento sem rede, e independência
+ * de um config que vive dentro de um bundle de 72 KB que não versionamos.
  *
  * CONTRATO DO ENDPOINT (medido, não documentado oficialmente):
  *   POST https://traducao2.vlibras.gov.br/translate
@@ -24,6 +23,7 @@ package com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.avatar
 
 import android.util.Log
 import java.io.BufferedReader
+import java.io.File
 import java.net.HttpURLConnection
 import java.net.URL
 import java.util.concurrent.atomic.AtomicReference
@@ -32,6 +32,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import org.json.JSONObject
 
@@ -62,12 +63,9 @@ class VLibrasGlosaTranslator(
     val chave = normalizar(texto)
     if (chave.isEmpty()) return null
 
-    // Época do cache ANTES de qualquer espera: se o atendimento acabar com esta requisição em voo,
-    // [GlosaCache.limpar] muda a época e o guardar() lá embaixo é recusado — a frase de quem já
-    // foi embora não entra no cache do atendimento seguinte. O cache é só memória e as operações
-    // são curtas e sincronizadas, então dispensam o dispatcher de IO.
-    val epoca = cache.epoca()
-    cache.obter(chave)?.let {
+    // Cache e rede no dispatcher de IO: a primeira [GlosaCache.obter] lê o TSV do disco, e esta
+    // função é chamada da main thread (CameraViewModel.playAvatar roda em viewModelScope).
+    withContext(io) { cache.obter(chave) }?.let {
       Log.d(TAG, "cache hit: \"$chave\"")
       return it
     }
@@ -89,11 +87,7 @@ class VLibrasGlosaTranslator(
     }
 
     if (glosa.isNullOrBlank()) return null
-    // A glosa volta para quem pediu mesmo fora da época: descartar ou não a animação é decisão do
-    // orquestrador (a geração dele já ignora turnos de um atendimento encerrado). Só o cache recusa.
-    if (!cache.guardar(chave, glosa, epoca)) {
-      Log.i(TAG, "atendimento encerrado durante a tradução — glosa fora do cache")
-    }
+    withContext(io) { cache.guardar(chave, glosa) }
     return glosa
   }
 
@@ -125,56 +119,59 @@ class VLibrasGlosaTranslator(
 }
 
 /**
- * Cache de glosa do ATENDIMENTO: só memória, e apagado por [limpar] no fim de cada atendimento
- * (o gancho `aoEncerrarAtendimento` da PoliticaCamera, o mesmo ponto que revoga o consentimento).
- * Dentro de um atendimento a mesma frase não volta à rede — o atendente repete, a pessoa surda
- * repete, o texto do consentimento e o pedido de repetição reaparecem; o atendimento seguinte
- * começa vazio.
+ * Cache de glosa em disco, uma linha por par. É o que torna o modo sem rede parcialmente útil:
+ * as perguntas de balcão se repetem muito.
  *
- * POR QUE NÃO HÁ DISCO: as chaves são o texto da conversa (respostas do atendente, frases
- * reconhecidas da pessoa surda). Gravá-las contradiz o "Nada é gravado" do consentimento e, num
- * serviço de saúde, retém conteúdo sensível sem finalidade. O preço é aceito por desenho: a
- * primeira ocorrência de cada frase em cada atendimento vai à rede, e não existe mais "aquecer o
- * cache no local" — o aquecimento seria apagado no fim do primeiro atendimento. Nenhuma exceção
- * para textos fixos do sistema: um cache que só às vezes é apagado é um cache que ninguém audita.
- *
- * ÉPOCA: [limpar] também avança [epoca]. Quem traduz captura a época antes de ir à rede e a passa
- * a [guardar]; se o atendimento acabou no meio, o par é recusado em vez de vazar para o seguinte.
+ * Formato: `<chave>\t<glosa>` por linha. Simples de propósito — não vale um banco para isto, e
+ * o arquivo é inspecionável à mão durante a calibração do vocabulário (Fase 3.5).
  */
-class GlosaCache(private val maxEntradas: Int = 500) {
+class GlosaCache(private val arquivo: File, private val maxEntradas: Int = 500) {
 
-  // Ordem de acesso: o LRU descarta a entrada usada há mais tempo.
   private val memoria = LinkedHashMap<String, String>(0, 0.75f, true)
-  private var epoca = 0L
+  private var carregado = false
 
-  /** Época atual; muda a cada [limpar]. Capturar antes da requisição e devolver em [guardar]. */
-  @Synchronized fun epoca(): Long = epoca
-
-  @Synchronized fun obter(chave: String): String? = memoria[chave]
-
-  /**
-   * Guarda o par se [epoca] ainda for a atual; devolve false (e não guarda nada) se o cache foi
-   * limpo desde que a tradução começou.
-   */
   @Synchronized
-  fun guardar(chave: String, glosa: String, epoca: Long): Boolean {
-    if (epoca != this.epoca) return false
-    // Glosa numa linha só: frases longas do atendente podem voltar do endpoint com \t ou \n. Era
-    // exigência do antigo formato em disco; fica para que o que sai do cache siga igual a antes.
+  fun obter(chave: String): String? {
+    carregar()
+    return memoria[chave]
+  }
+
+  @Synchronized
+  fun guardar(chave: String, glosa: String) {
+    carregar()
+    // O formato é uma linha por par: um \t ou \n dentro da glosa cortaria o arquivo ao meio na
+    // releitura (a linha órfã é descartada em silêncio por [carregar]). Frases longas do atendente
+    // podem voltar assim do endpoint.
     memoria[chave] = glosa.replace(Regex("[\t\n\r]+"), " ").trim()
     while (memoria.size > maxEntradas) {
       val maisAntiga = memoria.keys.firstOrNull() ?: break
       memoria.remove(maisAntiga)
     }
-    return true
+    persistir()
   }
 
-  /** Fim do atendimento: esquece tudo e invalida as traduções ainda em voo. */
   @Synchronized
-  fun limpar() {
-    memoria.clear()
-    epoca++
+  fun tamanho(): Int {
+    carregar()
+    return memoria.size
   }
 
-  @Synchronized fun tamanho(): Int = memoria.size
+  private fun carregar() {
+    if (carregado) return
+    carregado = true
+    if (!arquivo.exists()) return
+    runCatching {
+      arquivo.forEachLine { linha ->
+        val i = linha.indexOf('\t')
+        if (i > 0) memoria[linha.substring(0, i)] = linha.substring(i + 1)
+      }
+    }.onFailure { Log.w(TAG, "cache ilegível, começando vazio", it) }
+  }
+
+  private fun persistir() {
+    runCatching {
+      arquivo.parentFile?.mkdirs()
+      arquivo.writeText(memoria.entries.joinToString("\n") { "${it.key}\t${it.value}" })
+    }.onFailure { Log.w(TAG, "não consegui persistir o cache", it) }
+  }
 }

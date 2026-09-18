@@ -11,7 +11,7 @@ Diagnóstico: [mapa de riscos §8](../riscos-demo-2026-09-13.md#8-avatar-vlibras
 |---|---|---|
 | 9.1 | Tetos curtos para tradução e animação, prazo total do ⑦, "Pular" | P0 |
 | 9.2 | Botão principal dentro da tela do avatar; "Fechar" só esconde | P1 |
-| 9.3 | 4G próprio, legenda como piso (sem aquecer cache: ele dura um atendimento) | operação (ponto 11) |
+| 9.3 | Cache aquecido, 4G próprio, legenda como piso | operação (ponto 11) |
 | 9.4 | Avatar offline só para os sinais do roteiro | P2 (depois dos essenciais) |
 | 9.5 | Avatar que falhou recarrega sozinho no próximo "iniciar" | P1 |
 | 9.6 | Avatar num celular ARM | Teste |
@@ -79,16 +79,9 @@ pendente: precisa de duas respostas transcritas.
 ## 9.3 Rede
 
 Operação ([ponto 11](11-operacao-de-palco.md)):
+- aquecer o cache no local com as respostas do roteiro (2.9);
 - 4G próprio como reserva;
 - ensaiar o caminho da legenda.
-
-**Não há mais "aquecer o cache no local".** Desde 2026-09-18 o `GlosaCache` vive só em memória e
-é apagado no fim de cada atendimento (o mesmo ponto que revoga o consentimento:
-`PoliticaCamera.revogarConsentimento`). Guardar o texto da conversa entre atendimentos
-contradizia o "Nada é gravado" do consentimento. Consequência, por desenho: o aquecimento de um
-atendimento morre com ele, e a **primeira** ocorrência de cada frase em cada atendimento vai à
-rede — inclusive as respostas do roteiro (2.9) e o texto do consentimento. Só as repetições dentro
-do mesmo atendimento saem do cache. Contar com rede (ou com o 4G reserva) em todo atendimento.
 
 ## 9.4 Avatar offline para o roteiro (P2)
 
@@ -105,11 +98,7 @@ do mesmo atendimento saem do cache. Contar com rede (ou com o 4G reserva) em tod
 2. O `download-assets.sh` baixa essa lista para `assets/vlibras/dic/` (externo: **não** entra no
    git, a pasta já está no `.gitignore`).
 3. O `AvatarPlayer` responde do asset quando o arquivo existe e vai à rede quando não existe.
-4. ~~O `GlosaCache` recebe as traduções das 4 respostas pré-carregadas.~~ Não vale mais: o
-   `GlosaCache` só vive durante um atendimento e é apagado no fim dele (9.3), sem exceção para
-   frases do roteiro. Sem rede, a tradução português → glosa das 4 respostas também falta; para o
-   modo avião, as glosas do roteiro teriam de vir de outro lugar que não o cache (decisão em
-   aberto).
+4. O `GlosaCache` recebe as traduções das 4 respostas pré-carregadas.
 
 **Pronto quando** as 4 respostas do roteiro animam em modo avião.
 

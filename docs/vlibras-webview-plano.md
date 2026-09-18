@@ -302,7 +302,7 @@ arquitetura que o governo usa.
                                      ▼
                     ┌─────────────────────────────────┐
                     │  GlosaTranslator (Kotlin)        │
-                    │  POST traducao2.vlibras.gov.br   │──► rede (cache por atendimento)
+                    │  POST traducao2.vlibras.gov.br   │──► rede (com cache local)
                     │  /translate                      │
                     └────────────┬────────────────────┘
                                  │ "VOCÊ PRECISAR MARCAR&REGISTRAR ..."
@@ -467,8 +467,7 @@ gancho para saber que ⑦ terminou.
 
 **Usamos `play()`, não `translate()`.** Traduzir no Kotlin, e não dentro do player,
 dá três coisas de graça: a URL correta sem editar o `config.js`, cache da glosa
-sob nosso controle (só em memória e por atendimento, ver Fase 1), e um ponto único
-para tratar a falta de rede.
+entre sessões, e um ponto único para tratar a falta de rede.
 
 Por baixo, `play()` vira `SendMessage("PlayerManager", "playNow", glosa)` para o
 Unity. O `setBaseUrl` é o que aponta de onde vêm os bundles — é o botão que a
@@ -508,19 +507,10 @@ fazer aqui.
 
 ### Fase 1 — Tradução em Kotlin — CONCLUÍDA
 
-Implementada em `libras/avatar/`: `VLibrasGlosaTranslator` mais `GlosaCache`
-(normalização de caixa e espaços, descarte das entradas mais antigas acima de 500),
-testados na JVM contra um `ServerSocket` local. Itens originais abaixo, para registro.
-
-**Mudou em 2026-09-18: o cache é só do atendimento.** O `GlosaCache` não grava mais em
-disco (era um TSV em `filesDir/vlibras/glosa-cache.tsv`): vive em memória e é apagado no
-fim de cada atendimento, no mesmo ponto que revoga o consentimento
-(`PoliticaCamera.revogarConsentimento`). As chaves eram o texto da conversa, retido entre
-atendimentos e sem prazo — o oposto do "Nada é gravado" do consentimento. Uma tradução
-ainda em voo quando o atendimento acaba não entra no cache seguinte (época do cache). O
-TSV legado é apagado na inicialização do app. Consequência: não existe mais aquecer o
-cache; a primeira ocorrência de cada frase em cada atendimento vai à rede, e o cache não
-ajuda o modo sem rede entre atendimentos.
+Implementada em `libras/avatar/`: `VLibrasGlosaTranslator` mais `GlosaCache` (TSV em
+disco, normalização de caixa e espaços, descarte das entradas mais antigas), com 13
+testes JVM — sete do tradutor, contra um `ServerSocket` local, e seis do cache.
+Itens originais abaixo, para registro.
 
 Substitui a antiga "Fase 1 — Backend local", que saiu de escopo.
 
@@ -531,7 +521,6 @@ Substitui a antiga "Fase 1 — Backend local", que saiu de escopo.
       chama decide o fallback.
 - [ ] Cache em disco por texto normalizado: a mesma pergunta de balcão se repete o
       dia inteiro, e cache é o que torna o modo offline parcialmente útil.
-      *(Substituído em 2026-09-18 por cache em memória por atendimento — ver acima.)*
 - [ ] Teste JVM puro com respostas gravadas, no padrão de `app/src/test/`.
 - [ ] **Aceite:** teste passa sem emulador e sem rede.
 

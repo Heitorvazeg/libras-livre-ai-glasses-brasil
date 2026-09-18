@@ -14,7 +14,7 @@ Diagnóstico: [mapa de riscos §13](../riscos-demo-2026-09-13.md#13-operação-d
 | 11.2 | Versões congeladas e permissões concedidas na semana da demo |
 | 11.3 | Energia e interrupções sob controle |
 | 11.4 | Palco montado para o enquadramento e o protocolo de sinalização |
-| 11.5 | Rede própria em todo atendimento (o cache do avatar não se aquece) |
+| 11.5 | Rede própria e cache do avatar aquecido |
 | 11.6 | Três papéis: quem sinaliza, atendente, narrador |
 | 11.7 | O que fazer em palco quando cada coisa falha, ensaiado |
 | 11.8 | Vídeo de plano B gravado no ensaio geral |
@@ -62,10 +62,8 @@ Diagnóstico: [mapa de riscos §13](../riscos-demo-2026-09-13.md#13-operação-d
       no áudio; confirmar no teste com os óculos).
 
 **11.5 Rede**
-- [ ] ~~Cache do avatar aquecido no local~~ — não existe mais (9.3): o cache de glosa dura só
-      um atendimento e é apagado no fim dele. Cada atendimento da demo traduz as respostas na
-      rede na primeira vez; conferir a rede (ou o 4G reserva) antes de cada um. Se o 9.4 foi
-      feito, conferir as 4 em modo avião.
+- [ ] Cache do avatar **aquecido no local**: rodar uma vez as 4 respostas do roteiro na rede do
+      evento (9.3). Se o 9.4 foi feito, conferir as 4 em modo avião.
 
 **11.4 Palco**
 - [ ] Marca no chão na distância medida no teste com os óculos (3.5).
