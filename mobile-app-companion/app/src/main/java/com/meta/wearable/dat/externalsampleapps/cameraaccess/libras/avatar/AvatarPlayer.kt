@@ -31,13 +31,16 @@ import android.os.Handler
 import android.os.Looper
 import android.util.Log
 import android.view.ViewGroup
+import android.webkit.ConsoleMessage
 import android.webkit.JavascriptInterface
 import android.webkit.RenderProcessGoneDetail
+import android.webkit.WebChromeClient
 import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import androidx.webkit.WebViewAssetLoader
+import com.meta.wearable.dat.externalsampleapps.cameraaccess.BuildConfig
 
 private const val TAG = "Libras:Avatar"
 
@@ -53,7 +56,11 @@ private const val BASE = "https://appassets.androidplatform.net/assets/vlibras/"
  * estado ficaria em CARREGANDO para sempre e CADA resposta pagaria o timeout inteiro de quem
  * espera a animação, em vez de cair na legenda de uma vez.
  */
-private const val CARGA_TIMEOUT_MS = 20_000L
+// DIAGNÓSTICO (2026-09-17): elevado de 20s para 40s enquanto investigamos por que o Unity não
+// fica pronto no Galaxy A57 (SM-A576B / Android 16 / WebView 151). Serve para distinguir "carga
+// fria lenta demais" de "init do Unity travada de vez". Rebaixar de volta para ~20s quando a causa
+// estiver confirmada.
+private const val CARGA_TIMEOUT_MS = 40_000L
 
 /** Estado do avatar, refletido na UI para o operador saber se pode contar com ele. */
 enum class AvatarState {
@@ -147,6 +154,11 @@ class AvatarPlayer(
         .addPathHandler("/assets/", WebViewAssetLoader.AssetsPathHandler(context))
         .build()
 
+    // DIAGNÓSTICO: o Unity só avisa falha por dois caminhos (sem WebGL, vlibras.js ausente);
+    // uma init travada não chama ninguém e vira o timeout silencioso. Ligar o debugging no build
+    // debug permite inspecionar o avatar ao vivo pelo chrome://inspect do Chrome no PC.
+    if (BuildConfig.DEBUG) WebView.setWebContentsDebuggingEnabled(true)
+
     webView = WebView(context).apply {
       settings.javaScriptEnabled = true
       settings.domStorageEnabled = true
@@ -154,6 +166,21 @@ class AvatarPlayer(
       // O avatar é decorativo para o sistema de acessibilidade do Android: quem precisa dele
       // está olhando, não ouvindo o TalkBack.
       importantForAccessibility = WebView.IMPORTANT_FOR_ACCESSIBILITY_NO
+
+      // DIAGNÓSTICO: sem isto o console do Unity (onde a causa real da carga travada aparece) não
+      // chega a lugar nenhum. Espelha console.log/warn/error do player para o logcat "$TAG".
+      webChromeClient = object : WebChromeClient() {
+        override fun onConsoleMessage(msg: ConsoleMessage): Boolean {
+          val origem = "${msg.sourceId()}:${msg.lineNumber()}"
+          val texto = "console ${msg.messageLevel()} [$origem] ${msg.message()}"
+          when (msg.messageLevel()) {
+            ConsoleMessage.MessageLevel.ERROR -> Log.e(TAG, texto)
+            ConsoleMessage.MessageLevel.WARNING -> Log.w(TAG, texto)
+            else -> Log.d(TAG, texto)
+          }
+          return true
+        }
+      }
 
       webViewClient = object : WebViewClient() {
         override fun shouldInterceptRequest(
