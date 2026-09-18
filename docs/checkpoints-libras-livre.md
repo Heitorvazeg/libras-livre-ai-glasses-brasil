@@ -206,9 +206,15 @@ celular; fps × resolução; tempo de HFP ativo; estratégia com o que foi prete
 - **Térmico:** `metrica folga_termica`/`estado_termico` (nominal, `estado_termico=0`).
 - **Tempo de HFP ativo:** derivado dos `evento perfil_bluetooth` — intervalo entre um `perfil=HFP` e o
   `perfil=A2DP` seguinte (`ts_ms`). HFP fica ativo só durante a escuta, minimizando o consumo do rádio.
+- **Bateria dos óculos %/10 min (observação manual):** o SDK não expõe % contínua, então anotamos no
+  início e no fim. **Medição 2026-09-18: 64% → 54% (Δ 10 pp)** durante a sessão de teste **fora do
+  USB**. Janela do bloco de sessões (13:01→13:46, 44,5 min) = **~2,2 pp/10 min** (~13,5 pp/h,
+  autonomia linear projetada ~7,4 h); considerando só a captura contínua (13:19→13:46, 27 min) =
+  **~3,7 pp/10 min**. Método: leitura do indicador dos óculos, ancorada nos `ts_ms` do 1º e do último
+  CSV da sessão.
 
-**Lacuna:** **bateria dos óculos %/10 min** não é exposta pelo SDK de forma contínua (só o evento
-crítico) — medir por observação externa.
+**Lacuna:** a bateria dos óculos ainda depende de **observação manual** (não há telemetria contínua
+no SDK); a leitura acima é empírica e deve ser refeita em uso representativo controlado.
 
 ---
 
@@ -225,7 +231,7 @@ crítico) — medir por observação externa.
 | Bateria celular %/10 min | ⚠️ coletar fora do USB | `bateria_pct` |
 | Perfil Bluetooth HFP × A2DP | ✅ registrado | `evento perfil_bluetooth` a cada troca |
 | Tempo de HFP ativo | ✅ derivável | intervalo entre `perfil=HFP` e `perfil=A2DP` |
-| Bateria dos óculos %/10 min | ❌ (SDK) | medição externa / observação |
+| Bateria dos óculos %/10 min | ✅ empírico | 64%→54%, ~2,2 pp/10 min (obs. manual, fora do USB, 2026-09-18) |
 | 1º frame bruto (isolado) | ⚠️ | hoje medimos 1º frame útil (inclui consentimento) |
 
 ## Próximos passos
