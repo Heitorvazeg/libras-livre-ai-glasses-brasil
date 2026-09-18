@@ -53,6 +53,9 @@ import kotlinx.coroutines.withContext
 class PiperSherpaOnnxTtsEngine(
     context: Context,
     private val saida: () -> SaidaVoz = { SaidaVoz.OCULOS },
+    // Diagnóstico (CP1): latência do modelo Piper — do início da geração ao 1º bloco de áudio (ms).
+    // Frase pré-sintetizada reporta ~0 (cache). Default no-op.
+    private val onLatenciaSinteseMs: (Long) -> Unit = {},
 ) : TtsEngine {
 
   private val context: Context = context.applicationContext
@@ -112,9 +115,13 @@ class PiperSherpaOnnxTtsEngine(
     return suspendCancellableCoroutine { cont ->
       cont.invokeOnCancellation { stopped = true }
       Thread {
+            val inicioSinteseMs = SystemClock.elapsedRealtime()
             var amostrasEscritas = 0L
             fun escrever(samples: FloatArray) {
-              if (amostrasEscritas == 0L) runCatching(onInicioAudio)
+              if (amostrasEscritas == 0L) {
+                runCatching { onLatenciaSinteseMs(SystemClock.elapsedRealtime() - inicioSinteseMs) }
+                runCatching(onInicioAudio)
+              }
               audioTrack.write(samples, 0, samples.size, AudioTrack.WRITE_BLOCKING)
               amostrasEscritas += samples.size
             }
