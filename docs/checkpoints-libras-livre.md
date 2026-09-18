@@ -121,16 +121,17 @@ resposta do atendente quando `mic_resposta=OCULOS`.
 - `libras/reconhecimento/LandmarkPipeline.kt` — orquestra frames→landmarks→segmentação.
 - `camera/CameraViewModel.kt` (`beginStream`) — `StreamConfiguration(VideoQuality.MEDIUM, 24 fps)`.
 
-**Como medir + número real:**
+**Como medir + número real (sessões 2026-09-18 13:18–13:31):**
 - **fps × resolução:** `evento config_captura` (`resolucao=MEDIUM, fps=24`) + `metrica
-  fps_recebido/processado` → **recebido ~24, processado mediana ~11**.
-- **Tempo até o 1º frame útil:** `evento latencia etapa=iniciar_pode_sinalizar` (do "iniciar" ao 1º
-  frame com pose e os dois ombros).
-- **Rota de vídeo/áudio:** `config_captura` (`saida_voz`, `mic_resposta`).
+  fps_recebido/processado` → **recebido mediana 24 (pico 71) · processado mediana 10,6 (pico 22)**.
+- **Tempo até o 1º frame útil:** `evento latencia etapa=iniciar_pode_sinalizar` → **mínimo 1,9 s**
+  (câmera subindo, consentimento reaproveitado, sem espera do operador). A mediana (17 s) e os
+  valores altos (até 81 s) **incluem a espera humana do consentimento ①.5** — logo, a latência
+  técnica de câmera é ~**2 s**; o resto é decisão do operador.
+- **Rota de vídeo/áudio:** `config_captura` → `saida_voz=OCULOS`, `mic_resposta=OCULOS`.
 
-**Lacunas/ressalvas:** resolução é fixa (`VideoQuality.MEDIUM`), registrada mas não variável. O
-`iniciar_pode_sinalizar` **inclui o tempo de consentimento ①.5 + subida da câmera** (não é latência
-pura de 1º frame) — para o CP, cronometrar o 1º frame bruto à parte ou declarar essa composição.
+**Ressalva:** resolução é fixa (`VideoQuality.MEDIUM`), registrada mas não variável. Para o CP, usar o
+**mínimo (~2 s)** como latência de câmera e declarar que a mediana embute o consentimento humano.
 
 ## 3 · Output por áudio
 
@@ -232,7 +233,7 @@ no SDK); a leitura acima é empírica e deve ser refeita em uso representativo c
 | Perfil Bluetooth HFP × A2DP | ✅ registrado | `evento perfil_bluetooth` a cada troca |
 | Tempo de HFP ativo | ✅ derivável | intervalo entre `perfil=HFP` e `perfil=A2DP` |
 | Bateria dos óculos %/10 min | ✅ empírico | 64%→54%, ~2,2 pp/10 min (obs. manual, fora do USB, 2026-09-18) |
-| 1º frame bruto (isolado) | ⚠️ | hoje medimos 1º frame útil (inclui consentimento) |
+| Tempo até 1º frame útil | ✅ medido | ~2 s (câmera); mediana 17 s embute o consentimento humano |
 
 ## Próximos passos
 
