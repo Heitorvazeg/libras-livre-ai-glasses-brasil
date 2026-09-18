@@ -43,6 +43,34 @@ O painel de métricas (mesmo menu) mostra fps, bateria e RAM ao vivo para confer
 
 ---
 
+## Medições reais — sessão 2026-09-18 12:57 (`20260918-125714.csv`)
+
+Primeira sessão com a instrumentação completa. Config medida: `resolucao=MEDIUM, fps=24 (config),
+saida_voz=OCULOS, mic_resposta=OCULOS`. Duração ~178 s, 567 frames, `pct_sem_pose` média 1,5%.
+
+| Métrica | Valor real | Origem |
+|---|---|---|
+| **IA — classificador (TFLite)** | **< 1 ms** (n=20; arredonda a 0) | `latencia etapa=classificacao` |
+| **Visão — MediaPipe (pose+mãos)** | **média 150 ms/frame · pior 496 ms** (n=85 janelas) | `mp_inferencia_ms_media/max` |
+| **fps efetivo na captura** | **~7 fps** (dt mediano 143 ms; pico 21) | intervalos de `frame` / `fps_processado` |
+| **TTS (Piper)** | 0–2 ms | `latencia_modelo modelo=tts_piper` — **frases cacheadas** (aviso "repita"/"desistir" pré-sintetizados); síntese real não exercida nesta sessão |
+| **STT (Vosk)** | não exercido | sem resposta do atendente nesta sessão |
+| **Segmentação (fechamento)** | **9 PAUSA · 5 DURAÇÃO_MÁX · 4 OCLUSÃO · 2 fim** (+4 espasmos descartados) | eventos `segmento`/`descartado` |
+| **Bateria** | 100% → 100% (**inválido: celular no USB**) | `bateria_pct` |
+| **Térmico** | nominal (`estado_termico=0`) | `estado_termico` |
+
+**Leituras-chave:**
+1. **O gargalo é a VISÃO, não a IA.** O classificador TFLite é <1 ms; o custo do pipeline é o
+   MediaPipe a **150 ms/frame em CPU** (~7 fps). É o que justifica calibrar a segmentação para fps
+   baixo e por que a GPU (22 fps medidos) está no roadmap — bloqueada pelos ~55 s de init.
+2. **A calibração da segmentação funcionou:** de **1 PAUSA / 11 DURAÇÃO_MÁX** (antes) para
+   **9 PAUSA / 5 DURAÇÃO_MÁX**. O detector voltou a achar o fim dos sinais.
+3. **Confiança ainda separa certo/errado:** erros com 0,17–0,52; acertos com 0,78–1,00.
+4. **Pendências de medição:** a bateria precisa ser medida **fora do USB**; TTS real (frase não
+   cacheada) e STT precisam de um turno bidirecional completo para gerar número.
+
+---
+
 # CP1 · 15:00 — IA · câmera/microfone · áudio
 
 ## 1 · Uso de Inteligência Artificial
@@ -173,6 +201,8 @@ crítico) — medir por observação externa; **tempo de HFP ativo** não é cro
 ## Próximo passo sugerido
 
 Um **gerador de relatório** que lê o CSV e emite, no formato da régua de evidência, os números de
-CP1/CP2 (ex.: "classificação: mediana 38 ms, pior 91 ms, n=24"; "fps processado 5.4"; "MediaPipe
-média 42 ms"; "voz até 1º som 310 ms"; "bateria celular −6%/10 min"). Assim cada gravação vira
-evidência pronta para a banca.
+CP1/CP2 — como os já medidos em 2026-09-18: "classificador TFLite <1 ms (n=20)"; "MediaPipe média
+150 ms/frame, pior 496 ms"; "~7 fps efetivo"; "segmentação 9 PAUSA / 5 DURAÇÃO_MÁX". Assim cada
+gravação vira evidência pronta para a banca. Para completar CP1/CP2 faltam três coletas: (a) bateria
+**fora do USB**, (b) um turno bidirecional para TTS real (frase não cacheada) e STT (Vosk), e (c)
+registrar o perfil Bluetooth ativo.
