@@ -31,13 +31,16 @@ import android.os.Handler
 import android.os.Looper
 import android.util.Log
 import android.view.ViewGroup
+import android.webkit.ConsoleMessage
 import android.webkit.JavascriptInterface
 import android.webkit.RenderProcessGoneDetail
+import android.webkit.WebChromeClient
 import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import androidx.webkit.WebViewAssetLoader
+import com.meta.wearable.dat.externalsampleapps.cameraaccess.BuildConfig
 
 private const val TAG = "Libras:Avatar"
 
@@ -97,7 +100,7 @@ class AvatarPlayer(
   var visivel: Boolean = false
     set(value) {
       field = value
-      if (value) resume() else pausarSeOcioso()
+      if (value) { resume(); nudgeResize() } else pausarSeOcioso()
     }
   private val mainHandler = Handler(Looper.getMainLooper())
   private val cargaTimeout = Runnable {
@@ -147,6 +150,11 @@ class AvatarPlayer(
         .addPathHandler("/assets/", WebViewAssetLoader.AssetsPathHandler(context))
         .build()
 
+    // DIAGNÓSTICO: o Unity só avisa falha por dois caminhos (sem WebGL, vlibras.js ausente);
+    // uma init travada não chama ninguém e vira o timeout silencioso. Ligar o debugging no build
+    // debug permite inspecionar o avatar ao vivo pelo chrome://inspect do Chrome no PC.
+    if (BuildConfig.DEBUG) WebView.setWebContentsDebuggingEnabled(true)
+
     webView = WebView(context).apply {
       settings.javaScriptEnabled = true
       settings.domStorageEnabled = true
@@ -154,6 +162,21 @@ class AvatarPlayer(
       // O avatar é decorativo para o sistema de acessibilidade do Android: quem precisa dele
       // está olhando, não ouvindo o TalkBack.
       importantForAccessibility = WebView.IMPORTANT_FOR_ACCESSIBILITY_NO
+
+      // DIAGNÓSTICO: sem isto o console do Unity (onde a causa real da carga travada aparece) não
+      // chega a lugar nenhum. Espelha console.log/warn/error do player para o logcat "$TAG".
+      webChromeClient = object : WebChromeClient() {
+        override fun onConsoleMessage(msg: ConsoleMessage): Boolean {
+          val origem = "${msg.sourceId()}:${msg.lineNumber()}"
+          val texto = "console ${msg.messageLevel()} [$origem] ${msg.message()}"
+          when (msg.messageLevel()) {
+            ConsoleMessage.MessageLevel.ERROR -> Log.e(TAG, texto)
+            ConsoleMessage.MessageLevel.WARNING -> Log.w(TAG, texto)
+            else -> Log.d(TAG, texto)
+          }
+          return true
+        }
+      }
 
       webViewClient = object : WebViewClient() {
         override fun shouldInterceptRequest(
@@ -244,6 +267,25 @@ class AvatarPlayer(
     pausado = false
   }
 
+  /**
+   * Reavisa o Unity do tamanho do canvas. A WebView carrega escondida (0x0) e o Unity fixa o
+   * buffer no tamanho de init; ao ser anexada e ganhar tamanho, ele não redesenha sozinho — daí a
+   * tela branca. O ResizeObserver na página já cobre o anexo; isto é o reforço com timing pela
+   * main thread (o layout do AndroidView pode assentar depois do `visivel = true`).
+   */
+  private fun nudgeResize() {
+    val wv = webView ?: return
+    // Passa o tamanho REAL em px do dispositivo: a página não consegue descobrir a altura sozinha
+    // (o viewform ficou preso em 0 de quando carregou escondida). Repetimos porque o layout do
+    // AndroidView pode assentar depois do `visivel = true`.
+    val nudge = Runnable {
+      wv.evaluateJavascript("window.avatarResize && window.avatarResize(${wv.width}, ${wv.height});", null)
+    }
+    wv.post(nudge)
+    mainHandler.postDelayed(nudge, 250)
+    mainHandler.postDelayed(nudge, 700)
+  }
+
   // Pronto (não carregando nem animando) e com a tela fechada: pausa.
   private fun pausarSeOcioso() {
     if (!visivel && state == AvatarState.PRONTO && glosaPendente == null) pause()
@@ -296,11 +338,25 @@ class AvatarPlayer(
     pausado = false
   }
 
+  /**
+   * Roda [bloco] na main thread, pulando se a WebView já foi descartada (o mesmo resguardo que o
+   * antigo `webView?.post` dava: um avatar liberado não deve ser ressuscitado a PRONTO).
+   *
+   * NÃO usa `webView.post`: a WebView carrega DESANEXADA (escondida durante o aquecimento, sem a
+   * tela do avatar aberta) e `View.post` numa view sem janela só executa quando ela é anexada — o
+   * que, no aquecimento, nunca acontece. Era por isso que o `onReady` chegava mas o estado ficava
+   * preso em CARREGANDO até o timeout.
+   */
+  private fun naMain(bloco: () -> Unit) {
+    mainHandler.post { if (webView != null) bloco() }
+  }
+
   private inner class Bridge {
     @JavascriptInterface
     fun onReady() {
+      Log.i(TAG, "onReady recebido do JS")
       // Vem da thread do JS; tudo que toca a WebView precisa voltar para a main thread.
-      webView?.post {
+      naMain {
         mainHandler.removeCallbacks(cargaTimeout)
         state = AvatarState.PRONTO
         glosaPendente?.let { glosaPendente = null; enviar(it) }
@@ -310,9 +366,11 @@ class AvatarPlayer(
 
     @JavascriptInterface
     fun onGlossEnd() {
-      webView?.post {
+      naMain {
         if (state == AvatarState.ANIMANDO) state = AvatarState.PRONTO
-        onGlossEnd()
+        // this@AvatarPlayer: o callback do construtor (o gancho ⑦ -> ①), não este método do Bridge
+        // — `onGlossEnd()` sem qualificador resolveria para a função do Bridge e recursaria.
+        this@AvatarPlayer.onGlossEnd()
         pausarSeOcioso()
       }
     }
@@ -320,7 +378,7 @@ class AvatarPlayer(
     @JavascriptInterface
     fun onError(motivo: String) {
       Log.e(TAG, "erro no player: $motivo")
-      webView?.post { state = AvatarState.FALHOU }
+      naMain { state = AvatarState.FALHOU }
     }
 
     @JavascriptInterface

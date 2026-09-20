@@ -15,6 +15,7 @@ package com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.diagnostico
 import android.util.Log
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.atomic.AtomicLong
 
 /** As etapas medidas por turno (6.5), na ordem em que acontecem. */
 enum class Etapa(val nome: String) {
@@ -43,6 +44,9 @@ data class AmostraMetricas(
     val fpsProcessado: Float,
     val pctSemPose: Float,
     val filaCheia: Int,
+    // Latência do MediaPipe (pose + mãos) por frame, na janela: média e pior caso (ms). 0 sem amostra.
+    val mpInferenciaMsMedia: Float,
+    val mpInferenciaMsMax: Long,
     val sistema: LeituraSistema,
 )
 
@@ -62,6 +66,10 @@ class Metricas(
   private val decodificados = AtomicInteger()
   private val processados = AtomicInteger()
   private val semPose = AtomicInteger()
+  // Latência do MediaPipe: nº de frames medidos, soma dos ms e pior caso, zerados a cada janela.
+  private val inferencias = AtomicInteger()
+  private val inferenciaMsSoma = AtomicLong()
+  private val inferenciaMsMax = AtomicLong()
 
   private var ultimaAmostraMs: Long? = null
   private var anteriores = IntArray(4)
@@ -83,6 +91,13 @@ class Metricas(
   fun frameProcessado(comPose: Boolean) {
     processados.incrementAndGet()
     if (!comPose) semPose.incrementAndGet()
+  }
+
+  /** Latência de uma inferência do MediaPipe (pose + mãos de um frame), em ms. */
+  fun registrarInferencia(ms: Long) {
+    inferencias.incrementAndGet()
+    inferenciaMsSoma.addAndGet(ms)
+    inferenciaMsMax.accumulateAndGet(ms) { a, b -> maxOf(a, b) }
   }
 
   /** Um "iniciar": numera o turno e guarda o instante, para a etapa "iniciar -> pode sinalizar". */
@@ -118,12 +133,18 @@ class Metricas(
     anteriores = atuais
     val segundos = if (anteriorMs == null || agoraMs <= anteriorMs) 0f else (agoraMs - anteriorMs) / 1000f
     fun fps(n: Int) = if (segundos > 0f) n / segundos else 0f
+    // Latência do MediaPipe na janela: lê e zera os acumuladores (getAndSet) para a próxima.
+    val nInf = inferencias.getAndSet(0)
+    val somaInf = inferenciaMsSoma.getAndSet(0)
+    val maxInf = inferenciaMsMax.getAndSet(0)
     return AmostraMetricas(
         fpsRecebido = fps(delta[0]),
         fpsDecodificado = fps(delta[1]),
         fpsProcessado = fps(delta[2]),
         pctSemPose = if (delta[2] > 0) 100f * delta[3] / delta[2] else 0f,
         filaCheia = filaCheia,
+        mpInferenciaMsMedia = if (nInf > 0) somaInf.toFloat() / nInf else 0f,
+        mpInferenciaMsMax = maxInf,
         sistema = sistema,
     )
   }

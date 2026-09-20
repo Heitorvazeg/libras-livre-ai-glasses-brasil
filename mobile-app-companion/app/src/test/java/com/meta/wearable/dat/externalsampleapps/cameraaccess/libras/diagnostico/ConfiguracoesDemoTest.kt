@@ -51,9 +51,11 @@ class ConfiguracoesDemoTest {
   fun `padroes decididos no plano para os seletores da onda 4`() {
     val v = ValoresDemo()
     assertEquals(0.7f, v.segmentacao.limiarEntrada)
-    // 800 ms, não os 500 ms do plano: calibrado com os clipes reais do MINDS
-    // (docs/integracao-video-minds-e-calibracao-2026-09-17.md).
-    assertEquals(800L, v.segmentacao.pausaMs)
+    // Calibração 2026-09-18 (CSVs ao vivo, ~5 fps): saída 0.4->0.55 e pausa 800->500 ms para os
+    // sinais fecharem por pausa em vez de baterem no teto de 3.5 s. 500 ms preserva a margem sobre
+    // os ~480 ms de hold do MINDS (docs/integracao-video-minds-e-calibracao-2026-09-17.md).
+    assertEquals(0.55f, v.segmentacao.limiarSaida)
+    assertEquals(500L, v.segmentacao.pausaMs)
     assertEquals(30_000L, v.tetoCapturaMs)
     assertEquals(20_000L, v.tetoEscutaMs)
     assertEquals(MotorWakeWord.SPEECH_RECOGNIZER, v.motorWakeWord)
@@ -61,7 +63,7 @@ class ConfiguracoesDemoTest {
     assertEquals(SaidaVoz.OCULOS, v.saidaVoz)
     assertEquals(MicrofoneResposta.CELULAR, v.microfoneResposta)
     assertEquals(300L, v.folgaAposFalaMs)
-    assertEquals(0.60f, v.limiarConfianca)
+    assertEquals(0.72f, v.limiarConfianca)
     assertEquals(1.5f, v.fatorLimiarMemoria)
     assertEquals(5_000L, v.tetoTraducaoMs)
     assertEquals(3_000L, v.tetoAnimacaoBaseMs)

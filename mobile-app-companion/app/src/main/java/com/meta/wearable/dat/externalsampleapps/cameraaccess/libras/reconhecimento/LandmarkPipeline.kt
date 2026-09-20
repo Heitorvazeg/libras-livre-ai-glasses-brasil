@@ -415,7 +415,9 @@ class LandmarkPipeline(
             val ex = extractor
             if (collecting && sessao != null && ex != null) {
               val ts = nextTimestampMs()
+              val inicioInferencia = SystemClock.elapsedRealtime()
               val fl = ex.extract(image, ts)
+              metricas?.registrarInferencia(SystemClock.elapsedRealtime() - inicioInferencia)
               // Dimensões pertencem ao reader, nunca ao stream que pode tê-lo substituído.
               val normalizado = fl?.let { LandmarkNormalizer.normalize(it, width, height) }
               scope.launch(Dispatchers.Main.immediate) {

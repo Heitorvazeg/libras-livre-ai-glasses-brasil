@@ -27,6 +27,7 @@
 package com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.audio
 
 import android.content.Context
+import android.os.SystemClock
 import android.util.Log
 import java.io.IOException
 import kotlinx.coroutines.CoroutineScope
@@ -44,6 +45,9 @@ import org.vosk.Recognizer
 class VoskSttEngine(
     context: Context,
     private val audioCapture: PcmMicCapture,
+    // Diagnóstico (CP1): latência do modelo Vosk para fechar o texto final (getFinalResult), em ms.
+    // Default no-op.
+    private val onLatenciaFinalMs: (Long) -> Unit = {},
 ) : SttEngine {
 
   private val context: Context = context.applicationContext
@@ -159,7 +163,9 @@ class VoskSttEngine(
   }
 
   private suspend fun finalizeAndDispatch(rec: Recognizer) {
+    val inicioFinalMs = SystemClock.elapsedRealtime()
     val json = withContext(Dispatchers.IO) { rec.getFinalResult() }
+    runCatching { onLatenciaFinalMs(SystemClock.elapsedRealtime() - inicioFinalMs) }
     runCatching { rec.close() }
     if (recognizer === rec) recognizer = null
     val final = runCatching { JSONObject(json).optString("text", "") }.getOrDefault("").trim()

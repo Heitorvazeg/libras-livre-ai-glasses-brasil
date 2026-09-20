@@ -21,11 +21,13 @@ package com.meta.wearable.dat.externalsampleapps.cameraaccess.libras.reconhecime
 
 import android.content.Context
 import android.graphics.Bitmap
+import android.graphics.Canvas
 import android.media.Image
 import android.util.Log
 import com.google.mediapipe.framework.image.BitmapImageBuilder
 import java.nio.ByteBuffer
 import com.google.mediapipe.tasks.core.BaseOptions
+import com.google.mediapipe.tasks.core.Delegate
 import com.google.mediapipe.tasks.vision.core.RunningMode
 import com.google.mediapipe.tasks.vision.handlandmarker.HandLandmarker
 import com.google.mediapipe.tasks.vision.handlandmarker.HandLandmarkerResult
@@ -44,32 +46,62 @@ class LandmarkExtractor(context: Context) {
     private const val PULSO_DIR = 16
     private const val OMBRO_ESQ = 11
     private const val OMBRO_DIR = 12
-    // 3.6: mais pessoas e mãos detectadas, para o filtro escolher. Com 2 mãos, as do atendente podiam
-    // ocupar as vagas e esconder as da pessoa surda. Se pesar no painel (3.8), voltar a 2 mãos
-    // mantendo o filtro.
-    private const val MAX_POSES = 2
-    private const val MAX_MAOS = 4
+    // Calibração 2026-09-18: reduzido de 2 poses / 4 mãos para 1 pose / 2 mãos. A ~7 fps o MediaPipe
+    // (150 ms/frame em CPU) é o gargalo do reconhecimento; menos candidatos = detecção mais rápida =
+    // mais frames por sinal (o modelo espera 96, capturávamos ~16). O filtro por pulso
+    // (filtrarPorPulso) continua descartando mãos fora dos pulsos da pessoa. Para cenas com o
+    // atendente muito próximo, reavaliar voltar a 2/4.
+    private const val MAX_POSES = 1
+    private const val MAX_MAOS = 2
+    // Fator de redução da imagem enviada ao MediaPipe. Os landmarks voltam normalizados (0..1), então
+    // a escala é transparente para o resto do pipeline (px() usa a resolução original da Image).
+    // Metade em cada eixo = 1/4 dos pixels, cortando boa parte dos 150 ms sem perder landmark.
+    private const val ESCALA_MP = 0.5f
+  }
+
+  // Delegate do MediaPipe. GPU dá ~22 fps de inferência (contra ~5 em CPU) e resolveria a
+  // segmentação, MAS a criação dos modelos em GPU custa ~55 s NESTE aparelho (Galaxy A57) — e a
+  // cada lançamento, não é cache. Inaceitável no warmup. Fica desligado por padrão, atrás deste
+  // flag, até termos um init em segundo plano (ou um device onde o custo seja aceitável).
+  // Medições em docs/ / conversa 2026-09-18.
+  private val usarGpu = false
+
+  private fun <T> criarLandmarker(nome: String, cria: (Delegate) -> T): T {
+    if (usarGpu) {
+      try {
+        return cria(Delegate.GPU).also { Log.i(TAG, "$nome em GPU") }
+      } catch (e: Throwable) {
+        Log.w(TAG, "$nome: GPU indisponível ($e) — usando CPU")
+      }
+    }
+    return cria(Delegate.CPU).also { Log.i(TAG, "$nome em CPU") }
   }
 
   private val poseLandmarker: PoseLandmarker =
-      PoseLandmarker.createFromOptions(
-          context,
-          PoseLandmarker.PoseLandmarkerOptions.builder()
-              .setBaseOptions(BaseOptions.builder().setModelAssetPath(POSE_MODEL).build())
-              .setRunningMode(RunningMode.VIDEO)
-              .setNumPoses(MAX_POSES)
-              .build(),
-      )
+      criarLandmarker("pose") { delegate ->
+        PoseLandmarker.createFromOptions(
+            context,
+            PoseLandmarker.PoseLandmarkerOptions.builder()
+                .setBaseOptions(
+                    BaseOptions.builder().setModelAssetPath(POSE_MODEL).setDelegate(delegate).build())
+                .setRunningMode(RunningMode.VIDEO)
+                .setNumPoses(MAX_POSES)
+                .build(),
+        )
+      }
 
   private val handLandmarker: HandLandmarker =
-      HandLandmarker.createFromOptions(
-          context,
-          HandLandmarker.HandLandmarkerOptions.builder()
-              .setBaseOptions(BaseOptions.builder().setModelAssetPath(HAND_MODEL).build())
-              .setRunningMode(RunningMode.VIDEO)
-              .setNumHands(MAX_MAOS)
-              .build(),
-      )
+      criarLandmarker("maos") { delegate ->
+        HandLandmarker.createFromOptions(
+            context,
+            HandLandmarker.HandLandmarkerOptions.builder()
+                .setBaseOptions(
+                    BaseOptions.builder().setModelAssetPath(HAND_MODEL).setDelegate(delegate).build())
+                .setRunningMode(RunningMode.VIDEO)
+                .setNumHands(MAX_MAOS)
+                .build(),
+        )
+      }
 
   // Buffers reaproveitados entre frames (a thread de frames é uma só): o frame YUV é copiado em
   // bloco para arrays e convertido para um Bitmap ARGB — ver YuvParaArgb para o porquê.
@@ -78,6 +110,9 @@ class LandmarkExtractor(context: Context) {
   private var planoV = ByteArray(0)
   private var argb = IntArray(0)
   private var bitmap: Bitmap? = null
+  // Bitmap reduzido reaproveitado, e a Matrix da redução, para não alocar por frame.
+  private var bitmapEscalado: Bitmap? = null
+  private val matrizEscala = android.graphics.Matrix().apply { setScale(ESCALA_MP, ESCALA_MP) }
 
   /**
    * Extrai os landmarks de um frame. Devolve null se não houver pose confiável (sem
@@ -142,7 +177,15 @@ class LandmarkExtractor(context: Context) {
         bitmap?.takeIf { it.width == largura && it.height == altura }
             ?: Bitmap.createBitmap(largura, altura, Bitmap.Config.ARGB_8888).also { bitmap = it }
     destino.setPixels(argb, 0, largura, 0, 0, largura, altura)
-    return destino
+    if (ESCALA_MP >= 1f) return destino
+    // Reduz para o MediaPipe: desenha o frame cheio no bitmap escalado (bilinear), reaproveitado.
+    val lr = (largura * ESCALA_MP).toInt().coerceAtLeast(1)
+    val ar = (altura * ESCALA_MP).toInt().coerceAtLeast(1)
+    val menor =
+        bitmapEscalado?.takeIf { it.width == lr && it.height == ar }
+            ?: Bitmap.createBitmap(lr, ar, Bitmap.Config.ARGB_8888).also { bitmapEscalado = it }
+    Canvas(menor).drawBitmap(destino, matrizEscala, null)
+    return menor
   }
 
   // O último plano pode vir sem o preenchimento da última linha: o array é do tamanho do buffer.
@@ -158,5 +201,7 @@ class LandmarkExtractor(context: Context) {
     runCatching { handLandmarker.close() }
     bitmap?.recycle()
     bitmap = null
+    bitmapEscalado?.recycle()
+    bitmapEscalado = null
   }
 }

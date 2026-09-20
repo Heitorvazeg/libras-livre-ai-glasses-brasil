@@ -29,10 +29,18 @@ import kotlin.coroutines.resume
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withTimeoutOrNull
 
-class AudioSessionManager(context: Context) {
+class AudioSessionManager(
+    context: Context,
+    // Diagnóstico (CP1.3/CP2.5): perfil Bluetooth ativo, que muda com o estado — "HFP" ao abrir a
+    // escuta (mic dos óculos), "A2DP" ao liberar (padrão, TTS/avatar). Dois eventos consecutivos
+    // dão o tempo de HFP ativo pela diferença de ts. Default no-op.
+    private val onPerfil: (perfil: String) -> Unit = {},
+) {
   private val context: Context = context.applicationContext
   private val audioManager =
       this.context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
+  // Só emite quando o perfil realmente muda (releaseListening é idempotente e chamado à toa).
+  private var hfpAtivo = false
 
   companion object {
     private const val TAG = "Libras:AudioSessionManager"
@@ -61,12 +69,14 @@ class AudioSessionManager(context: Context) {
     if (confirmed != true) {
       Log.w(TAG, "Troca pra HFP não confirmada em ${SWITCH_TIMEOUT_MS}ms — seguindo mesmo assim")
     }
+    if (!hfpAtivo) { hfpAtivo = true; onPerfil("HFP") }
     return scoDevice
   }
 
   /** Libera o HFP e volta ao roteamento padrão (A2DP). Idempotente. */
   fun releaseListening() {
     audioManager.clearCommunicationDevice()
+    if (hfpAtivo) { hfpAtivo = false; onPerfil("A2DP") }
   }
 
   private suspend fun awaitCommunicationDeviceChange(

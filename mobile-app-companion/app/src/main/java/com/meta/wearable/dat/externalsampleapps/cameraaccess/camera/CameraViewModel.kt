@@ -221,7 +221,13 @@ class CameraViewModel(
   // falhar (8.3), e aí fica em uso até reiniciar o app, com aviso na faixa.
   private val vozEmCadeia =
       TtsEmCadeia(
-          principal = PiperSherpaOnnxTtsEngine(application, saida = { configuracoes.valores.value.saidaVoz }),
+          principal = PiperSherpaOnnxTtsEngine(
+              application,
+              saida = { configuracoes.valores.value.saidaVoz },
+              // CP1: latência do modelo de voz (Piper) até o 1º áudio.
+              onLatenciaSinteseMs = { ms ->
+                gravador.evento(SystemClock.uptimeMillis(), metricas.turno, "latencia_modelo", "modelo=tts_piper,ms=$ms")
+              }),
           criarReserva = { AndroidTextToSpeechEngine(application) },
           onReserva = { definirAviso(TipoAviso.VOZ_RESERVA, textos.vozReserva) },
       )
@@ -267,7 +273,13 @@ class CameraViewModel(
     }
     return carregado.classificador
   }
-  private val audioSessionManager = AudioSessionManager(application)
+  private val audioSessionManager = AudioSessionManager(
+      application,
+      // CP1.3/CP2.5: perfil Bluetooth ativo (HFP na escuta, A2DP no resto). O intervalo entre um
+      // "HFP" e o "A2DP" seguinte é o tempo de HFP ativo.
+      onPerfil = { perfil ->
+        gravador.evento(SystemClock.uptimeMillis(), metricas.turno, "perfil_bluetooth", "perfil=$perfil")
+      })
 
   // Sentido OUVINTE -> SURDO (docs/vlibras-webview-plano.md). O tradutor fala com o endpoint
   // público do VLibras e guarda o resultado em disco — as perguntas de balcão se repetem, e o
@@ -343,7 +355,13 @@ class CameraViewModel(
           audioSource = MediaRecorder.AudioSource.VOICE_RECOGNITION,
           preferredDeviceType = AudioDeviceInfo.TYPE_BUILTIN_MIC,
       )
-  private val sttEngine = VoskSttEngine(application, attendantAudioCapture)
+  private val sttEngine = VoskSttEngine(
+      application,
+      attendantAudioCapture,
+      // CP1: latência do modelo de transcrição (Vosk) para fechar o texto final.
+      onLatenciaFinalMs = { ms ->
+        gravador.evento(SystemClock.uptimeMillis(), metricas.turno, "latencia_modelo", "modelo=stt_vosk,ms=$ms")
+      })
 
   // Motor de wake word: ainda SpeechRecognizerWakeWordDetector (motor de destravamento, §4 item
   // 7), NÃO OpenWakeWordDetector (motor real escolhido, §4 item 9) — este último exige os dois
@@ -438,13 +456,19 @@ class CameraViewModel(
             },
             onConversa = { evento ->
               _uiState.update { it.copy(conversa = Conversas.reduzir(it.conversa, evento)) }
-              // 2.8: "não entendi" fica na faixa até a próxima frase aceita.
-              if (evento is EventoConversa.DecisaoTomada) {
-                when (evento.decisao) {
-                  DecisaoNaConversa.REPITA -> definirAviso(TipoAviso.REPITA, textos.repita)
-                  DecisaoNaConversa.DESISTIU -> definirAviso(TipoAviso.REPITA, textos.desistiu)
-                  else -> limparAviso(TipoAviso.REPITA)
-                }
+              when (evento) {
+                // 2.8: "não entendi" fica na faixa até a próxima frase aceita.
+                is EventoConversa.DecisaoTomada ->
+                    when (evento.decisao) {
+                      DecisaoNaConversa.REPITA -> definirAviso(TipoAviso.REPITA, textos.repita)
+                      DecisaoNaConversa.DESISTIU -> definirAviso(TipoAviso.REPITA, textos.desistiu)
+                      else -> limparAviso(TipoAviso.REPITA)
+                    }
+                // Uma nova captura começou (iniciar/repetir/corrigir): o "não entendi" (ATENÇÃO) do
+                // turno anterior já cumpriu seu papel e encobriria a badge de sinalização (CAPTURA,
+                // INFORMAÇÃO). Some com ele para o operador ver "● sinalizando / ○ parado" ao vivo.
+                EventoConversa.TurnoIniciado -> limparAviso(TipoAviso.REPITA)
+                else -> Unit
               }
             },
             metricas = metricas,
@@ -587,6 +611,11 @@ class CameraViewModel(
         gravador.metrica(ts, turno, "fps_processado", amostra.fpsProcessado.toString())
         gravador.metrica(ts, turno, "pct_sem_pose", amostra.pctSemPose.toString())
         gravador.metrica(ts, turno, "fila_cheia", amostra.filaCheia.toString())
+        // Latência do MediaPipe (visão) por frame na janela — média e pior caso (CP1).
+        if (amostra.mpInferenciaMsMax > 0) {
+          gravador.metrica(ts, turno, "mp_inferencia_ms_media", amostra.mpInferenciaMsMedia.toString())
+          gravador.metrica(ts, turno, "mp_inferencia_ms_max", amostra.mpInferenciaMsMax.toString())
+        }
         sistema.folgaTermica?.let { gravador.metrica(ts, turno, "folga_termica", it.toString()) }
         sistema.estadoTermico?.let { gravador.metrica(ts, turno, "estado_termico", it.toString()) }
         sistema.bateriaPct?.let { gravador.metrica(ts, turno, "bateria_pct", it.toString()) }
@@ -1165,6 +1194,12 @@ class CameraViewModel(
             stopCamera(addedCamera)
             return@onSuccess
           }
+          // CP1/CP2: registra a config de captura no CSV — resolução e fps configurados, rota de
+          // áudio (saída da voz e mic da resposta). Uma linha por stream que sobe.
+          val v = configuracoes.valores.value
+          gravador.evento(
+              SystemClock.uptimeMillis(), metricas.turno, "config_captura",
+              "resolucao=${VideoQuality.MEDIUM},fps=$FRAME_RATE,saida_voz=${v.saidaVoz},mic_resposta=${v.microfoneResposta}")
           _uiState.update { it.copy(streamState = StreamState.STARTING) }
           added.start().onFailure { error, _ ->
             if (stream !== added || !politicaCamera.valida(token)) return@onFailure
